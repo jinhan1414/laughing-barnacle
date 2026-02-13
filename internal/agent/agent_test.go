@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -15,6 +16,7 @@ type mockLLM struct {
 	calls     []llm.ChatRequest
 	responses map[string][]string
 	toolCalls map[string][][]llm.ToolCall
+	errors    map[string][]error
 }
 
 func (m *mockLLM) Chat(_ context.Context, req llm.ChatRequest) (llm.ChatResponse, error) {
@@ -22,6 +24,14 @@ func (m *mockLLM) Chat(_ context.Context, req llm.ChatRequest) (llm.ChatResponse
 	defer m.mu.Unlock()
 
 	m.calls = append(m.calls, req)
+	if errQueue := m.errors[req.Purpose]; len(errQueue) > 0 {
+		nextErr := errQueue[0]
+		m.errors[req.Purpose] = errQueue[1:]
+		if nextErr != nil {
+			return llm.ChatResponse{}, nextErr
+		}
+	}
+
 	queue := m.responses[req.Purpose]
 	if len(queue) == 0 {
 		return llm.ChatResponse{Content: "fallback"}, nil
@@ -262,5 +272,79 @@ func TestHandleUserMessage_IncludesEnabledSkillPrompts(t *testing.T) {
 	}
 	if !strings.Contains(msgs[1].Content, "先检索再回答") {
 		t.Fatalf("skill prompt not injected: %q", msgs[1].Content)
+	}
+}
+
+func TestRetryLastUserMessage_ReusesPendingUserMessage(t *testing.T) {
+	store := conversation.NewStore()
+	fakeLLM := &mockLLM{
+		responses: map[string][]string{
+			"chat_reply": {"retry-ok"},
+		},
+		errors: map[string][]error{
+			"chat_reply": {errors.New("llm unavailable"), nil},
+		},
+	}
+
+	agentSvc := New(Config{
+		Model:                      "test-model",
+		MaxRecentMessages:          10,
+		CompressionTriggerMessages: 99,
+		CompressionTriggerChars:    99999,
+		KeepRecentAfterCompression: 1,
+		MaxCompressionLoopsPerTurn: 1,
+		MaxToolCallRounds:          2,
+		SystemPrompt:               "system",
+		CompressionSystemPrompt:    "compressor",
+	}, store, fakeLLM, nil)
+
+	if _, err := agentSvc.HandleUserMessage(context.Background(), "hello"); err == nil {
+		t.Fatalf("expected first chat to fail")
+	}
+
+	_, messages := store.Snapshot()
+	if len(messages) != 1 || messages[0].Role != "user" {
+		t.Fatalf("expected only pending user message, got %+v", messages)
+	}
+
+	reply, err := agentSvc.RetryLastUserMessage(context.Background())
+	if err != nil {
+		t.Fatalf("RetryLastUserMessage error: %v", err)
+	}
+	if reply != "retry-ok" {
+		t.Fatalf("unexpected retry reply: %s", reply)
+	}
+
+	_, messages = store.Snapshot()
+	if len(messages) != 2 {
+		t.Fatalf("expected 2 messages after retry, got %d", len(messages))
+	}
+	if messages[0].Role != "user" || messages[1].Role != "assistant" {
+		t.Fatalf("unexpected roles after retry: %+v", messages)
+	}
+	if len(fakeLLM.calls) != 2 {
+		t.Fatalf("expected 2 llm calls, got %d", len(fakeLLM.calls))
+	}
+}
+
+func TestRetryLastUserMessage_NoPendingUser(t *testing.T) {
+	store := conversation.NewStore()
+	store.Append("assistant", "ready")
+	fakeLLM := &mockLLM{}
+
+	agentSvc := New(Config{
+		Model:                      "test-model",
+		MaxRecentMessages:          10,
+		CompressionTriggerMessages: 99,
+		CompressionTriggerChars:    99999,
+		KeepRecentAfterCompression: 1,
+		MaxCompressionLoopsPerTurn: 1,
+		MaxToolCallRounds:          2,
+		SystemPrompt:               "system",
+		CompressionSystemPrompt:    "compressor",
+	}, store, fakeLLM, nil)
+
+	if _, err := agentSvc.RetryLastUserMessage(context.Background()); err == nil {
+		t.Fatalf("expected retry to fail when no pending user message")
 	}
 }

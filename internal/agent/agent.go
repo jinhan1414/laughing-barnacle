@@ -83,6 +83,35 @@ func (a *Agent) HandleUserMessage(ctx context.Context, userInput string) (string
 	return reply, nil
 }
 
+// RetryLastUserMessage retries generating assistant output for the latest pending user message.
+func (a *Agent) RetryLastUserMessage(ctx context.Context) (string, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	_, messages := a.store.Snapshot()
+	if len(messages) == 0 || messages[len(messages)-1].Role != "user" {
+		return "", fmt.Errorf("no pending user message to retry")
+	}
+
+	if err := a.autonomousCompressionLoop(ctx); err != nil {
+		return "", err
+	}
+
+	_, messages = a.store.Snapshot()
+	if len(messages) == 0 || messages[len(messages)-1].Role != "user" {
+		return "", fmt.Errorf("no pending user message to retry")
+	}
+
+	reply, err := a.generateReply(ctx, messages)
+	if err != nil {
+		return "", err
+	}
+
+	reply = strings.TrimSpace(reply)
+	a.store.Append("assistant", reply)
+	return reply, nil
+}
+
 func (a *Agent) autonomousCompressionLoop(ctx context.Context) error {
 	for i := 0; i < a.cfg.MaxCompressionLoopsPerTurn; i++ {
 		summary, messages := a.store.Snapshot()

@@ -29,9 +29,11 @@ type Server struct {
 }
 
 type chatPageData struct {
-	Summary  string
-	Messages []conversation.Message
-	Error    string
+	Summary        string
+	Messages       []conversation.Message
+	Error          string
+	RetryAvailable bool
+	Draft          string
 }
 
 type logsPageData struct {
@@ -99,6 +101,9 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/", s.handleRoot)
 	mux.HandleFunc("/chat", s.handleChatPage)
 	mux.HandleFunc("/chat/send", s.handleChatSend)
+	mux.HandleFunc("/chat/retry", s.handleChatRetry)
+	mux.HandleFunc("/chat/settings", s.handleSettingsShortcut)
+	mux.HandleFunc("/config", s.handleSettingsShortcut)
 	mux.HandleFunc("/logs", s.handleLogsPage)
 	mux.HandleFunc("/settings", s.handleSettingsPage)
 	mux.HandleFunc("/settings/mcp/save", s.handleSettingsMCPSave)
@@ -114,12 +119,18 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/chat", http.StatusFound)
 }
 
+func (s *Server) handleSettingsShortcut(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, "/settings?section=mcp", http.StatusFound)
+}
+
 func (s *Server) handleChatPage(w http.ResponseWriter, r *http.Request) {
 	summary, messages := s.convStore.Snapshot()
 	data := chatPageData{
-		Summary:  summary,
-		Messages: messages,
-		Error:    r.URL.Query().Get("error"),
+		Summary:        summary,
+		Messages:       messages,
+		Error:          r.URL.Query().Get("error"),
+		RetryAvailable: r.URL.Query().Get("retry") == "1",
+		Draft:          r.URL.Query().Get("draft"),
 	}
 	_ = s.tmpl.ExecuteTemplate(w, "chat.html", data)
 }
@@ -145,7 +156,31 @@ func (s *Server) handleChatSend(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	if _, err := s.agent.HandleUserMessage(ctx, message); err != nil {
-		http.Redirect(w, r, "/chat?error="+url.QueryEscape(err.Error()), http.StatusFound)
+		query := url.Values{}
+		query.Set("error", err.Error())
+		query.Set("retry", "1")
+		query.Set("draft", message)
+		http.Redirect(w, r, "/chat?"+query.Encode(), http.StatusFound)
+		return
+	}
+
+	http.Redirect(w, r, "/chat", http.StatusFound)
+}
+
+func (s *Server) handleChatRetry(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
+	defer cancel()
+
+	if _, err := s.agent.RetryLastUserMessage(ctx); err != nil {
+		query := url.Values{}
+		query.Set("error", err.Error())
+		query.Set("retry", "1")
+		http.Redirect(w, r, "/chat?"+query.Encode(), http.StatusFound)
 		return
 	}
 

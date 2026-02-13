@@ -14,6 +14,9 @@
       --border: #d8dce8;
       --accent: #1868db;
     }
+    * {
+      box-sizing: border-box;
+    }
     body {
       margin: 0;
       font-family: "IBM Plex Sans", "PingFang SC", "Microsoft YaHei", sans-serif;
@@ -30,12 +33,22 @@
       justify-content: space-between;
       align-items: center;
       margin-bottom: 16px;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .top-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
     }
     .topbar a {
       color: var(--accent);
       text-decoration: none;
       font-weight: 600;
-      margin-left: 12px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #fff;
+      padding: 8px 12px;
     }
     .card {
       background: var(--card);
@@ -55,12 +68,19 @@
       margin-top: 16px;
       display: grid;
       gap: 10px;
+      max-height: 55vh;
+      overflow-y: auto;
+      padding-right: 4px;
     }
     .msg {
       border: 1px solid var(--border);
       border-radius: 10px;
       padding: 12px;
       background: #fff;
+    }
+    .msg.user {
+      border-color: #c9dafd;
+      background: #f8fbff;
     }
     .msg .role {
       font-size: 12px;
@@ -78,6 +98,13 @@
       margin-top: 12px;
       color: #b42318;
       font-weight: 600;
+      border: 1px solid #f5b1b1;
+      border-radius: 10px;
+      background: #fff1f2;
+      padding: 10px 12px;
+    }
+    .error-actions {
+      margin-top: 8px;
     }
     form {
       margin-top: 16px;
@@ -103,15 +130,52 @@
       font-weight: 600;
       cursor: pointer;
     }
+    .ghost {
+      background: #fff;
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    @media (max-width: 720px) {
+      .container {
+        margin: 12px auto;
+        padding: 0 12px;
+      }
+      .topbar h1 {
+        margin: 0;
+        font-size: 22px;
+      }
+      .top-actions {
+        width: 100%;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+      }
+      .topbar a {
+        text-align: center;
+      }
+      .card {
+        border-radius: 10px;
+        padding: 12px;
+      }
+      .messages {
+        max-height: 50vh;
+      }
+      textarea {
+        min-height: 84px;
+      }
+      button {
+        width: 100%;
+        justify-self: stretch;
+      }
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <div class="topbar">
       <h1>AI Agent 聊天</h1>
-      <div>
+      <div class="top-actions">
         <a href="/logs">查看 LLM 调用日志</a>
-        <a href="/settings">系统配置</a>
+        <a href="/settings?section=mcp">系统配置</a>
       </div>
     </div>
 
@@ -122,7 +186,7 @@
       <div class="messages">
         {{if .Messages}}
           {{range .Messages}}
-          <div class="msg">
+          <div class="msg {{.Role}}">
             <div class="role">{{.Role}}</div>
             <div class="content">{{.Content}}</div>
           </div>
@@ -135,11 +199,20 @@
       </div>
 
       {{if .Error}}
-      <div class="error">错误: {{.Error}}</div>
+      <div class="error">
+        <div>错误: {{.Error}}</div>
+        {{if .RetryAvailable}}
+        <div class="error-actions">
+          <form action="/chat/retry" method="post">
+            <button class="ghost" type="submit">重试上一条消息</button>
+          </form>
+        </div>
+        {{end}}
+      </div>
       {{end}}
 
       <form action="/chat/send" method="post">
-        <textarea name="message" placeholder="请输入消息..." required></textarea>
+        <textarea name="message" placeholder="请输入消息..." required>{{.Draft}}</textarea>
         <button type="submit">发送</button>
       </form>
     </div>

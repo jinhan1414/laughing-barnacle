@@ -30,12 +30,22 @@
       justify-content: space-between;
       align-items: center;
       margin-bottom: 16px;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .topbar > div {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
     }
     .topbar a {
       color: var(--accent);
       text-decoration: none;
       font-weight: 600;
-      margin-left: 12px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #fff;
+      padding: 8px 12px;
     }
     .entry {
       background: var(--card);
@@ -89,6 +99,24 @@
     @media (max-width: 900px) {
       .head {
         grid-template-columns: 1fr 1fr;
+      }
+    }
+    @media (max-width: 720px) {
+      .container {
+        margin: 12px auto;
+        padding: 0 12px;
+      }
+      .topbar h1 {
+        margin: 0;
+        font-size: 24px;
+      }
+      .topbar > div {
+        width: 100%;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+      }
+      .topbar a {
+        text-align: center;
       }
     }
   </style>
