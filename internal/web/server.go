@@ -60,8 +60,17 @@ type settingsPageData struct {
 	ActiveSection string
 	Sections      []settingsSection
 	Services      []mcpServiceView
+	Skills        []skillView
 	Success       string
 	Error         string
+}
+
+type skillView struct {
+	ID        string
+	Name      string
+	Prompt    string
+	Enabled   bool
+	UpdatedAt string
 }
 
 func NewServer(
@@ -95,6 +104,9 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/settings/mcp/save", s.handleSettingsMCPSave)
 	mux.HandleFunc("/settings/mcp/delete", s.handleSettingsMCPDelete)
 	mux.HandleFunc("/settings/mcp/toggle", s.handleSettingsMCPToggle)
+	mux.HandleFunc("/settings/skills/save", s.handleSettingsSkillSave)
+	mux.HandleFunc("/settings/skills/delete", s.handleSettingsSkillDelete)
+	mux.HandleFunc("/settings/skills/toggle", s.handleSettingsSkillToggle)
 	mux.HandleFunc("/healthz", s.handleHealthz)
 }
 
@@ -150,6 +162,9 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 	if section == "" {
 		section = "mcp"
 	}
+	if section != "mcp" && section != "llm" && section != "security" && section != "skills" {
+		section = "mcp"
+	}
 
 	data := settingsPageData{
 		ActiveSection: section,
@@ -157,7 +172,7 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 			{Key: "mcp", Title: "MCP 服务", Description: "管理 Agent 可用的 MCP 工具服务"},
 			{Key: "llm", Title: "模型策略", Description: "预留：模型与路由策略配置"},
 			{Key: "security", Title: "安全策略", Description: "预留：权限与审计配置"},
-			{Key: "integrations", Title: "外部集成", Description: "预留：通知与业务系统集成"},
+			{Key: "skills", Title: "Skill 技能", Description: "配置 Agent 的可复用技能指令"},
 		},
 		Success: r.URL.Query().Get("success"),
 		Error:   r.URL.Query().Get("error"),
@@ -189,6 +204,21 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 			}
 			data.Services = append(data.Services, view)
 		}
+	} else if section == "skills" {
+		skills := s.mcpStore.ListSkills()
+		data.Skills = make([]skillView, 0, len(skills))
+		for _, skill := range skills {
+			view := skillView{
+				ID:      skill.ID,
+				Name:    skill.Name,
+				Prompt:  skill.Prompt,
+				Enabled: skill.Enabled,
+			}
+			if !skill.UpdatedAt.IsZero() {
+				view.UpdatedAt = skill.UpdatedAt.Format("2006-01-02 15:04:05")
+			}
+			data.Skills = append(data.Skills, view)
+		}
 	}
 
 	_ = s.tmpl.ExecuteTemplate(w, "settings.html", data)
@@ -200,7 +230,7 @@ func (s *Server) handleSettingsMCPSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		s.redirectSettings(w, r, "", "请求参数解析失败")
+		s.redirectSettings(w, r, "mcp", "", "请求参数解析失败")
 		return
 	}
 
@@ -212,11 +242,11 @@ func (s *Server) handleSettingsMCPSave(w http.ResponseWriter, r *http.Request) {
 		Enabled:   r.FormValue("enabled") == "on",
 	}
 	if err := s.mcpStore.UpsertService(service); err != nil {
-		s.redirectSettings(w, r, "", err.Error())
+		s.redirectSettings(w, r, "mcp", "", err.Error())
 		return
 	}
 	s.mcpTools.InvalidateCache()
-	s.redirectSettings(w, r, fmt.Sprintf("MCP 服务 %s 已保存", service.ID), "")
+	s.redirectSettings(w, r, "mcp", fmt.Sprintf("MCP 服务 %s 已保存", service.ID), "")
 }
 
 func (s *Server) handleSettingsMCPDelete(w http.ResponseWriter, r *http.Request) {
@@ -225,16 +255,16 @@ func (s *Server) handleSettingsMCPDelete(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		s.redirectSettings(w, r, "", "请求参数解析失败")
+		s.redirectSettings(w, r, "mcp", "", "请求参数解析失败")
 		return
 	}
 	id := strings.TrimSpace(r.FormValue("id"))
 	if err := s.mcpStore.DeleteService(id); err != nil {
-		s.redirectSettings(w, r, "", err.Error())
+		s.redirectSettings(w, r, "mcp", "", err.Error())
 		return
 	}
 	s.mcpTools.InvalidateCache()
-	s.redirectSettings(w, r, fmt.Sprintf("MCP 服务 %s 已删除", id), "")
+	s.redirectSettings(w, r, "mcp", fmt.Sprintf("MCP 服务 %s 已删除", id), "")
 }
 
 func (s *Server) handleSettingsMCPToggle(w http.ResponseWriter, r *http.Request) {
@@ -243,26 +273,93 @@ func (s *Server) handleSettingsMCPToggle(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		s.redirectSettings(w, r, "", "请求参数解析失败")
+		s.redirectSettings(w, r, "mcp", "", "请求参数解析失败")
 		return
 	}
 	id := strings.TrimSpace(r.FormValue("id"))
 	enable := r.FormValue("enabled") == "true"
 	if err := s.mcpStore.SetEnabled(id, enable); err != nil {
-		s.redirectSettings(w, r, "", err.Error())
+		s.redirectSettings(w, r, "mcp", "", err.Error())
 		return
 	}
 	s.mcpTools.InvalidateCache()
 	if enable {
-		s.redirectSettings(w, r, fmt.Sprintf("MCP 服务 %s 已启用", id), "")
+		s.redirectSettings(w, r, "mcp", fmt.Sprintf("MCP 服务 %s 已启用", id), "")
 		return
 	}
-	s.redirectSettings(w, r, fmt.Sprintf("MCP 服务 %s 已禁用", id), "")
+	s.redirectSettings(w, r, "mcp", fmt.Sprintf("MCP 服务 %s 已禁用", id), "")
 }
 
-func (s *Server) redirectSettings(w http.ResponseWriter, r *http.Request, success, failure string) {
+func (s *Server) handleSettingsSkillSave(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		s.redirectSettings(w, r, "skills", "", "请求参数解析失败")
+		return
+	}
+
+	skill := mcp.Skill{
+		ID:      strings.TrimSpace(r.FormValue("id")),
+		Name:    strings.TrimSpace(r.FormValue("name")),
+		Prompt:  strings.TrimSpace(r.FormValue("prompt")),
+		Enabled: r.FormValue("enabled") == "on",
+	}
+	if err := s.mcpStore.UpsertSkill(skill); err != nil {
+		s.redirectSettings(w, r, "skills", "", err.Error())
+		return
+	}
+	s.redirectSettings(w, r, "skills", fmt.Sprintf("Skill %s 已保存", skill.ID), "")
+}
+
+func (s *Server) handleSettingsSkillDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		s.redirectSettings(w, r, "skills", "", "请求参数解析失败")
+		return
+	}
+
+	id := strings.TrimSpace(r.FormValue("id"))
+	if err := s.mcpStore.DeleteSkill(id); err != nil {
+		s.redirectSettings(w, r, "skills", "", err.Error())
+		return
+	}
+	s.redirectSettings(w, r, "skills", fmt.Sprintf("Skill %s 已删除", id), "")
+}
+
+func (s *Server) handleSettingsSkillToggle(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		s.redirectSettings(w, r, "skills", "", "请求参数解析失败")
+		return
+	}
+
+	id := strings.TrimSpace(r.FormValue("id"))
+	enable := r.FormValue("enabled") == "true"
+	if err := s.mcpStore.SetSkillEnabled(id, enable); err != nil {
+		s.redirectSettings(w, r, "skills", "", err.Error())
+		return
+	}
+	if enable {
+		s.redirectSettings(w, r, "skills", fmt.Sprintf("Skill %s 已启用", id), "")
+		return
+	}
+	s.redirectSettings(w, r, "skills", fmt.Sprintf("Skill %s 已禁用", id), "")
+}
+
+func (s *Server) redirectSettings(w http.ResponseWriter, r *http.Request, section, success, failure string) {
 	values := url.Values{}
-	values.Set("section", "mcp")
+	if strings.TrimSpace(section) == "" {
+		section = "mcp"
+	}
+	values.Set("section", section)
 	if strings.TrimSpace(success) != "" {
 		values.Set("success", success)
 	}

@@ -38,7 +38,7 @@ func run() error {
 		return err
 	}
 	mcpHTTPClient := mcp.NewHTTPClient(cfg.MCPRequestTimeout, cfg.MCPProtocolVersion)
-	toolProvider := mcp.NewToolProvider(mcpStore, mcpHTTPClient, cfg.MCPToolCacheTTL)
+	mcpToolProvider := mcp.NewToolProvider(mcpStore, mcpHTTPClient, cfg.MCPToolCacheTTL)
 
 	llmClient := cerber.NewClient(cerber.Config{
 		BaseURL:  cfg.CerberBaseURL,
@@ -58,9 +58,10 @@ func run() error {
 		MaxToolCallRounds:          cfg.MaxToolCallRounds,
 		SystemPrompt:               cfg.AgentSystemPrompt,
 		CompressionSystemPrompt:    cfg.CompressionSystemPrompt,
-	}, convStore, llmClient, toolProvider)
+	}, convStore, llmClient, mcpToolProvider)
+	agentSvc.SetSkillProvider(mcpStore)
 
-	webServer, err := web.NewServer(agentSvc, convStore, logStore, mcpStore, toolProvider)
+	webServer, err := web.NewServer(agentSvc, convStore, logStore, mcpStore, mcpToolProvider)
 	if err != nil {
 		return err
 	}

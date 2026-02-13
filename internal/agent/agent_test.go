@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
 
@@ -41,6 +42,14 @@ type mockTools struct {
 	listed   []llm.ToolDefinition
 	calls    []llm.ToolCall
 	response map[string]string
+}
+
+type mockSkills struct {
+	prompts []string
+}
+
+func (m *mockSkills) ListEnabledSkillPrompts() []string {
+	return m.prompts
 }
 
 func (m *mockTools) ListTools(_ context.Context) ([]llm.ToolDefinition, error) {
@@ -209,5 +218,49 @@ func TestHandleUserMessage_WithToolCalls(t *testing.T) {
 	}
 	if len(fakeTools.calls) != 1 || fakeTools.calls[0].Function.Name != "weather__query" {
 		t.Fatalf("unexpected tool calls: %+v", fakeTools.calls)
+	}
+}
+
+func TestHandleUserMessage_IncludesEnabledSkillPrompts(t *testing.T) {
+	store := conversation.NewStore()
+	fakeLLM := &mockLLM{responses: map[string][]string{
+		"chat_reply": {"ok"},
+	}}
+
+	agentSvc := New(Config{
+		Model:                      "test-model",
+		MaxRecentMessages:          10,
+		CompressionTriggerMessages: 99,
+		CompressionTriggerChars:    99999,
+		KeepRecentAfterCompression: 1,
+		MaxCompressionLoopsPerTurn: 1,
+		MaxToolCallRounds:          2,
+		SystemPrompt:               "system",
+		CompressionSystemPrompt:    "compressor",
+	}, store, fakeLLM, nil)
+	agentSvc.SetSkillProvider(&mockSkills{
+		prompts: []string{"先检索再回答，并提供引用链接。"},
+	})
+
+	reply, err := agentSvc.HandleUserMessage(context.Background(), "hello")
+	if err != nil {
+		t.Fatalf("HandleUserMessage error: %v", err)
+	}
+	if reply != "ok" {
+		t.Fatalf("unexpected reply: %s", reply)
+	}
+	if len(fakeLLM.calls) != 1 {
+		t.Fatalf("expected one llm call, got %d", len(fakeLLM.calls))
+	}
+
+	msgs := fakeLLM.calls[0].Messages
+	if len(msgs) < 3 {
+		t.Fatalf("expected at least 3 messages, got %d", len(msgs))
+	}
+	if msgs[1].Role != "system" {
+		t.Fatalf("expected second message is system prompt for skills, got %s", msgs[1].Role)
+	}
+	if !strings.Contains(msgs[1].Content, "先检索再回答") {
+		t.Fatalf("skill prompt not injected: %q", msgs[1].Content)
 	}
 }

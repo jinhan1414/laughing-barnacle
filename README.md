@@ -5,8 +5,9 @@
 - Agent 自动压缩上下文（loop）
 - LLM 提供商采用 Cerber（按 OpenAI 兼容 Chat Completions 调用）
 - Agent 工具调用仅通过 MCP（Model Context Protocol）服务
+- 支持在设置页配置 Agent Skills（可启用/禁用的系统级技能指令）
 - 独立日志页展示每次真实 LLM 输入/输出
-- 独立设置页管理 MCP 服务（启用/禁用/删除）
+- 独立设置页管理 MCP 服务与 Skills
 - 非流式输出
 
 ## 目录结构
@@ -90,14 +91,15 @@ docker run --rm -p 8080:8080 \
 2. 进入自动压缩 loop（达到阈值则触发压缩）
 3. 用“摘要 + 最近消息”调用 LLM 生成回复
 4. 若模型返回工具调用，则仅通过已启用 MCP 服务执行并回填结果，再继续推理
-5. 追加助手回复
+5. 将已启用 Skills 的指令注入系统提示词后生成回复
+6. 追加助手回复
 
 压缩与回复的真实调用都会写入日志页。
 
 ## 关键配置
 
 - `APP_ADDR`: HTTP 监听地址
-- `APP_SETTINGS_FILE`: 设置持久化文件路径（含 MCP 服务配置）
+- `APP_SETTINGS_FILE`: 设置持久化文件路径（含 MCP 与 Skills 配置）
 - `CERBER_BASE_URL`: Cerber 服务地址
 - `CERBER_API_KEY`: Cerber API Key（必填）
 - `CERBER_MODEL`: 默认模型

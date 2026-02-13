@@ -58,3 +58,48 @@ func TestStoreUpsertAndReload(t *testing.T) {
 		t.Fatalf("unexpected token after reload: %q", services[0].AuthToken)
 	}
 }
+
+func TestStoreSkillCRUDAndPrompts(t *testing.T) {
+	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	store, err := NewStore(settingsPath)
+	if err != nil {
+		t.Fatalf("NewStore error: %v", err)
+	}
+
+	if err := store.UpsertSkill(Skill{
+		ID:      "research",
+		Name:    "Research Skill",
+		Prompt:  "先检索再回答，给出来源。",
+		Enabled: true,
+	}); err != nil {
+		t.Fatalf("UpsertSkill error: %v", err)
+	}
+
+	if err := store.UpsertSkill(Skill{
+		ID:      "research",
+		Name:    "Research Skill v2",
+		Prompt:  "先检索、再总结、最后给出来源。",
+		Enabled: false,
+	}); err != nil {
+		t.Fatalf("UpsertSkill update error: %v", err)
+	}
+
+	if err := store.SetSkillEnabled("research", true); err != nil {
+		t.Fatalf("SetSkillEnabled error: %v", err)
+	}
+
+	prompts := store.ListEnabledSkillPrompts()
+	if len(prompts) != 1 {
+		t.Fatalf("expected 1 enabled prompt, got %d", len(prompts))
+	}
+	if prompts[0] != "先检索、再总结、最后给出来源。" {
+		t.Fatalf("unexpected prompt: %q", prompts[0])
+	}
+
+	if err := store.DeleteSkill("research"); err != nil {
+		t.Fatalf("DeleteSkill error: %v", err)
+	}
+	if len(store.ListSkills()) != 0 {
+		t.Fatalf("expected no skills after delete")
+	}
+}

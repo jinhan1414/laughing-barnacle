@@ -23,10 +23,21 @@ type Service struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+type Skill struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Prompt    string    `json:"prompt"`
+	Enabled   bool      `json:"enabled"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 type fileConfig struct {
 	MCP struct {
 		Services []Service `json:"services"`
 	} `json:"mcp"`
+	Skills struct {
+		Items []Skill `json:"items"`
+	} `json:"skills"`
 }
 
 type Store struct {
@@ -158,6 +169,101 @@ func (s *Store) SetEnabled(id string, enabled bool) error {
 	return s.persistLocked()
 }
 
+func (s *Store) ListSkills() []Skill {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return slices.Clone(s.cfg.Skills.Items)
+}
+
+func (s *Store) ListEnabledSkillPrompts() []string {
+	skills := s.ListSkills()
+	out := make([]string, 0, len(skills))
+	for _, skill := range skills {
+		if !skill.Enabled {
+			continue
+		}
+		prompt := strings.TrimSpace(skill.Prompt)
+		if prompt == "" {
+			continue
+		}
+		out = append(out, prompt)
+	}
+	return out
+}
+
+func (s *Store) UpsertSkill(skill Skill) error {
+	skill.ID = strings.TrimSpace(skill.ID)
+	skill.Name = strings.TrimSpace(skill.Name)
+	skill.Prompt = strings.TrimSpace(skill.Prompt)
+	if skill.Name == "" {
+		skill.Name = skill.ID
+	}
+	if err := validateSkill(skill); err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	skill.UpdatedAt = time.Now()
+	updated := false
+	for i := range s.cfg.Skills.Items {
+		if s.cfg.Skills.Items[i].ID == skill.ID {
+			s.cfg.Skills.Items[i] = skill
+			updated = true
+			break
+		}
+	}
+	if !updated {
+		s.cfg.Skills.Items = append(s.cfg.Skills.Items, skill)
+	}
+
+	return s.persistLocked()
+}
+
+func (s *Store) DeleteSkill(id string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return fmt.Errorf("skill id is required")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	next := make([]Skill, 0, len(s.cfg.Skills.Items))
+	for _, skill := range s.cfg.Skills.Items {
+		if skill.ID != id {
+			next = append(next, skill)
+		}
+	}
+	s.cfg.Skills.Items = next
+	return s.persistLocked()
+}
+
+func (s *Store) SetSkillEnabled(id string, enabled bool) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return fmt.Errorf("skill id is required")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	found := false
+	for i := range s.cfg.Skills.Items {
+		if s.cfg.Skills.Items[i].ID == id {
+			s.cfg.Skills.Items[i].Enabled = enabled
+			s.cfg.Skills.Items[i].UpdatedAt = time.Now()
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("skill %q not found", id)
+	}
+	return s.persistLocked()
+}
+
 func (s *Store) load() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -178,6 +284,11 @@ func (s *Store) load() error {
 	for _, svc := range cfg.MCP.Services {
 		if err := validateService(svc); err != nil {
 			return fmt.Errorf("invalid mcp service %q: %w", svc.ID, err)
+		}
+	}
+	for _, skill := range cfg.Skills.Items {
+		if err := validateSkill(skill); err != nil {
+			return fmt.Errorf("invalid skill %q: %w", skill.ID, err)
 		}
 	}
 
@@ -217,6 +328,22 @@ func validateService(service Service) error {
 	}
 	if !strings.HasPrefix(service.Endpoint, "http://") && !strings.HasPrefix(service.Endpoint, "https://") {
 		return fmt.Errorf("service endpoint must start with http:// or https://")
+	}
+	return nil
+}
+
+func validateSkill(skill Skill) error {
+	if skill.ID == "" {
+		return fmt.Errorf("skill id is required")
+	}
+	if !serviceIDPattern.MatchString(skill.ID) {
+		return fmt.Errorf("skill id must match [a-zA-Z0-9_-]+")
+	}
+	if strings.TrimSpace(skill.Name) == "" {
+		return fmt.Errorf("skill name is required")
+	}
+	if strings.TrimSpace(skill.Prompt) == "" {
+		return fmt.Errorf("skill prompt is required")
 	}
 	return nil
 }

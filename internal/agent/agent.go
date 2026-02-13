@@ -28,12 +28,17 @@ type ToolProvider interface {
 	CallTool(ctx context.Context, call llm.ToolCall) (string, error)
 }
 
+type SkillProvider interface {
+	ListEnabledSkillPrompts() []string
+}
+
 type Agent struct {
-	cfg   Config
-	llm   llm.Client
-	tools ToolProvider
-	store *conversation.Store
-	mu    sync.Mutex
+	cfg    Config
+	llm    llm.Client
+	tools  ToolProvider
+	skills SkillProvider
+	store  *conversation.Store
+	mu     sync.Mutex
 }
 
 func New(cfg Config, store *conversation.Store, llmClient llm.Client, tools ToolProvider) *Agent {
@@ -43,6 +48,12 @@ func New(cfg Config, store *conversation.Store, llmClient llm.Client, tools Tool
 		tools: tools,
 		store: store,
 	}
+}
+
+func (a *Agent) SetSkillProvider(provider SkillProvider) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.skills = provider
 }
 
 // HandleUserMessage processes one user turn, updating shared conversation state.
@@ -139,6 +150,20 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 		Role:    "system",
 		Content: a.cfg.SystemPrompt,
 	})
+	if a.skills != nil {
+		skillPrompts := a.skills.ListEnabledSkillPrompts()
+		if len(skillPrompts) > 0 {
+			var b strings.Builder
+			b.WriteString("已启用技能（按需遵循）：\n")
+			for i, prompt := range skillPrompts {
+				b.WriteString(fmt.Sprintf("%d. %s\n", i+1, strings.TrimSpace(prompt)))
+			}
+			requestMessages = append(requestMessages, llm.Message{
+				Role:    "system",
+				Content: strings.TrimSpace(b.String()),
+			})
+		}
+	}
 	if strings.TrimSpace(summary) != "" {
 		requestMessages = append(requestMessages, llm.Message{
 			Role:    "system",

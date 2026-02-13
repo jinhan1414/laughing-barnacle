@@ -117,7 +117,7 @@
       font-size: 13px;
       color: var(--muted);
     }
-    input[type="text"], input[type="url"], input[type="password"] {
+    input[type="text"], input[type="url"], input[type="password"], textarea {
       width: 100%;
       border: 1px solid var(--line);
       border-radius: 10px;
@@ -125,6 +125,10 @@
       font: inherit;
       color: var(--text);
       background: #fff;
+    }
+    textarea {
+      min-height: 120px;
+      resize: vertical;
     }
     .full {
       grid-column: 1 / -1;
@@ -311,6 +315,67 @@
               {{end}}
             {{else}}
               <div class="placeholder">暂无 MCP 服务。先在上方添加一个服务并启用。</div>
+            {{end}}
+          </div>
+        {{else if eq .ActiveSection "skills"}}
+          <h2>Skill 技能配置</h2>
+          <div class="hint">
+            Skill 是可复用的 Agent 行为指令。启用后会自动注入到系统提示词，影响每轮回答策略。
+          </div>
+
+          <form method="post" action="/settings/skills/save">
+            <div class="form-grid">
+              <label>
+                Skill ID
+                <input type="text" name="id" placeholder="例如：research" required>
+              </label>
+              <label>
+                Skill 名称
+                <input type="text" name="name" placeholder="例如：Research Mode">
+              </label>
+              <label class="full">
+                Skill 指令
+                <textarea name="prompt" placeholder="例如：先检索，再给结论，并附引用来源。" required></textarea>
+              </label>
+              <label class="full">
+                <span style="display:flex;align-items:center;gap:8px;color:var(--text)">
+                  <input type="checkbox" name="enabled">
+                  保存后立即启用
+                </span>
+              </label>
+            </div>
+            <div class="action-row">
+              <button type="submit">新增/更新 Skill</button>
+            </div>
+          </form>
+
+          <div class="service-list">
+            {{if .Skills}}
+              {{range .Skills}}
+                <div class="service">
+                  <div class="service-head">
+                    <div class="service-title">{{.Name}} <small>({{.ID}})</small></div>
+                    <div class="status {{if .Enabled}}ok{{end}}">{{if .Enabled}}已启用{{else}}已禁用{{end}}</div>
+                  </div>
+                  <div class="meta">
+                    指令: {{.Prompt}}<br>
+                    最后更新: {{.UpdatedAt}}
+                  </div>
+                  <div class="service-actions">
+                    <form method="post" action="/settings/skills/toggle">
+                      <input type="hidden" name="id" value="{{.ID}}">
+                      <input type="hidden" name="enabled" value="{{if .Enabled}}false{{else}}true{{end}}">
+                      <button class="ghost" type="submit">{{if .Enabled}}禁用{{else}}启用{{end}}</button>
+                    </form>
+                    <form method="post" action="/settings/skills/delete" onsubmit="return confirm('确认删除 Skill {{.ID}} ?')">
+                      <input type="hidden" name="id" value="{{.ID}}">
+                      <button class="danger" type="submit">删除</button>
+                    </form>
+                  </div>
+                </div>
+              {{end}}
+            {{else}}
+              <div class="placeholder">暂无 Skill。先在上方添加一个并启用。</div>
             {{end}}
           </div>
         {{else}}
