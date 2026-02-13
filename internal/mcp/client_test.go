@@ -78,3 +78,51 @@ func TestHTTPClient_ListAndCallTool(t *testing.T) {
 		t.Fatalf("expected 4 rpc calls, got %d (%v)", len(calls), calls)
 	}
 }
+
+func TestHTTPClient_StreamableHTTPWithSSEResponse(t *testing.T) {
+	var calls []string
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		method, _ := req["method"].(string)
+		calls = append(calls, method)
+
+		switch method {
+		case "initialize":
+			w.Header().Set("Mcp-Session-Id", "session-sse-1")
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = w.Write([]byte("event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":\"2025-06-18\"}}\n\n"))
+		case "notifications/initialized":
+			w.WriteHeader(http.StatusAccepted)
+		case "tools/list":
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = w.Write([]byte("event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"tools\":[{\"name\":\"read_wiki\",\"description\":\"read\",\"inputSchema\":{\"type\":\"object\"}}]}}\n\n"))
+		default:
+			t.Fatalf("unexpected method: %s", method)
+		}
+	}))
+	defer ts.Close()
+
+	client := NewHTTPClient(3*time.Second, "")
+	service := Service{
+		ID:        "deepwiki",
+		Name:      "DeepWiki",
+		Endpoint:  ts.URL,
+		Transport: "streamableHttp",
+		Enabled:   true,
+	}
+
+	tools, err := client.ListTools(context.Background(), service)
+	if err != nil {
+		t.Fatalf("ListTools error: %v", err)
+	}
+	if len(tools) != 1 || tools[0].Name != "read_wiki" {
+		t.Fatalf("unexpected tools: %+v", tools)
+	}
+	if len(calls) != 3 {
+		t.Fatalf("expected 3 rpc calls, got %d (%v)", len(calls), calls)
+	}
+}

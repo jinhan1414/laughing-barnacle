@@ -14,10 +14,16 @@ import (
 
 var serviceIDPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
+const (
+	ServiceTransportStreamableHTTP = "streamable_http"
+	ServiceTransportSSE            = "sse"
+)
+
 type Service struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
 	Endpoint  string    `json:"endpoint"`
+	Transport string    `json:"transport,omitempty"`
 	AuthToken string    `json:"auth_token,omitempty"`
 	Enabled   bool      `json:"enabled"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -93,10 +99,14 @@ func (s *Store) UpsertService(service Service) error {
 	service.ID = strings.TrimSpace(service.ID)
 	service.Name = strings.TrimSpace(service.Name)
 	service.Endpoint = strings.TrimSpace(service.Endpoint)
+	service.Transport = normalizeServiceTransport(service.Transport)
 	service.AuthToken = strings.TrimSpace(service.AuthToken)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if service.ID == "" {
+		service.ID = s.findServiceIDForUpdateLocked(service)
+	}
 	if service.ID == "" {
 		service.ID = generateUniqueServiceID(s.cfg.MCP.Services, service.Name, service.Endpoint)
 	}
@@ -202,6 +212,9 @@ func (s *Store) UpsertSkill(skill Skill) error {
 	defer s.mu.Unlock()
 
 	if skill.ID == "" {
+		skill.ID = s.findSkillIDForUpdateLocked(skill)
+	}
+	if skill.ID == "" {
 		skill.ID = generateUniqueSkillID(s.cfg.Skills.Items, skill.Name, skill.Prompt)
 	}
 	if skill.Name == "" {
@@ -287,10 +300,12 @@ func (s *Store) load() error {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return fmt.Errorf("decode settings file: %w", err)
 	}
-	for _, svc := range cfg.MCP.Services {
+	for i, svc := range cfg.MCP.Services {
+		svc.Transport = normalizeServiceTransport(svc.Transport)
 		if err := validateService(svc); err != nil {
 			return fmt.Errorf("invalid mcp service %q: %w", svc.ID, err)
 		}
+		cfg.MCP.Services[i] = svc
 	}
 	for _, skill := range cfg.Skills.Items {
 		if err := validateSkill(skill); err != nil {
@@ -334,6 +349,9 @@ func validateService(service Service) error {
 	}
 	if !strings.HasPrefix(service.Endpoint, "http://") && !strings.HasPrefix(service.Endpoint, "https://") {
 		return fmt.Errorf("service endpoint must start with http:// or https://")
+	}
+	if service.Transport != ServiceTransportStreamableHTTP && service.Transport != ServiceTransportSSE {
+		return fmt.Errorf("service transport must be streamable_http or sse")
 	}
 	return nil
 }
@@ -427,4 +445,47 @@ func sanitizeIdentifier(input string) string {
 	}
 
 	return strings.Trim(b.String(), "-")
+}
+
+func normalizeServiceTransport(raw string) string {
+	normalized := strings.ToLower(strings.TrimSpace(raw))
+	switch normalized {
+	case "", "streamablehttp", "streamable_http", "streamable-http":
+		return ServiceTransportStreamableHTTP
+	case "sse":
+		return ServiceTransportSSE
+	default:
+		return normalized
+	}
+}
+
+func (s *Store) findServiceIDForUpdateLocked(service Service) string {
+	endpoint := strings.TrimSpace(service.Endpoint)
+	if endpoint != "" {
+		for _, existing := range s.cfg.MCP.Services {
+			if strings.TrimSpace(existing.Endpoint) == endpoint {
+				return existing.ID
+			}
+		}
+	}
+	return ""
+}
+
+func (s *Store) findSkillIDForUpdateLocked(skill Skill) string {
+	name := strings.TrimSpace(skill.Name)
+	if name == "" {
+		return ""
+	}
+
+	matchedID := ""
+	for _, existing := range s.cfg.Skills.Items {
+		if !strings.EqualFold(strings.TrimSpace(existing.Name), name) {
+			continue
+		}
+		if matchedID != "" {
+			return ""
+		}
+		matchedID = existing.ID
+	}
+	return matchedID
 }

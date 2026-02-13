@@ -153,7 +153,7 @@ func TestStoreUpsertSkill_AutoGeneratesIDWhenMissing(t *testing.T) {
 		t.Fatalf("UpsertSkill error: %v", err)
 	}
 	if err := store.UpsertSkill(Skill{
-		Name:    "Research Mode",
+		Name:    "Writing Mode",
 		Prompt:  "先检索再回答，附来源",
 		Enabled: false,
 	}); err != nil {
@@ -169,5 +169,88 @@ func TestStoreUpsertSkill_AutoGeneratesIDWhenMissing(t *testing.T) {
 	}
 	if skills[0].ID == skills[1].ID {
 		t.Fatalf("expected unique generated ids, got %q", skills[0].ID)
+	}
+}
+
+func TestStoreUpsertSkill_EmptyIDUpdatesExistingByName(t *testing.T) {
+	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	store, err := NewStore(settingsPath)
+	if err != nil {
+		t.Fatalf("NewStore error: %v", err)
+	}
+
+	if err := store.UpsertSkill(Skill{
+		ID:      "research",
+		Name:    "Research Mode",
+		Prompt:  "先检索",
+		Enabled: true,
+	}); err != nil {
+		t.Fatalf("UpsertSkill error: %v", err)
+	}
+
+	if err := store.UpsertSkill(Skill{
+		Name:    "Research Mode",
+		Prompt:  "先检索再回答并附来源",
+		Enabled: false,
+	}); err != nil {
+		t.Fatalf("UpsertSkill update error: %v", err)
+	}
+
+	skills := store.ListSkills()
+	if len(skills) != 1 {
+		t.Fatalf("expected 1 skill after update, got %d", len(skills))
+	}
+	if skills[0].ID != "research" {
+		t.Fatalf("expected id keep research, got %q", skills[0].ID)
+	}
+	if skills[0].Prompt != "先检索再回答并附来源" {
+		t.Fatalf("expected prompt updated, got %q", skills[0].Prompt)
+	}
+	if skills[0].Enabled {
+		t.Fatalf("expected skill disabled after update")
+	}
+}
+
+func TestStoreUpsertService_EmptyIDUpdatesExistingByEndpoint(t *testing.T) {
+	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	store, err := NewStore(settingsPath)
+	if err != nil {
+		t.Fatalf("NewStore error: %v", err)
+	}
+
+	if err := store.UpsertService(Service{
+		ID:        "deepwiki",
+		Name:      "DeepWiki",
+		Endpoint:  "https://mcp.deepwiki.com/mcp",
+		Transport: "streamable_http",
+		Enabled:   true,
+	}); err != nil {
+		t.Fatalf("UpsertService error: %v", err)
+	}
+
+	if err := store.UpsertService(Service{
+		Name:      "DeepWiki PROD",
+		Endpoint:  "https://mcp.deepwiki.com/mcp",
+		Transport: "streamableHttp",
+		Enabled:   false,
+	}); err != nil {
+		t.Fatalf("UpsertService update error: %v", err)
+	}
+
+	services := store.ListServices()
+	if len(services) != 1 {
+		t.Fatalf("expected 1 service after update, got %d", len(services))
+	}
+	if services[0].ID != "deepwiki" {
+		t.Fatalf("expected id keep deepwiki, got %q", services[0].ID)
+	}
+	if services[0].Name != "DeepWiki PROD" {
+		t.Fatalf("expected name updated, got %q", services[0].Name)
+	}
+	if services[0].Enabled {
+		t.Fatalf("expected service disabled after update")
+	}
+	if services[0].Transport != ServiceTransportStreamableHTTP {
+		t.Fatalf("expected normalized streamable transport, got %q", services[0].Transport)
 	}
 }

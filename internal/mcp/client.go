@@ -1,12 +1,14 @@
 package mcp
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -180,6 +182,21 @@ func (c *HTTPClient) postRPC(
 	payload rpcRequest,
 	expectResponse bool,
 ) (json.RawMessage, http.Header, error) {
+	switch normalizeServiceTransport(service.Transport) {
+	case ServiceTransportSSE:
+		return c.postRPCSSE(ctx, service, sessionID, payload, expectResponse)
+	default:
+		return c.postRPCStreamable(ctx, service, sessionID, payload, expectResponse)
+	}
+}
+
+func (c *HTTPClient) postRPCStreamable(
+	ctx context.Context,
+	service Service,
+	sessionID string,
+	payload rpcRequest,
+	expectResponse bool,
+) (json.RawMessage, http.Header, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, nil, fmt.Errorf("marshal rpc request: %w", err)
@@ -217,15 +234,245 @@ func (c *HTTPClient) postRPC(
 		return nil, resp.Header, nil
 	}
 
-	var rpcResp rpcResponse
-	if err := json.Unmarshal(respBytes, &rpcResp); err != nil {
-		return nil, resp.Header, fmt.Errorf("decode rpc response: %w", err)
+	rpcResp, err := decodeRPCResponse(respBytes, resp.Header.Get("Content-Type"))
+	if err != nil {
+		return nil, resp.Header, err
 	}
 	if rpcResp.Error != nil {
 		return nil, resp.Header, fmt.Errorf("rpc error %d: %s", rpcResp.Error.Code, rpcResp.Error.Message)
 	}
 
 	return rpcResp.Result, resp.Header, nil
+}
+
+func (c *HTTPClient) postRPCSSE(
+	ctx context.Context,
+	service Service,
+	sessionID string,
+	payload rpcRequest,
+	expectResponse bool,
+) (json.RawMessage, http.Header, error) {
+	streamReq, err := http.NewRequestWithContext(ctx, http.MethodGet, service.Endpoint, nil)
+	if err != nil {
+		return nil, nil, fmt.Errorf("build sse request: %w", err)
+	}
+	streamReq.Header.Set("Accept", "text/event-stream")
+	streamReq.Header.Set("MCP-Protocol-Version", c.protocolVersion)
+	if service.AuthToken != "" {
+		streamReq.Header.Set("Authorization", "Bearer "+service.AuthToken)
+	}
+	if sessionID != "" {
+		streamReq.Header.Set("Mcp-Session-Id", sessionID)
+	}
+
+	streamResp, err := c.http.Do(streamReq)
+	if err != nil {
+		return nil, nil, fmt.Errorf("open sse stream: %w", err)
+	}
+	defer streamResp.Body.Close()
+	if streamResp.StatusCode >= http.StatusBadRequest {
+		body, _ := io.ReadAll(streamResp.Body)
+		return nil, streamResp.Header, fmt.Errorf("mcp status %d: %s", streamResp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	reader := bufio.NewReader(streamResp.Body)
+	postEndpoint := service.Endpoint
+	for {
+		event, readErr := readSSEEvent(reader)
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			return nil, streamResp.Header, fmt.Errorf("read sse event: %w", readErr)
+		}
+		if strings.EqualFold(strings.TrimSpace(event.Name), "endpoint") {
+			resolved, resolveErr := resolveSSEEndpoint(service.Endpoint, strings.TrimSpace(event.Data))
+			if resolveErr != nil {
+				return nil, streamResp.Header, resolveErr
+			}
+			postEndpoint = resolved
+			break
+		}
+	}
+
+	reqBody, err := json.Marshal(payload)
+	if err != nil {
+		return nil, streamResp.Header, fmt.Errorf("marshal rpc request: %w", err)
+	}
+
+	postReq, err := http.NewRequestWithContext(ctx, http.MethodPost, postEndpoint, bytes.NewReader(reqBody))
+	if err != nil {
+		return nil, streamResp.Header, fmt.Errorf("build rpc request: %w", err)
+	}
+	postReq.Header.Set("Content-Type", "application/json")
+	postReq.Header.Set("Accept", "application/json, text/event-stream")
+	postReq.Header.Set("MCP-Protocol-Version", c.protocolVersion)
+	if service.AuthToken != "" {
+		postReq.Header.Set("Authorization", "Bearer "+service.AuthToken)
+	}
+	if sessionID != "" {
+		postReq.Header.Set("Mcp-Session-Id", sessionID)
+	}
+
+	postResp, err := c.http.Do(postReq)
+	if err != nil {
+		return nil, streamResp.Header, fmt.Errorf("send rpc request: %w", err)
+	}
+	defer postResp.Body.Close()
+	postBytes, err := io.ReadAll(postResp.Body)
+	if err != nil {
+		return nil, mergeHeaders(postResp.Header, streamResp.Header), fmt.Errorf("read rpc response: %w", err)
+	}
+	if postResp.StatusCode >= http.StatusBadRequest {
+		return nil, mergeHeaders(postResp.Header, streamResp.Header), fmt.Errorf("mcp status %d: %s", postResp.StatusCode, strings.TrimSpace(string(postBytes)))
+	}
+	if !expectResponse {
+		return nil, mergeHeaders(postResp.Header, streamResp.Header), nil
+	}
+
+	if len(bytes.TrimSpace(postBytes)) > 0 {
+		rpcResp, decodeErr := decodeRPCResponse(postBytes, postResp.Header.Get("Content-Type"))
+		if decodeErr == nil {
+			if payload.ID == nil || sameRPCID(payload.ID, rpcResp.ID) {
+				if rpcResp.Error != nil {
+					return nil, mergeHeaders(postResp.Header, streamResp.Header), fmt.Errorf("rpc error %d: %s", rpcResp.Error.Code, rpcResp.Error.Message)
+				}
+				return rpcResp.Result, mergeHeaders(postResp.Header, streamResp.Header), nil
+			}
+		}
+	}
+
+	rpcResp, err := waitRPCResponseFromSSE(reader, payload.ID)
+	if err != nil {
+		return nil, mergeHeaders(postResp.Header, streamResp.Header), err
+	}
+	if rpcResp.Error != nil {
+		return nil, mergeHeaders(postResp.Header, streamResp.Header), fmt.Errorf("rpc error %d: %s", rpcResp.Error.Code, rpcResp.Error.Message)
+	}
+	return rpcResp.Result, mergeHeaders(postResp.Header, streamResp.Header), nil
+}
+
+func decodeRPCResponse(respBytes []byte, contentType string) (rpcResponse, error) {
+	trimmed := bytes.TrimSpace(respBytes)
+	if len(trimmed) == 0 {
+		return rpcResponse{}, fmt.Errorf("decode rpc response: empty response")
+	}
+	if strings.Contains(strings.ToLower(contentType), "text/event-stream") ||
+		bytes.HasPrefix(trimmed, []byte("event:")) ||
+		bytes.HasPrefix(trimmed, []byte("data:")) {
+		return decodeRPCResponseFromSSE(trimmed, nil)
+	}
+
+	var rpcResp rpcResponse
+	if err := json.Unmarshal(trimmed, &rpcResp); err != nil {
+		return rpcResponse{}, fmt.Errorf("decode rpc response: %w", err)
+	}
+	return rpcResp, nil
+}
+
+func decodeRPCResponseFromSSE(payload []byte, expectID any) (rpcResponse, error) {
+	reader := bufio.NewReader(bytes.NewReader(payload))
+	return waitRPCResponseFromSSE(reader, expectID)
+}
+
+func waitRPCResponseFromSSE(reader *bufio.Reader, expectID any) (rpcResponse, error) {
+	for {
+		event, err := readSSEEvent(reader)
+		if err != nil {
+			if err == io.EOF {
+				return rpcResponse{}, fmt.Errorf("decode rpc response: no rpc message in sse stream")
+			}
+			return rpcResponse{}, fmt.Errorf("decode rpc response: %w", err)
+		}
+
+		data := strings.TrimSpace(event.Data)
+		if data == "" {
+			continue
+		}
+
+		var rpcResp rpcResponse
+		if unmarshalErr := json.Unmarshal([]byte(data), &rpcResp); unmarshalErr != nil {
+			continue
+		}
+		if expectID != nil && !sameRPCID(expectID, rpcResp.ID) {
+			continue
+		}
+		return rpcResp, nil
+	}
+}
+
+type sseEvent struct {
+	Name string
+	Data string
+}
+
+func readSSEEvent(reader *bufio.Reader) (sseEvent, error) {
+	var event sseEvent
+	hasData := false
+
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil && err != io.EOF {
+			return sseEvent{}, err
+		}
+		line = strings.TrimRight(line, "\r\n")
+
+		if line == "" {
+			if hasData {
+				return event, nil
+			}
+		} else if strings.HasPrefix(line, ":") {
+			// ignore comment/heartbeat
+		} else if strings.HasPrefix(line, "event:") {
+			event.Name = strings.TrimSpace(strings.TrimPrefix(line, "event:"))
+			hasData = true
+		} else if strings.HasPrefix(line, "data:") {
+			part := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+			if event.Data == "" {
+				event.Data = part
+			} else {
+				event.Data += "\n" + part
+			}
+			hasData = true
+		}
+
+		if err == io.EOF {
+			if hasData {
+				return event, nil
+			}
+			return sseEvent{}, io.EOF
+		}
+	}
+}
+
+func resolveSSEEndpoint(baseEndpoint, eventData string) (string, error) {
+	if eventData == "" {
+		return "", fmt.Errorf("empty sse endpoint event")
+	}
+	baseURL, err := url.Parse(baseEndpoint)
+	if err != nil {
+		return "", fmt.Errorf("parse base endpoint: %w", err)
+	}
+	ref, err := url.Parse(eventData)
+	if err != nil {
+		return "", fmt.Errorf("parse sse endpoint: %w", err)
+	}
+	return baseURL.ResolveReference(ref).String(), nil
+}
+
+func sameRPCID(a, b any) bool {
+	return strings.TrimSpace(fmt.Sprintf("%v", a)) == strings.TrimSpace(fmt.Sprintf("%v", b))
+}
+
+func mergeHeaders(primary, secondary http.Header) http.Header {
+	merged := make(http.Header)
+	for key, values := range secondary {
+		merged[key] = append([]string(nil), values...)
+	}
+	for key, values := range primary {
+		merged[key] = append([]string(nil), values...)
+	}
+	return merged
 }
 
 func (c *HTTPClient) updateSessionFromHeaders(serviceID string, headers http.Header) {

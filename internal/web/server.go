@@ -50,6 +50,7 @@ type mcpServiceView struct {
 	ID          string
 	Name        string
 	Endpoint    string
+	Transport   string
 	Enabled     bool
 	UpdatedAt   string
 	Connected   bool
@@ -223,6 +224,7 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 				ID:        status.Service.ID,
 				Name:      status.Service.Name,
 				Endpoint:  status.Service.Endpoint,
+				Transport: displayTransport(status.Service.Transport),
 				Enabled:   status.Service.Enabled,
 				UpdatedAt: status.Service.UpdatedAt.Format("2006-01-02 15:04:05"),
 			}
@@ -270,9 +272,10 @@ func (s *Server) handleSettingsMCPSave(w http.ResponseWriter, r *http.Request) {
 	}
 
 	service := mcp.Service{
-		ID:        strings.TrimSpace(r.FormValue("id")),
+		ID:        "",
 		Name:      strings.TrimSpace(r.FormValue("name")),
 		Endpoint:  strings.TrimSpace(r.FormValue("endpoint")),
+		Transport: strings.TrimSpace(r.FormValue("transport")),
 		AuthToken: strings.TrimSpace(r.FormValue("auth_token")),
 		Enabled:   r.FormValue("enabled") == "on",
 	}
@@ -336,7 +339,7 @@ func (s *Server) handleSettingsSkillSave(w http.ResponseWriter, r *http.Request)
 	}
 
 	skill := mcp.Skill{
-		ID:      strings.TrimSpace(r.FormValue("id")),
+		ID:      "",
 		Name:    strings.TrimSpace(r.FormValue("name")),
 		Prompt:  strings.TrimSpace(r.FormValue("prompt")),
 		Enabled: r.FormValue("enabled") == "on",
@@ -407,4 +410,13 @@ func (s *Server) redirectSettings(w http.ResponseWriter, r *http.Request, sectio
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("ok"))
+}
+
+func displayTransport(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "sse":
+		return "sse"
+	default:
+		return "streamableHttp"
+	}
 }
