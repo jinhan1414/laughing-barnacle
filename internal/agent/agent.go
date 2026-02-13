@@ -18,21 +18,29 @@ type Config struct {
 	CompressionTriggerChars    int
 	KeepRecentAfterCompression int
 	MaxCompressionLoopsPerTurn int
+	MaxToolCallRounds          int
 	SystemPrompt               string
 	CompressionSystemPrompt    string
+}
+
+type ToolProvider interface {
+	ListTools(ctx context.Context) ([]llm.ToolDefinition, error)
+	CallTool(ctx context.Context, call llm.ToolCall) (string, error)
 }
 
 type Agent struct {
 	cfg   Config
 	llm   llm.Client
+	tools ToolProvider
 	store *conversation.Store
 	mu    sync.Mutex
 }
 
-func New(cfg Config, store *conversation.Store, llmClient llm.Client) *Agent {
+func New(cfg Config, store *conversation.Store, llmClient llm.Client, tools ToolProvider) *Agent {
 	return &Agent{
 		cfg:   cfg,
 		llm:   llmClient,
+		tools: tools,
 		store: store,
 	}
 }
@@ -149,16 +157,70 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 		})
 	}
 
-	resp, err := a.llm.Chat(ctx, llm.ChatRequest{
-		Purpose:     "chat_reply",
-		Model:       a.cfg.Model,
-		Messages:    requestMessages,
-		Temperature: a.cfg.Temperature,
-	})
-	if err != nil {
-		return "", fmt.Errorf("generate reply failed: %w", err)
+	if a.tools == nil {
+		resp, err := a.llm.Chat(ctx, llm.ChatRequest{
+			Purpose:     "chat_reply",
+			Model:       a.cfg.Model,
+			Messages:    requestMessages,
+			Temperature: a.cfg.Temperature,
+		})
+		if err != nil {
+			return "", fmt.Errorf("generate reply failed: %w", err)
+		}
+		return resp.Content, nil
 	}
-	return resp.Content, nil
+
+	toolDefs, err := a.tools.ListTools(ctx)
+	if err != nil {
+		toolDefs = nil
+	}
+
+	maxRounds := a.cfg.MaxToolCallRounds
+	if maxRounds <= 0 {
+		maxRounds = 1
+	}
+
+	for i := 0; i < maxRounds; i++ {
+		resp, err := a.llm.Chat(ctx, llm.ChatRequest{
+			Purpose:     "chat_reply",
+			Model:       a.cfg.Model,
+			Messages:    requestMessages,
+			Tools:       toolDefs,
+			Temperature: a.cfg.Temperature,
+		})
+		if err != nil {
+			return "", fmt.Errorf("generate reply failed: %w", err)
+		}
+
+		if len(resp.ToolCalls) == 0 {
+			return resp.Content, nil
+		}
+
+		requestMessages = append(requestMessages, llm.Message{
+			Role:      "assistant",
+			Content:   resp.Content,
+			ToolCalls: resp.ToolCalls,
+		})
+
+		for _, call := range resp.ToolCalls {
+			result, callErr := a.tools.CallTool(ctx, call)
+			if callErr != nil {
+				result = "tool execution error: " + callErr.Error()
+			}
+
+			toolCallID := strings.TrimSpace(call.ID)
+			if toolCallID == "" {
+				toolCallID = fmt.Sprintf("tool_call_%d_%s", i, call.Function.Name)
+			}
+			requestMessages = append(requestMessages, llm.Message{
+				Role:       "tool",
+				ToolCallID: toolCallID,
+				Content:    result,
+			})
+		}
+	}
+
+	return "", fmt.Errorf("tool call rounds exceeded %d", maxRounds)
 }
 
 func renderConversation(messages []conversation.Message) string {

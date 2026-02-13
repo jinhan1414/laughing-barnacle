@@ -13,6 +13,7 @@ type mockLLM struct {
 	mu        sync.Mutex
 	calls     []llm.ChatRequest
 	responses map[string][]string
+	toolCalls map[string][][]llm.ToolCall
 }
 
 func (m *mockLLM) Chat(_ context.Context, req llm.ChatRequest) (llm.ChatResponse, error) {
@@ -26,7 +27,38 @@ func (m *mockLLM) Chat(_ context.Context, req llm.ChatRequest) (llm.ChatResponse
 	}
 	out := queue[0]
 	m.responses[req.Purpose] = queue[1:]
-	return llm.ChatResponse{Content: out}, nil
+	var toolCalls []llm.ToolCall
+	if tcQueue := m.toolCalls[req.Purpose]; len(tcQueue) > 0 {
+		toolCalls = tcQueue[0]
+		m.toolCalls[req.Purpose] = tcQueue[1:]
+	}
+
+	return llm.ChatResponse{Content: out, ToolCalls: toolCalls}, nil
+}
+
+type mockTools struct {
+	mu       sync.Mutex
+	listed   []llm.ToolDefinition
+	calls    []llm.ToolCall
+	response map[string]string
+}
+
+func (m *mockTools) ListTools(_ context.Context) ([]llm.ToolDefinition, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.listed, nil
+}
+
+func (m *mockTools) CallTool(_ context.Context, call llm.ToolCall) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.calls = append(m.calls, call)
+	key := call.Function.Name + ":" + call.Function.Arguments
+	if out, ok := m.response[key]; ok {
+		return out, nil
+	}
+	return "{}", nil
 }
 
 func TestHandleUserMessage_WithAutoCompression(t *testing.T) {
@@ -46,9 +78,10 @@ func TestHandleUserMessage_WithAutoCompression(t *testing.T) {
 		CompressionTriggerChars:    0,
 		KeepRecentAfterCompression: 1,
 		MaxCompressionLoopsPerTurn: 2,
+		MaxToolCallRounds:          4,
 		SystemPrompt:               "system",
 		CompressionSystemPrompt:    "compressor",
-	}, store, fakeLLM)
+	}, store, fakeLLM, nil)
 
 	reply, err := agentSvc.HandleUserMessage(context.Background(), "new input")
 	if err != nil {
@@ -96,9 +129,10 @@ func TestHandleUserMessage_WithoutCompression(t *testing.T) {
 		CompressionTriggerChars:    99999,
 		KeepRecentAfterCompression: 1,
 		MaxCompressionLoopsPerTurn: 1,
+		MaxToolCallRounds:          4,
 		SystemPrompt:               "system",
 		CompressionSystemPrompt:    "compressor",
-	}, store, fakeLLM)
+	}, store, fakeLLM, nil)
 
 	reply, err := agentSvc.HandleUserMessage(context.Background(), "hello")
 	if err != nil {
@@ -109,5 +143,71 @@ func TestHandleUserMessage_WithoutCompression(t *testing.T) {
 	}
 	if len(fakeLLM.calls) != 1 || fakeLLM.calls[0].Purpose != "chat_reply" {
 		t.Fatalf("unexpected calls: %+v", fakeLLM.calls)
+	}
+}
+
+func TestHandleUserMessage_WithToolCalls(t *testing.T) {
+	store := conversation.NewStore()
+	fakeLLM := &mockLLM{
+		responses: map[string][]string{
+			"chat_reply": {"", "weather ready"},
+		},
+		toolCalls: map[string][][]llm.ToolCall{
+			"chat_reply": {
+				{
+					{
+						ID:   "call_1",
+						Type: "function",
+						Function: llm.ToolFunctionCall{
+							Name:      "weather__query",
+							Arguments: `{"city":"beijing"}`,
+						},
+					},
+				},
+				nil,
+			},
+		},
+	}
+	fakeTools := &mockTools{
+		listed: []llm.ToolDefinition{
+			{
+				Type: "function",
+				Function: llm.ToolFunctionDefinition{
+					Name: "weather__query",
+				},
+			},
+		},
+		response: map[string]string{
+			`weather__query:{"city":"beijing"}`: `{"temp":18}`,
+		},
+	}
+
+	agentSvc := New(Config{
+		Model:                      "test-model",
+		MaxRecentMessages:          10,
+		CompressionTriggerMessages: 99,
+		CompressionTriggerChars:    99999,
+		KeepRecentAfterCompression: 1,
+		MaxCompressionLoopsPerTurn: 1,
+		MaxToolCallRounds:          4,
+		SystemPrompt:               "system",
+		CompressionSystemPrompt:    "compressor",
+	}, store, fakeLLM, fakeTools)
+
+	reply, err := agentSvc.HandleUserMessage(context.Background(), "今天北京天气")
+	if err != nil {
+		t.Fatalf("HandleUserMessage error: %v", err)
+	}
+	if reply != "weather ready" {
+		t.Fatalf("unexpected reply: %s", reply)
+	}
+	if len(fakeLLM.calls) != 2 {
+		t.Fatalf("expected 2 llm calls, got %d", len(fakeLLM.calls))
+	}
+	if len(fakeLLM.calls[0].Tools) != 1 {
+		t.Fatalf("expected tools to be passed to llm")
+	}
+	if len(fakeTools.calls) != 1 || fakeTools.calls[0].Function.Name != "weather__query" {
+		t.Fatalf("unexpected tool calls: %+v", fakeTools.calls)
 	}
 }

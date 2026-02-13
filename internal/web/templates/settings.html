@@ -1,0 +1,327 @@
+{{define "settings.html"}}
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>系统配置</title>
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --panel: #ffffff;
+      --text: #102340;
+      --muted: #556b8a;
+      --line: #d6deeb;
+      --accent: #0e7490;
+      --ok: #0f766e;
+      --warn: #b91c1c;
+      --soft: #eef5ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "IBM Plex Sans", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: radial-gradient(circle at top left, #e9f3ff 0, var(--bg) 48%);
+      color: var(--text);
+    }
+    .container {
+      max-width: 1180px;
+      margin: 24px auto;
+      padding: 0 16px 24px;
+    }
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+    .topbar a {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 600;
+      margin-left: 14px;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      gap: 16px;
+    }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--panel);
+      box-shadow: 0 10px 24px rgba(16, 35, 64, 0.07);
+    }
+    .sidebar {
+      padding: 12px;
+    }
+    .nav-item {
+      display: block;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px;
+      margin-bottom: 10px;
+      text-decoration: none;
+      color: inherit;
+      background: #fff;
+    }
+    .nav-item.active {
+      border-color: var(--accent);
+      background: var(--soft);
+    }
+    .nav-title {
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .nav-desc {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .main {
+      padding: 16px;
+    }
+    .flash {
+      border-radius: 10px;
+      padding: 10px 12px;
+      margin-bottom: 12px;
+      font-size: 14px;
+    }
+    .flash.success {
+      border: 1px solid #8dd4b8;
+      background: #ecfdf5;
+      color: #065f46;
+    }
+    .flash.error {
+      border: 1px solid #f5b1b1;
+      background: #fff1f2;
+      color: #9f1239;
+    }
+    h2 {
+      margin: 0 0 10px;
+    }
+    .hint {
+      color: var(--muted);
+      margin-bottom: 16px;
+      line-height: 1.6;
+    }
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    label {
+      display: grid;
+      gap: 6px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    input[type="text"], input[type="url"], input[type="password"] {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px;
+      font: inherit;
+      color: var(--text);
+      background: #fff;
+    }
+    .full {
+      grid-column: 1 / -1;
+    }
+    .action-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    button {
+      border: none;
+      border-radius: 8px;
+      padding: 10px 14px;
+      background: var(--accent);
+      color: #fff;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button.ghost {
+      background: #fff;
+      color: var(--text);
+      border: 1px solid var(--line);
+    }
+    button.danger {
+      background: var(--warn);
+    }
+    .service-list {
+      display: grid;
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .service {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px;
+      background: #fff;
+    }
+    .service-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+    }
+    .service-title {
+      font-weight: 700;
+    }
+    .status {
+      font-size: 12px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: #fff;
+    }
+    .status.ok {
+      border-color: #8dd4b8;
+      color: var(--ok);
+      background: #ecfdf5;
+    }
+    .status.err {
+      border-color: #f5b1b1;
+      color: var(--warn);
+      background: #fff1f2;
+    }
+    .meta {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+      margin-bottom: 8px;
+      word-break: break-all;
+    }
+    .service-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .placeholder {
+      border: 1px dashed var(--line);
+      border-radius: 12px;
+      padding: 14px;
+      color: var(--muted);
+      background: #fff;
+      line-height: 1.6;
+    }
+    @media (max-width: 960px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+      .form-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="topbar">
+      <h1>系统配置</h1>
+      <div>
+        <a href="/chat">聊天</a>
+        <a href="/logs">日志</a>
+      </div>
+    </div>
+
+    <div class="layout">
+      <div class="card sidebar">
+        {{range .Sections}}
+          <a class="nav-item {{if eq $.ActiveSection .Key}}active{{end}}" href="/settings?section={{.Key}}">
+            <div class="nav-title">{{.Title}}</div>
+            <div class="nav-desc">{{.Description}}</div>
+          </a>
+        {{end}}
+      </div>
+
+      <div class="card main">
+        {{if .Success}}<div class="flash success">{{.Success}}</div>{{end}}
+        {{if .Error}}<div class="flash error">错误: {{.Error}}</div>{{end}}
+
+        {{if eq .ActiveSection "mcp"}}
+          <h2>MCP 服务配置</h2>
+          <div class="hint">
+            Agent 的工具调用只会走 MCP。配置并启用服务后，Agent 会自动发现该服务提供的工具。
+          </div>
+
+          <form method="post" action="/settings/mcp/save">
+            <div class="form-grid">
+              <label>
+                服务 ID
+                <input type="text" name="id" placeholder="例如：search" required>
+              </label>
+              <label>
+                服务名称
+                <input type="text" name="name" placeholder="例如：Search MCP">
+              </label>
+              <label class="full">
+                Endpoint
+                <input type="url" name="endpoint" placeholder="https://example.com/mcp" required>
+              </label>
+              <label class="full">
+                鉴权 Token（留空表示不变）
+                <input type="password" name="auth_token" placeholder="Bearer token">
+              </label>
+              <label class="full">
+                <span style="display:flex;align-items:center;gap:8px;color:var(--text)">
+                  <input type="checkbox" name="enabled">
+                  保存后立即启用
+                </span>
+              </label>
+            </div>
+            <div class="action-row">
+              <button type="submit">新增/更新服务</button>
+            </div>
+          </form>
+
+          <div class="service-list">
+            {{if .Services}}
+              {{range .Services}}
+                <div class="service">
+                  <div class="service-head">
+                    <div class="service-title">{{.Name}} <small>({{.ID}})</small></div>
+                    <div class="status {{if .Connected}}ok{{else if .Enabled}}err{{end}}">{{.StatusLabel}}</div>
+                  </div>
+                  <div class="meta">
+                    Endpoint: {{.Endpoint}}<br>
+                    已发现工具数: {{.ToolCount}}<br>
+                    最后更新: {{.UpdatedAt}}
+                    {{if .StatusError}}<br>错误详情: {{.StatusError}}{{end}}
+                  </div>
+
+                  <div class="service-actions">
+                    <form method="post" action="/settings/mcp/toggle">
+                      <input type="hidden" name="id" value="{{.ID}}">
+                      <input type="hidden" name="enabled" value="{{if .Enabled}}false{{else}}true{{end}}">
+                      <button class="ghost" type="submit">{{if .Enabled}}禁用{{else}}启用{{end}}</button>
+                    </form>
+                    <form method="post" action="/settings/mcp/delete" onsubmit="return confirm('确认删除服务 {{.ID}} ?')">
+                      <input type="hidden" name="id" value="{{.ID}}">
+                      <button class="danger" type="submit">删除</button>
+                    </form>
+                  </div>
+                </div>
+              {{end}}
+            {{else}}
+              <div class="placeholder">暂无 MCP 服务。先在上方添加一个服务并启用。</div>
+            {{end}}
+          </div>
+        {{else}}
+          <h2>{{.ActiveSection}} 配置</h2>
+          <div class="placeholder">
+            该配置分组已预留，后续可无缝扩展并复用当前左侧分类 + 右侧配置区布局。
+          </div>
+        {{end}}
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+{{end}}

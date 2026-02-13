@@ -44,16 +44,18 @@ func NewClient(cfg Config) *Client {
 }
 
 type chatRequestPayload struct {
-	Model       string        `json:"model"`
-	Messages    []llm.Message `json:"messages"`
-	Temperature float64       `json:"temperature,omitempty"`
-	Stream      bool          `json:"stream"`
+	Model       string               `json:"model"`
+	Messages    []llm.Message        `json:"messages"`
+	Tools       []llm.ToolDefinition `json:"tools,omitempty"`
+	Temperature float64              `json:"temperature,omitempty"`
+	Stream      bool                 `json:"stream"`
 }
 
 type chatResponsePayload struct {
 	Choices []struct {
 		Message struct {
-			Content any `json:"content"`
+			Content   any            `json:"content"`
+			ToolCalls []llm.ToolCall `json:"tool_calls"`
 		} `json:"message"`
 	} `json:"choices"`
 }
@@ -69,6 +71,7 @@ func (c *Client) Chat(ctx context.Context, req llm.ChatRequest) (llm.ChatRespons
 	payload := chatRequestPayload{
 		Model:       req.Model,
 		Messages:    req.Messages,
+		Tools:       req.Tools,
 		Temperature: req.Temperature,
 		Stream:      false,
 	}
@@ -122,8 +125,9 @@ func (c *Client) Chat(ctx context.Context, req llm.ChatRequest) (llm.ChatRespons
 	}
 
 	content := extractContent(parsed.Choices[0].Message.Content)
-	if strings.TrimSpace(content) == "" {
-		err = fmt.Errorf("empty content in response")
+	toolCalls := parsed.Choices[0].Message.ToolCalls
+	if strings.TrimSpace(content) == "" && len(toolCalls) == 0 {
+		err = fmt.Errorf("empty content and tool_calls in response")
 		c.appendLog(req, payloadBytes, respBody, httpResp.StatusCode, time.Since(start), err)
 		return llm.ChatResponse{}, err
 	}
@@ -132,6 +136,7 @@ func (c *Client) Chat(ctx context.Context, req llm.ChatRequest) (llm.ChatRespons
 
 	return llm.ChatResponse{
 		Content:     content,
+		ToolCalls:   toolCalls,
 		RawResponse: string(respBody),
 	}, nil
 }

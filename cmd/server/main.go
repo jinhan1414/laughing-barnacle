@@ -15,6 +15,7 @@ import (
 	"laughing-barnacle/internal/conversation"
 	"laughing-barnacle/internal/llm/cerber"
 	"laughing-barnacle/internal/llmlog"
+	"laughing-barnacle/internal/mcp"
 	"laughing-barnacle/internal/web"
 )
 
@@ -32,6 +33,12 @@ func run() error {
 
 	logStore := llmlog.NewStore(cfg.LLMLogLimit)
 	convStore := conversation.NewStore()
+	mcpStore, err := mcp.NewStore(cfg.SettingsFile)
+	if err != nil {
+		return err
+	}
+	mcpHTTPClient := mcp.NewHTTPClient(cfg.MCPRequestTimeout, cfg.MCPProtocolVersion)
+	toolProvider := mcp.NewToolProvider(mcpStore, mcpHTTPClient, cfg.MCPToolCacheTTL)
 
 	llmClient := cerber.NewClient(cerber.Config{
 		BaseURL:  cfg.CerberBaseURL,
@@ -48,11 +55,12 @@ func run() error {
 		CompressionTriggerChars:    cfg.CompressionTriggerChars,
 		KeepRecentAfterCompression: cfg.KeepRecentAfterCompression,
 		MaxCompressionLoopsPerTurn: cfg.MaxCompressionLoopsPerTurn,
+		MaxToolCallRounds:          cfg.MaxToolCallRounds,
 		SystemPrompt:               cfg.AgentSystemPrompt,
 		CompressionSystemPrompt:    cfg.CompressionSystemPrompt,
-	}, convStore, llmClient)
+	}, convStore, llmClient, toolProvider)
 
-	webServer, err := web.NewServer(agentSvc, convStore, logStore)
+	webServer, err := web.NewServer(agentSvc, convStore, logStore, mcpStore, toolProvider)
 	if err != nil {
 		return err
 	}
