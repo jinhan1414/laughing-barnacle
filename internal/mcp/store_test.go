@@ -103,3 +103,71 @@ func TestStoreSkillCRUDAndPrompts(t *testing.T) {
 		t.Fatalf("expected no skills after delete")
 	}
 }
+
+func TestStoreUpsertService_AutoGeneratesIDWhenMissing(t *testing.T) {
+	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	store, err := NewStore(settingsPath)
+	if err != nil {
+		t.Fatalf("NewStore error: %v", err)
+	}
+
+	if err := store.UpsertService(Service{
+		Name:     "Search MCP",
+		Endpoint: "https://example.com/mcp/search",
+		Enabled:  true,
+	}); err != nil {
+		t.Fatalf("UpsertService error: %v", err)
+	}
+	if err := store.UpsertService(Service{
+		Name:     "Search MCP",
+		Endpoint: "https://example.com/mcp/search2",
+		Enabled:  true,
+	}); err != nil {
+		t.Fatalf("UpsertService second insert error: %v", err)
+	}
+
+	services := store.ListServices()
+	if len(services) != 2 {
+		t.Fatalf("expected 2 services, got %d", len(services))
+	}
+	if services[0].ID == "" || services[1].ID == "" {
+		t.Fatalf("expected generated ids, got %+v", services)
+	}
+	if services[0].ID == services[1].ID {
+		t.Fatalf("expected unique generated ids, got %q", services[0].ID)
+	}
+}
+
+func TestStoreUpsertSkill_AutoGeneratesIDWhenMissing(t *testing.T) {
+	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	store, err := NewStore(settingsPath)
+	if err != nil {
+		t.Fatalf("NewStore error: %v", err)
+	}
+
+	if err := store.UpsertSkill(Skill{
+		Name:    "Research Mode",
+		Prompt:  "先检索再回答",
+		Enabled: true,
+	}); err != nil {
+		t.Fatalf("UpsertSkill error: %v", err)
+	}
+	if err := store.UpsertSkill(Skill{
+		Name:    "Research Mode",
+		Prompt:  "先检索再回答，附来源",
+		Enabled: false,
+	}); err != nil {
+		t.Fatalf("UpsertSkill second insert error: %v", err)
+	}
+
+	skills := store.ListSkills()
+	if len(skills) != 2 {
+		t.Fatalf("expected 2 skills, got %d", len(skills))
+	}
+	if skills[0].ID == "" || skills[1].ID == "" {
+		t.Fatalf("expected generated ids, got %+v", skills)
+	}
+	if skills[0].ID == skills[1].ID {
+		t.Fatalf("expected unique generated ids, got %q", skills[0].ID)
+	}
+}

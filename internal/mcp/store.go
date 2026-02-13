@@ -94,15 +94,18 @@ func (s *Store) UpsertService(service Service) error {
 	service.Name = strings.TrimSpace(service.Name)
 	service.Endpoint = strings.TrimSpace(service.Endpoint)
 	service.AuthToken = strings.TrimSpace(service.AuthToken)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if service.ID == "" {
+		service.ID = generateUniqueServiceID(s.cfg.MCP.Services, service.Name, service.Endpoint)
+	}
 	if service.Name == "" {
 		service.Name = service.ID
 	}
 	if err := validateService(service); err != nil {
 		return err
 	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	now := time.Now()
 	service.UpdatedAt = now
@@ -195,15 +198,18 @@ func (s *Store) UpsertSkill(skill Skill) error {
 	skill.ID = strings.TrimSpace(skill.ID)
 	skill.Name = strings.TrimSpace(skill.Name)
 	skill.Prompt = strings.TrimSpace(skill.Prompt)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if skill.ID == "" {
+		skill.ID = generateUniqueSkillID(s.cfg.Skills.Items, skill.Name, skill.Prompt)
+	}
 	if skill.Name == "" {
 		skill.Name = skill.ID
 	}
 	if err := validateSkill(skill); err != nil {
 		return err
 	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	skill.UpdatedAt = time.Now()
 	updated := false
@@ -346,4 +352,79 @@ func validateSkill(skill Skill) error {
 		return fmt.Errorf("skill prompt is required")
 	}
 	return nil
+}
+
+func generateUniqueServiceID(existing []Service, name, endpoint string) string {
+	used := make(map[string]struct{}, len(existing))
+	for _, svc := range existing {
+		used[svc.ID] = struct{}{}
+	}
+	return generateUniqueID(used, []string{name, endpoint}, "service")
+}
+
+func generateUniqueSkillID(existing []Skill, name, prompt string) string {
+	used := make(map[string]struct{}, len(existing))
+	for _, skill := range existing {
+		used[skill.ID] = struct{}{}
+	}
+	return generateUniqueID(used, []string{name, prompt}, "skill")
+}
+
+func generateUniqueID(used map[string]struct{}, candidates []string, fallback string) string {
+	base := ""
+	for _, candidate := range candidates {
+		base = sanitizeIdentifier(candidate)
+		if base != "" {
+			break
+		}
+	}
+	if base == "" {
+		base = fallback
+	}
+	if _, exists := used[base]; !exists {
+		return base
+	}
+	for i := 2; ; i++ {
+		next := fmt.Sprintf("%s-%d", base, i)
+		if _, exists := used[next]; !exists {
+			return next
+		}
+	}
+}
+
+func sanitizeIdentifier(input string) string {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return ""
+	}
+
+	var b strings.Builder
+	lastDash := false
+	for _, r := range input {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+			lastDash = false
+		case r >= 'A' && r <= 'Z':
+			b.WriteRune(r + ('a' - 'A'))
+			lastDash = false
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+			lastDash = false
+		case r == '-' || r == '_':
+			if b.Len() == 0 || lastDash {
+				continue
+			}
+			b.WriteRune('-')
+			lastDash = true
+		default:
+			if b.Len() == 0 || lastDash {
+				continue
+			}
+			b.WriteRune('-')
+			lastDash = true
+		}
+	}
+
+	return strings.Trim(b.String(), "-")
 }

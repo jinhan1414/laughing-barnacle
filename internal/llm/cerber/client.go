@@ -158,13 +158,25 @@ func (c *Client) appendLog(
 		Model:      req.Model,
 		DurationMS: duration.Milliseconds(),
 		StatusCode: statusCode,
-		Request:    string(requestBody),
-		Response:   string(responseBody),
+		Request:    prettyJSONForLog(requestBody),
+		Response:   prettyJSONForLog(responseBody),
 	}
 	if err != nil {
 		entry.Error = err.Error()
 	}
 	c.logs.Add(entry)
+}
+
+func prettyJSONForLog(raw []byte) string {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
+		return ""
+	}
+	var out bytes.Buffer
+	if err := json.Indent(&out, trimmed, "", "  "); err == nil {
+		return out.String()
+	}
+	return string(trimmed)
 }
 
 func extractContent(value any) string {

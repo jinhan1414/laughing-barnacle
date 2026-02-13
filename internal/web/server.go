@@ -281,7 +281,7 @@ func (s *Server) handleSettingsMCPSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.mcpTools.InvalidateCache()
-	s.redirectSettings(w, r, "mcp", fmt.Sprintf("MCP 服务 %s 已保存", service.ID), "")
+	s.redirectSettings(w, r, "mcp", "MCP 服务已保存", "")
 }
 
 func (s *Server) handleSettingsMCPDelete(w http.ResponseWriter, r *http.Request) {
@@ -345,7 +345,7 @@ func (s *Server) handleSettingsSkillSave(w http.ResponseWriter, r *http.Request)
 		s.redirectSettings(w, r, "skills", "", err.Error())
 		return
 	}
-	s.redirectSettings(w, r, "skills", fmt.Sprintf("Skill %s 已保存", skill.ID), "")
+	s.redirectSettings(w, r, "skills", "Skill 已保存", "")
 }
 
 func (s *Server) handleSettingsSkillDelete(w http.ResponseWriter, r *http.Request) {

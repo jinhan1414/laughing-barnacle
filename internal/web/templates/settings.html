@@ -289,14 +289,14 @@
         {{if eq .ActiveSection "mcp"}}
           <h2>MCP 服务配置</h2>
           <div class="hint">
-            Agent 的工具调用只会走 MCP。配置并启用服务后，Agent 会自动发现该服务提供的工具。
+            Agent 的工具调用只会走 MCP。配置并启用服务后，Agent 会自动发现该服务提供的工具。服务 ID 可留空，系统会自动生成。
           </div>
 
           <form method="post" action="/settings/mcp/save">
             <div class="form-grid">
               <label>
-                服务 ID
-                <input type="text" name="id" placeholder="例如：search" required>
+                服务 ID（可选）
+                <input type="text" name="id" placeholder="留空将自动生成，如 search-mcp">
               </label>
               <label>
                 服务名称
@@ -357,14 +357,14 @@
         {{else if eq .ActiveSection "skills"}}
           <h2>Skill 技能配置</h2>
           <div class="hint">
-            Skill 是可复用的 Agent 行为指令。启用后会自动注入到系统提示词，影响每轮回答策略。
+            Skill 是可复用的 Agent 行为指令。启用后会自动注入到系统提示词，影响每轮回答策略。Skill ID 可留空，系统会自动生成。
           </div>
 
           <form method="post" action="/settings/skills/save">
             <div class="form-grid">
               <label>
-                Skill ID
-                <input type="text" name="id" placeholder="例如：research" required>
+                Skill ID（可选）
+                <input type="text" name="id" placeholder="留空将自动生成，如 research-mode">
               </label>
               <label>
                 Skill 名称

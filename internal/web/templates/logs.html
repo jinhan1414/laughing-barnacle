@@ -82,8 +82,13 @@
       background: #101a2a;
       color: #e6ecff;
       overflow-x: auto;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      overflow-wrap: anywhere;
       font-size: 12px;
       line-height: 1.45;
+      max-height: 48vh;
     }
     .empty {
       border: 1px dashed var(--border);
@@ -117,6 +122,10 @@
       }
       .topbar a {
         text-align: center;
+      }
+      pre {
+        font-size: 11px;
+        max-height: 38vh;
       }
     }
   </style>

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -73,5 +74,8 @@ func TestClientChat(t *testing.T) {
 	}
 	if entries[0].Request == "" || entries[0].Response == "" {
 		t.Fatalf("request/response logs should not be empty")
+	}
+	if !strings.Contains(entries[0].Request, "\n") || !strings.Contains(entries[0].Response, "\n") {
+		t.Fatalf("request/response logs should be pretty-printed JSON")
 	}
 }
