@@ -1,0 +1,145 @@
+{{define "chat.html"}}
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Agent Chat</title>
+  <style>
+    :root {
+      --bg: #f5f6f8;
+      --card: #ffffff;
+      --text: #1a1f36;
+      --muted: #5a6178;
+      --border: #d8dce8;
+      --accent: #1868db;
+    }
+    body {
+      margin: 0;
+      font-family: "IBM Plex Sans", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: radial-gradient(circle at top right, #eef3ff 0, var(--bg) 45%);
+      color: var(--text);
+    }
+    .container {
+      max-width: 920px;
+      margin: 24px auto;
+      padding: 0 16px;
+    }
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    .topbar a {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 0 8px 20px rgba(24, 40, 72, 0.05);
+    }
+    .summary {
+      white-space: pre-wrap;
+      color: var(--muted);
+      line-height: 1.6;
+      margin-top: 8px;
+      font-size: 14px;
+    }
+    .messages {
+      margin-top: 16px;
+      display: grid;
+      gap: 10px;
+    }
+    .msg {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      background: #fff;
+    }
+    .msg .role {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .msg .content {
+      white-space: pre-wrap;
+      line-height: 1.6;
+      font-size: 15px;
+    }
+    .error {
+      margin-top: 12px;
+      color: #b42318;
+      font-weight: 600;
+    }
+    form {
+      margin-top: 16px;
+      display: grid;
+      gap: 10px;
+    }
+    textarea {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      font: inherit;
+      min-height: 90px;
+      resize: vertical;
+    }
+    button {
+      justify-self: start;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 18px;
+      background: var(--accent);
+      color: #fff;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="topbar">
+      <h1>AI Agent 聊天</h1>
+      <a href="/logs">查看 LLM 调用日志</a>
+    </div>
+
+    <div class="card">
+      <strong>自动压缩后的上下文摘要</strong>
+      <div class="summary">{{if .Summary}}{{.Summary}}{{else}}(暂无摘要){{end}}</div>
+
+      <div class="messages">
+        {{if .Messages}}
+          {{range .Messages}}
+          <div class="msg">
+            <div class="role">{{.Role}}</div>
+            <div class="content">{{.Content}}</div>
+          </div>
+          {{end}}
+        {{else}}
+          <div class="msg">
+            <div class="content">还没有消息，输入你的第一句话。</div>
+          </div>
+        {{end}}
+      </div>
+
+      {{if .Error}}
+      <div class="error">错误: {{.Error}}</div>
+      {{end}}
+
+      <form action="/chat/send" method="post">
+        <textarea name="message" placeholder="请输入消息..." required></textarea>
+        <button type="submit">发送</button>
+      </form>
+    </div>
+  </div>
+</body>
+</html>
+{{end}}

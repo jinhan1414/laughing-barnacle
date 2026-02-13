@@ -1,0 +1,134 @@
+{{define "logs.html"}}
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LLM 调用日志</title>
+  <style>
+    :root {
+      --bg: #f7f8fb;
+      --card: #ffffff;
+      --text: #1b2236;
+      --muted: #5a6178;
+      --border: #d8dce8;
+      --accent: #1868db;
+    }
+    body {
+      margin: 0;
+      font-family: "IBM Plex Sans", "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--text);
+      background: linear-gradient(180deg, #f1f4fb 0, var(--bg) 30%);
+    }
+    .container {
+      max-width: 1100px;
+      margin: 24px auto;
+      padding: 0 16px;
+    }
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    .topbar a {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .entry {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      margin-bottom: 14px;
+      overflow: hidden;
+    }
+    .head {
+      display: grid;
+      grid-template-columns: 70px 190px 180px 130px 120px 1fr;
+      gap: 8px;
+      padding: 10px 12px;
+      background: #f5f7ff;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+    }
+    .body {
+      padding: 12px;
+      display: grid;
+      gap: 12px;
+    }
+    .label {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    pre {
+      margin: 0;
+      padding: 10px;
+      border-radius: 8px;
+      background: #101a2a;
+      color: #e6ecff;
+      overflow-x: auto;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    .empty {
+      border: 1px dashed var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      color: var(--muted);
+      background: var(--card);
+    }
+    .error {
+      color: #b42318;
+      font-weight: 600;
+    }
+    @media (max-width: 900px) {
+      .head {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="topbar">
+      <h1>LLM 真实调用日志</h1>
+      <div>
+        <a href="/chat">返回聊天</a>
+      </div>
+    </div>
+
+    {{if .Entries}}
+      {{range .Entries}}
+      <div class="entry">
+        <div class="head">
+          <div>#{{.ID}}</div>
+          <div>{{.Time.Format "2006-01-02 15:04:05"}}</div>
+          <div>{{.Purpose}}</div>
+          <div>{{.Model}}</div>
+          <div>{{.DurationMS}}ms</div>
+          <div>HTTP {{.StatusCode}}</div>
+        </div>
+        <div class="body">
+          {{if .Error}}<div class="error">错误: {{.Error}}</div>{{end}}
+          <div>
+            <div class="label">Request Body</div>
+            <pre>{{.Request}}</pre>
+          </div>
+          <div>
+            <div class="label">Response Body</div>
+            <pre>{{.Response}}</pre>
+          </div>
+        </div>
+      </div>
+      {{end}}
+    {{else}}
+      <div class="empty">暂无日志。发送一条聊天消息后会出现真实 LLM 请求与响应。</div>
+    {{end}}
+  </div>
+</body>
+</html>
+{{end}}
