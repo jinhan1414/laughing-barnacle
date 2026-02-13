@@ -45,6 +45,40 @@ go test ./...
 go build ./...
 ```
 
+## Docker（两阶段构建）
+
+项目根目录已提供两阶段 `Dockerfile`：
+- `builder` 阶段：使用 Go 镜像编译二进制
+- `runtime` 阶段：使用精简运行时镜像，仅包含可执行文件
+
+本地构建与运行：
+
+```bash
+docker buildx build --platform linux/arm64 -t laughing-barnacle:local --load .
+docker run --rm -p 8080:8080 \
+  -e CERBER_API_KEY=your_api_key_here \
+  laughing-barnacle:local
+```
+
+## CI/CD 自动构建并推送镜像
+
+已添加 GitHub Actions 工作流：`.github/workflows/docker-image.yml`
+
+触发规则：
+- `push` 到 `main`：自动测试 + 构建 + 推送镜像
+- `push` tag（如 `v1.0.0`）：自动测试 + 构建 + 推送镜像
+- `pull_request`：自动测试 + 构建校验（不推送）
+
+镜像仓库：
+- `ghcr.io/<owner>/<repo>`
+- 例如当前仓库是 `foo/bar`，镜像名即 `ghcr.io/foo/bar`
+
+关键说明：
+- 工作流使用 `GITHUB_TOKEN` 登录 GHCR
+- 需在仓库 Settings 中允许 `packages: write`（工作流内已声明权限）
+- 当前阶段仅构建/推送 `linux/arm64` 镜像
+- 默认会生成分支、tag 和 commit sha 三类镜像标签
+
 ## Agent 行为
 
 每次用户发送消息时，Agent 执行最小闭环：
