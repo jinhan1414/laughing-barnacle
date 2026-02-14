@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -102,6 +103,53 @@ func TestStoreSkillCRUDAndPrompts(t *testing.T) {
 	}
 	if len(store.ListSkills()) != 0 {
 		t.Fatalf("expected no skills after delete")
+	}
+}
+
+func TestStoreUpsertAutoSkill_PersistedAndBounded(t *testing.T) {
+	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	store, err := NewStore(settingsPath)
+	if err != nil {
+		t.Fatalf("NewStore error: %v", err)
+	}
+
+	if err := store.UpsertAutoSkill("复盘框架", "先列事实、再列根因、最后列行动项。"); err != nil {
+		t.Fatalf("UpsertAutoSkill error: %v", err)
+	}
+	if err := store.UpsertAutoSkill("复盘框架", "先列事实时间线，再写根因和防复发动作。"); err != nil {
+		t.Fatalf("UpsertAutoSkill update error: %v", err)
+	}
+
+	skills := store.ListSkills()
+	if len(skills) != 1 {
+		t.Fatalf("expected one auto skill, got %d", len(skills))
+	}
+	if !strings.HasPrefix(skills[0].ID, autoSkillIDPrefix) {
+		t.Fatalf("expected auto skill id prefix, got %q", skills[0].ID)
+	}
+	if !skills[0].Enabled {
+		t.Fatalf("expected auto skill enabled")
+	}
+	if !strings.Contains(skills[0].Prompt, "防复发") {
+		t.Fatalf("expected updated auto skill prompt, got %q", skills[0].Prompt)
+	}
+
+	for i := 0; i < maxAutoSkillsRetained+3; i++ {
+		name := fmt.Sprintf("自动能力-%d", i)
+		prompt := fmt.Sprintf("这是第 %d 条自动能力，用于验证上限裁剪。", i)
+		if err := store.UpsertAutoSkill(name, prompt); err != nil {
+			t.Fatalf("UpsertAutoSkill #%d error: %v", i, err)
+		}
+	}
+
+	autoCount := 0
+	for _, skill := range store.ListSkills() {
+		if strings.HasPrefix(skill.ID, autoSkillIDPrefix) {
+			autoCount++
+		}
+	}
+	if autoCount != maxAutoSkillsRetained {
+		t.Fatalf("expected auto skill count capped to %d, got %d", maxAutoSkillsRetained, autoCount)
 	}
 }
 

@@ -57,10 +57,19 @@ type mockTools struct {
 
 type mockSkills struct {
 	prompts []string
+	upserts []evolvedSkill
 }
 
 func (m *mockSkills) ListEnabledSkillPrompts() []string {
 	return m.prompts
+}
+
+func (m *mockSkills) UpsertAutoSkill(name, prompt string) error {
+	m.upserts = append(m.upserts, evolvedSkill{
+		Name:   strings.TrimSpace(name),
+		Prompt: strings.TrimSpace(prompt),
+	})
+	return nil
 }
 
 type mockPromptProvider struct {
@@ -346,6 +355,65 @@ func TestHandleUserMessage_IncludesEnabledSkillPrompts(t *testing.T) {
 	}
 }
 
+func TestHandleUserMessage_SkillPromptInjectionIsCapped(t *testing.T) {
+	store := conversation.NewStore()
+	fakeLLM := &mockLLM{responses: map[string][]string{
+		"chat_reply": {"ok"},
+	}}
+
+	longPrompt := strings.Repeat("这个超长技能用于测试提示词裁剪能力。", 40)
+	agentSvc := New(Config{
+		Model:                      "test-model",
+		MaxRecentMessages:          10,
+		CompressionTriggerMessages: 99,
+		CompressionTriggerChars:    99999,
+		KeepRecentAfterCompression: 1,
+		MaxCompressionLoopsPerTurn: 1,
+		MaxToolCallRounds:          2,
+		SystemPrompt:               "system",
+		CompressionSystemPrompt:    "compressor",
+	}, store, fakeLLM, nil)
+	agentSvc.SetSkillProvider(&mockSkills{
+		prompts: []string{
+			"代码变更前先明确验收标准，再拆分实现步骤。",
+			"线上故障处理先止血，再定位根因，再补监控与预案。",
+			"学习计划采用每天 30 分钟持续练习并复盘。",
+			"回答技术方案时给出风险、回滚与验证步骤。",
+			"写 SQL 前先确认索引与数据规模。",
+			"接口设计优先保证幂等性和可观测性。",
+			"发布前执行最小回归用例并记录结果。",
+			longPrompt,
+		},
+	})
+
+	reply, err := agentSvc.HandleUserMessage(context.Background(), "今天要做代码评审并准备上线")
+	if err != nil {
+		t.Fatalf("HandleUserMessage error: %v", err)
+	}
+	if reply != "ok" {
+		t.Fatalf("unexpected reply: %s", reply)
+	}
+
+	if len(fakeLLM.calls) != 1 {
+		t.Fatalf("expected one llm call, got %d", len(fakeLLM.calls))
+	}
+	msgs := fakeLLM.calls[0].Messages
+	if len(msgs) < 2 {
+		t.Fatalf("expected skill system message")
+	}
+
+	content := msgs[1].Content
+	if strings.Contains(content, longPrompt) {
+		t.Fatalf("expected long prompt to be trimmed out from injected skills")
+	}
+	if strings.Count(content, "\n") > maxInjectedSkillPrompts+4 {
+		t.Fatalf("expected injected skill list to be capped, got: %q", content)
+	}
+	if !strings.Contains(content, "控制上下文长度") {
+		t.Fatalf("expected truncation note, got %q", content)
+	}
+}
+
 func TestHandleUserMessage_UsesPromptProviderSystemPrompt(t *testing.T) {
 	store := conversation.NewStore()
 	fakeLLM := &mockLLM{responses: map[string][]string{
@@ -498,7 +566,7 @@ func TestHandleUserMessage_SleepWindowUrgentStillCallsLLM(t *testing.T) {
 func TestHandleUserMessage_SleepWindowRunsReflectionAndPromptEvolution(t *testing.T) {
 	store := conversation.NewStore()
 	fakeLLM := &mockLLM{responses: map[string][]string{
-		"night_reflection_evolution": {`{"reflection":"生活：按时休息。工作：推进核心任务。学习：补齐短板。","system_prompt":"你是用户的 AI 数字分身，名字叫“傻毛”，女性，8 年全栈开发经验。你始终不使用表情符号，回答务实、可执行、可复盘，并持续优化工作和学习策略。","compression_system_prompt":"你是“傻毛”数字分身的上下文压缩器，保留人格、事实、任务进度、学习进展与待办，输出简洁纯文本。 "}`},
+		"night_reflection_evolution": {`{"reflection":"生活：按时休息。工作：推进核心任务。学习：补齐短板。","system_prompt":"你是用户的 AI 数字分身，名字叫“傻毛”，女性，8 年全栈开发经验。你始终不使用表情符号，回答务实、可执行、可复盘，并持续优化工作和学习策略。","compression_system_prompt":"你是“傻毛”数字分身的上下文压缩器，保留人格、事实、任务进度、学习进展与待办，输出简洁纯文本。","skills":[{"name":"故障复盘模板","prompt":"先写事实时间线，再写根因、影响、修复与预防项。"},{"name":"学习闭环","prompt":"每天结束前记录一个短板与一个可执行练习。"}]}`},
 	}}
 
 	agentSvc := New(Config{
@@ -518,8 +586,10 @@ func TestHandleUserMessage_SleepWindowRunsReflectionAndPromptEvolution(t *testin
 	}
 	updater := &mockPromptUpdater{}
 	habits := &mockHabits{}
+	skills := &mockSkills{}
 	agentSvc.SetPromptUpdater(updater)
 	agentSvc.SetHabitProvider(habits)
+	agentSvc.SetSkillProvider(skills)
 
 	reply, err := agentSvc.HandleUserMessage(context.Background(), "帮我明天继续优化服务")
 	if err != nil {
@@ -536,6 +606,12 @@ func TestHandleUserMessage_SleepWindowRunsReflectionAndPromptEvolution(t *testin
 	}
 	if habits.lastPromptEvolutionDate != "2026-02-14" {
 		t.Fatalf("expected prompt evolution date recorded, got %q", habits.lastPromptEvolutionDate)
+	}
+	if len(skills.upserts) != 2 {
+		t.Fatalf("expected 2 evolved skills, got %d", len(skills.upserts))
+	}
+	if skills.upserts[0].Name != "故障复盘模板" {
+		t.Fatalf("unexpected first evolved skill: %+v", skills.upserts[0])
 	}
 }
 

@@ -20,6 +20,10 @@ var serviceIDPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 const (
 	ServiceTransportStreamableHTTP = "streamable_http"
 	ServiceTransportSSE            = "sse"
+	autoSkillIDPrefix              = "auto-skill-"
+	maxAutoSkillsRetained          = 24
+	maxAutoSkillNameRunes          = 24
+	maxAutoSkillPromptRunes        = 180
 )
 
 type Service struct {
@@ -311,6 +315,51 @@ func (s *Store) ListEnabledSkillPrompts() []string {
 		out = append(out, prompt)
 	}
 	return out
+}
+
+func (s *Store) UpsertAutoSkill(name, prompt string) error {
+	name = trimSkillText(name, maxAutoSkillNameRunes)
+	prompt = trimSkillText(prompt, maxAutoSkillPromptRunes)
+	if name == "" {
+		return fmt.Errorf("auto skill name is required")
+	}
+	if prompt == "" {
+		return fmt.Errorf("auto skill prompt is required")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	id := s.findAutoSkillIDByNameLocked(name)
+	if id == "" {
+		id = s.generateAutoSkillIDLocked(name, prompt)
+	}
+
+	skill := Skill{
+		ID:      id,
+		Name:    name,
+		Prompt:  prompt,
+		Enabled: true,
+	}
+	if err := validateSkill(skill); err != nil {
+		return err
+	}
+
+	skill.UpdatedAt = time.Now()
+	updated := false
+	for i := range s.cfg.Skills.Items {
+		if s.cfg.Skills.Items[i].ID == skill.ID {
+			s.cfg.Skills.Items[i] = skill
+			updated = true
+			break
+		}
+	}
+	if !updated {
+		s.cfg.Skills.Items = append(s.cfg.Skills.Items, skill)
+	}
+
+	s.trimAutoSkillsLocked(maxAutoSkillsRetained)
+	return s.persistLocked()
 }
 
 func (s *Store) UpsertSkill(skill Skill) error {
@@ -762,6 +811,129 @@ func (s *Store) findSkillIDForUpdateLocked(skill Skill) string {
 		matchedID = existing.ID
 	}
 	return matchedID
+}
+
+func (s *Store) findAutoSkillIDByNameLocked(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ""
+	}
+
+	for _, existing := range s.cfg.Skills.Items {
+		if !isAutoSkillID(existing.ID) {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(existing.Name), name) {
+			return existing.ID
+		}
+	}
+	return ""
+}
+
+func (s *Store) generateAutoSkillIDLocked(name, prompt string) string {
+	seed := sanitizeIdentifier(name)
+	if seed == "" {
+		seed = sanitizeIdentifier(prompt)
+	}
+	if seed == "" {
+		seed = "skill"
+	}
+
+	candidate := autoSkillIDPrefix + seed
+	used := make(map[string]struct{}, len(s.cfg.Skills.Items))
+	for _, skill := range s.cfg.Skills.Items {
+		used[skill.ID] = struct{}{}
+	}
+	if _, exists := used[candidate]; !exists {
+		return candidate
+	}
+
+	for i := 2; ; i++ {
+		next := fmt.Sprintf("%s%s-%d", autoSkillIDPrefix, seed, i)
+		if _, exists := used[next]; !exists {
+			return next
+		}
+	}
+}
+
+func (s *Store) trimAutoSkillsLocked(limit int) {
+	if limit <= 0 {
+		s.cfg.Skills.Items = filterSkills(s.cfg.Skills.Items, func(skill Skill) bool {
+			return !isAutoSkillID(skill.ID)
+		})
+		return
+	}
+
+	type autoSkillWithIndex struct {
+		Index     int
+		UpdatedAt time.Time
+	}
+	autoSkills := make([]autoSkillWithIndex, 0, len(s.cfg.Skills.Items))
+	for i, skill := range s.cfg.Skills.Items {
+		if isAutoSkillID(skill.ID) {
+			autoSkills = append(autoSkills, autoSkillWithIndex{
+				Index:     i,
+				UpdatedAt: skill.UpdatedAt,
+			})
+		}
+	}
+	if len(autoSkills) <= limit {
+		return
+	}
+
+	sort.Slice(autoSkills, func(i, j int) bool {
+		if autoSkills[i].UpdatedAt.Equal(autoSkills[j].UpdatedAt) {
+			return autoSkills[i].Index < autoSkills[j].Index
+		}
+		return autoSkills[i].UpdatedAt.Before(autoSkills[j].UpdatedAt)
+	})
+
+	removeCount := len(autoSkills) - limit
+	removeIndex := make(map[int]struct{}, removeCount)
+	for i := 0; i < removeCount; i++ {
+		removeIndex[autoSkills[i].Index] = struct{}{}
+	}
+
+	next := make([]Skill, 0, len(s.cfg.Skills.Items)-removeCount)
+	for i, skill := range s.cfg.Skills.Items {
+		if _, drop := removeIndex[i]; drop {
+			continue
+		}
+		next = append(next, skill)
+	}
+	s.cfg.Skills.Items = next
+}
+
+func filterSkills(skills []Skill, keep func(Skill) bool) []Skill {
+	if len(skills) == 0 {
+		return nil
+	}
+	next := make([]Skill, 0, len(skills))
+	for _, skill := range skills {
+		if keep(skill) {
+			next = append(next, skill)
+		}
+	}
+	return next
+}
+
+func isAutoSkillID(id string) bool {
+	return strings.HasPrefix(strings.TrimSpace(id), autoSkillIDPrefix)
+}
+
+func trimSkillText(v string, max int) string {
+	v = strings.TrimSpace(v)
+	if v == "" || max <= 0 {
+		return ""
+	}
+	runes := []rune(v)
+	if len(runes) <= max {
+		return v
+	}
+	if max <= 3 {
+		return string(runes[:max])
+	}
+	return strings.TrimSpace(string(runes[:max-3])) + "..."
 }
 
 func cloneServices(in []Service) []Service {

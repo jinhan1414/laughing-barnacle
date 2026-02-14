@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -34,6 +36,26 @@ type ToolProvider interface {
 type SkillProvider interface {
 	ListEnabledSkillPrompts() []string
 }
+
+type AutoSkillWriter interface {
+	UpsertAutoSkill(name, prompt string) error
+}
+
+type evolvedSkill struct {
+	Name   string
+	Prompt string
+}
+
+const (
+	maxInjectedSkillPrompts     = 6
+	maxInjectedSkillPromptRunes = 1200
+	maxSingleSkillPromptRunes   = 280
+	maxNightEvolvedSkills       = 3
+	maxEvolvedSkillNameRunes    = 24
+	maxEvolvedSkillPromptRunes  = 180
+)
+
+var skillTokenPattern = regexp.MustCompile(`[\p{Han}]{2,8}|[a-zA-Z][a-zA-Z0-9_-]{2,}`)
 
 type PromptProvider interface {
 	GetSystemPrompt() string
@@ -288,12 +310,16 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 		Content: systemPrompt,
 	})
 	if a.skills != nil {
-		skillPrompts := a.skills.ListEnabledSkillPrompts()
+		allSkillPrompts := a.skills.ListEnabledSkillPrompts()
+		skillPrompts := selectSkillPromptsForTurn(allSkillPrompts, summary, messages)
 		if len(skillPrompts) > 0 {
 			var b strings.Builder
-			b.WriteString("已启用技能（按需遵循）：\n")
+			b.WriteString("已启用技能（系统已按相关性和长度裁剪，按需遵循）：\n")
 			for i, prompt := range skillPrompts {
 				b.WriteString(fmt.Sprintf("%d. %s\n", i+1, strings.TrimSpace(prompt)))
+			}
+			if len(skillPrompts) < len(allSkillPrompts) {
+				b.WriteString(fmt.Sprintf("(共 %d 条启用技能，本轮注入 %d 条以控制上下文长度)\n", len(allSkillPrompts), len(skillPrompts)))
 			}
 			requestMessages = append(requestMessages, llm.Message{
 				Role:    "system",
@@ -475,7 +501,7 @@ func (a *Agent) runNightReflectionAndEvolution(ctx context.Context, now time.Tim
 	}
 
 	summary, messages := a.store.Snapshot()
-	reflection, systemPrompt, compressionPrompt, err := a.generateNightReflectionPayload(ctx, summary, messages)
+	reflection, systemPrompt, compressionPrompt, evolvedSkills, err := a.generateNightReflectionPayload(ctx, summary, messages)
 	if err != nil {
 		_ = a.habits.SetLastSleepReviewDate(today)
 		return "生活：已进入休息阶段并记录今日状态。\n工作：关键任务与风险已归档，明天继续推进。\n学习：延续每日学习节奏，明天聚焦一个短板。"
@@ -488,11 +514,15 @@ func (a *Agent) runNightReflectionAndEvolution(ctx context.Context, now time.Tim
 		_ = a.updater.UpdateAgentPrompts(systemPrompt, compressionPrompt)
 		_ = a.habits.SetLastPromptEvolutionDate(today)
 	}
+	evolvedCount := a.applyNightEvolvedSkills(evolvedSkills)
 
 	_ = a.habits.SetLastSleepReviewDate(today)
 	reflection = strings.TrimSpace(reflection)
 	if reflection == "" {
-		return "生活：今日作息已收束，保持稳定节律。\n工作：今日进度已复盘，明天按优先级继续。\n学习：保持小步快跑，明天继续迭代。"
+		reflection = "生活：今日作息已收束，保持稳定节律。\n工作：今日进度已复盘，明天按优先级继续。\n学习：保持小步快跑，明天继续迭代。"
+	}
+	if evolvedCount > 0 {
+		reflection = strings.TrimSpace(reflection + fmt.Sprintf("\n能力进化：已沉淀/更新 %d 条可复用 Skill。", evolvedCount))
 	}
 	return reflection
 }
@@ -521,7 +551,7 @@ func (a *Agent) runMorningPlanning(ctx context.Context, now time.Time) string {
 	return plan
 }
 
-func (a *Agent) generateNightReflectionPayload(ctx context.Context, summary string, messages []conversation.Message) (reflection, systemPrompt, compressionPrompt string, err error) {
+func (a *Agent) generateNightReflectionPayload(ctx context.Context, summary string, messages []conversation.Message) (reflection, systemPrompt, compressionPrompt string, skills []evolvedSkill, err error) {
 	currentSystemPrompt, currentCompressionPrompt := a.resolvePromptsLocked()
 
 	msgs := []llm.Message{
@@ -534,9 +564,11 @@ func (a *Agent) generateNightReflectionPayload(ctx context.Context, summary stri
 			Content: strings.TrimSpace(
 				"请基于以下信息执行两件事：\n" +
 					"1) 生成夜间复盘（生活/工作/学习三段，各 1-2 行）\n" +
-					"2) 生成升级后的系统提示词与压缩提示词\n\n" +
+					"2) 生成升级后的系统提示词与压缩提示词\n" +
+					"3) 提炼 0-3 条可复用能力 Skill（用于后续自动注入，不要冗长）\n\n" +
 					"约束：必须保持名字“傻毛”、女性、8年全栈开发经验、不使用表情符号。\n" +
-					"输出 JSON 字段：reflection, system_prompt, compression_system_prompt。\n\n" +
+					"输出 JSON 字段：reflection, system_prompt, compression_system_prompt, skills。\n" +
+					"skills 为数组；每项字段：name, prompt。name 2-20字，prompt 1 行且不超过 120 字。\n\n" +
 					"当前系统提示词：\n" + currentSystemPrompt + "\n\n" +
 					"当前压缩提示词：\n" + currentCompressionPrompt + "\n\n" +
 					"历史摘要：\n" + safeOrEmpty(summary) + "\n\n" +
@@ -552,20 +584,25 @@ func (a *Agent) generateNightReflectionPayload(ctx context.Context, summary stri
 		Temperature: 0.1,
 	})
 	if err != nil {
-		return "", "", "", err
+		return "", "", "", nil, err
 	}
 
 	type payload struct {
 		Reflection              string `json:"reflection"`
 		SystemPrompt            string `json:"system_prompt"`
 		CompressionSystemPrompt string `json:"compression_system_prompt"`
+		Skills                  []struct {
+			Name   string `json:"name"`
+			Prompt string `json:"prompt"`
+		} `json:"skills"`
 	}
 	var out payload
 	if err := json.Unmarshal([]byte(extractJSONObject(resp.Content)), &out); err != nil {
-		return "", "", "", err
+		return "", "", "", nil, err
 	}
 
-	return strings.TrimSpace(out.Reflection), strings.TrimSpace(out.SystemPrompt), strings.TrimSpace(out.CompressionSystemPrompt), nil
+	skills = normalizeEvolvedSkills(out.Skills)
+	return strings.TrimSpace(out.Reflection), strings.TrimSpace(out.SystemPrompt), strings.TrimSpace(out.CompressionSystemPrompt), skills, nil
 }
 
 func (a *Agent) generateMorningPlan(ctx context.Context, summary string, messages []conversation.Message) (string, error) {
@@ -623,6 +660,205 @@ func extractJSONObject(content string) string {
 		return text[start : end+1]
 	}
 	return text
+}
+
+func (a *Agent) applyNightEvolvedSkills(skills []evolvedSkill) int {
+	if len(skills) == 0 || a.skills == nil {
+		return 0
+	}
+	writer, ok := a.skills.(AutoSkillWriter)
+	if !ok {
+		return 0
+	}
+
+	updated := 0
+	for _, skill := range skills {
+		if strings.TrimSpace(skill.Name) == "" || strings.TrimSpace(skill.Prompt) == "" {
+			continue
+		}
+		if err := writer.UpsertAutoSkill(skill.Name, skill.Prompt); err == nil {
+			updated++
+		}
+	}
+	return updated
+}
+
+func normalizeEvolvedSkills(raw []struct {
+	Name   string `json:"name"`
+	Prompt string `json:"prompt"`
+}) []evolvedSkill {
+	if len(raw) == 0 {
+		return nil
+	}
+
+	seen := make(map[string]struct{}, len(raw))
+	out := make([]evolvedSkill, 0, len(raw))
+	for _, item := range raw {
+		name := trimRunes(strings.TrimSpace(item.Name), maxEvolvedSkillNameRunes)
+		prompt := trimRunes(strings.TrimSpace(item.Prompt), maxEvolvedSkillPromptRunes)
+		if name == "" || prompt == "" {
+			continue
+		}
+		key := strings.ToLower(name) + "\n" + strings.ToLower(prompt)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, evolvedSkill{
+			Name:   name,
+			Prompt: prompt,
+		})
+		if len(out) >= maxNightEvolvedSkills {
+			break
+		}
+	}
+	return out
+}
+
+func selectSkillPromptsForTurn(skillPrompts []string, summary string, messages []conversation.Message) []string {
+	if len(skillPrompts) == 0 {
+		return nil
+	}
+
+	focus := buildSkillFocus(summary, messages)
+	type scoredPrompt struct {
+		Prompt string
+		Score  int
+		Index  int
+	}
+
+	seen := make(map[string]struct{}, len(skillPrompts))
+	scored := make([]scoredPrompt, 0, len(skillPrompts))
+	for i, raw := range skillPrompts {
+		prompt := trimRunes(strings.TrimSpace(raw), maxSingleSkillPromptRunes)
+		if prompt == "" {
+			continue
+		}
+		if _, exists := seen[prompt]; exists {
+			continue
+		}
+		seen[prompt] = struct{}{}
+		scored = append(scored, scoredPrompt{
+			Prompt: prompt,
+			Score:  scoreSkillPrompt(prompt, focus),
+			Index:  i,
+		})
+	}
+	if len(scored) == 0 {
+		return nil
+	}
+
+	sort.Slice(scored, func(i, j int) bool {
+		if scored[i].Score != scored[j].Score {
+			return scored[i].Score > scored[j].Score
+		}
+		return scored[i].Index < scored[j].Index
+	})
+
+	selected := make([]string, 0, min(maxInjectedSkillPrompts, len(scored)))
+	usedRunes := 0
+	for _, item := range scored {
+		if len(selected) >= maxInjectedSkillPrompts {
+			break
+		}
+		promptLen := len([]rune(item.Prompt))
+		if promptLen > maxInjectedSkillPromptRunes {
+			continue
+		}
+		if usedRunes+promptLen > maxInjectedSkillPromptRunes {
+			continue
+		}
+		selected = append(selected, item.Prompt)
+		usedRunes += promptLen
+	}
+	if len(selected) > 0 {
+		return selected
+	}
+
+	fallback := trimRunes(scored[0].Prompt, maxInjectedSkillPromptRunes)
+	if fallback == "" {
+		return nil
+	}
+	return []string{fallback}
+}
+
+func buildSkillFocus(summary string, messages []conversation.Message) string {
+	var b strings.Builder
+	if v := strings.TrimSpace(summary); v != "" {
+		b.WriteString(v)
+		b.WriteString("\n")
+	}
+	for _, msg := range lastN(messages, 8) {
+		if msg.Role != "user" && msg.Role != "assistant" {
+			continue
+		}
+		if v := strings.TrimSpace(msg.Content); v != "" {
+			b.WriteString(v)
+			b.WriteString("\n")
+		}
+	}
+	return strings.ToLower(b.String())
+}
+
+func scoreSkillPrompt(prompt, focus string) int {
+	if strings.TrimSpace(prompt) == "" {
+		return 0
+	}
+	if strings.TrimSpace(focus) == "" {
+		return 1
+	}
+
+	score := 1
+	tokens := skillTokenPattern.FindAllString(strings.ToLower(prompt), -1)
+	seen := make(map[string]struct{}, len(tokens))
+	for _, token := range tokens {
+		token = strings.TrimSpace(token)
+		if token == "" {
+			continue
+		}
+		if _, exists := seen[token]; exists {
+			continue
+		}
+		seen[token] = struct{}{}
+		if strings.Contains(focus, token) {
+			runes := len([]rune(token))
+			switch {
+			case runes >= 6:
+				score += 3
+			case runes >= 3:
+				score += 2
+			default:
+				score++
+			}
+		}
+	}
+	if strings.Contains(prompt, "必须") || strings.Contains(prompt, "默认") || strings.Contains(prompt, "优先") {
+		score++
+	}
+	return score
+}
+
+func trimRunes(input string, max int) string {
+	input = strings.TrimSpace(input)
+	if max <= 0 || input == "" {
+		return ""
+	}
+
+	runes := []rune(input)
+	if len(runes) <= max {
+		return input
+	}
+	if max <= 3 {
+		return string(runes[:max])
+	}
+	return strings.TrimSpace(string(runes[:max-3])) + "..."
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func lastN(messages []conversation.Message, n int) []conversation.Message {
