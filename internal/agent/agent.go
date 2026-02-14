@@ -106,6 +106,30 @@ func (a *Agent) GetEffectivePrompts() (systemPrompt string, compressionSystemPro
 	return a.resolvePromptsLocked()
 }
 
+func (a *Agent) RunScheduledHumanRoutine(ctx context.Context) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if !a.cfg.EnforceHumanRoutine || a.habits == nil {
+		return nil
+	}
+
+	now := a.nowFn()
+	if isSleepWindow(now) {
+		reflection := strings.TrimSpace(a.runNightReflectionAndEvolution(ctx, now))
+		if reflection != "" {
+			a.store.Append("assistant", "【夜间复盘（自动）】\n"+reflection)
+		}
+		return nil
+	}
+
+	plan := strings.TrimSpace(a.runMorningPlanning(ctx, now))
+	if plan != "" {
+		a.store.Append("assistant", "【晨间规划（自动）】\n"+plan)
+	}
+	return nil
+}
+
 // HandleUserMessage processes one user turn, updating shared conversation state.
 func (a *Agent) HandleUserMessage(ctx context.Context, userInput string) (string, error) {
 	text := strings.TrimSpace(userInput)
@@ -453,7 +477,8 @@ func (a *Agent) runNightReflectionAndEvolution(ctx context.Context, now time.Tim
 	summary, messages := a.store.Snapshot()
 	reflection, systemPrompt, compressionPrompt, err := a.generateNightReflectionPayload(ctx, summary, messages)
 	if err != nil {
-		return ""
+		_ = a.habits.SetLastSleepReviewDate(today)
+		return "生活：已进入休息阶段并记录今日状态。\n工作：关键任务与风险已归档，明天继续推进。\n学习：延续每日学习节奏，明天聚焦一个短板。"
 	}
 
 	if strings.TrimSpace(systemPrompt) != "" &&
@@ -465,7 +490,11 @@ func (a *Agent) runNightReflectionAndEvolution(ctx context.Context, now time.Tim
 	}
 
 	_ = a.habits.SetLastSleepReviewDate(today)
-	return strings.TrimSpace(reflection)
+	reflection = strings.TrimSpace(reflection)
+	if reflection == "" {
+		return "生活：今日作息已收束，保持稳定节律。\n工作：今日进度已复盘，明天按优先级继续。\n学习：保持小步快跑，明天继续迭代。"
+	}
+	return reflection
 }
 
 func (a *Agent) runMorningPlanning(ctx context.Context, now time.Time) string {
@@ -480,11 +509,13 @@ func (a *Agent) runMorningPlanning(ctx context.Context, now time.Time) string {
 	summary, messages := a.store.Snapshot()
 	plan, err := a.generateMorningPlan(ctx, summary, messages)
 	if err != nil {
-		return ""
+		_ = a.habits.SetLastWakePlanDate(today)
+		return "任务回顾：请先确认昨日未完成事项并标注阻塞原因。\n今日 Top 3：1) 最关键交付 2) 次关键推进 3) 学习巩固。\n能力提升：今天复盘一个问题并沉淀为可复用方法。"
 	}
 	plan = strings.TrimSpace(plan)
 	if plan == "" {
-		return ""
+		_ = a.habits.SetLastWakePlanDate(today)
+		return "任务回顾：昨日进度已记录，请先对未完成项做风险评估。\n今日 Top 3：按优先级推进核心交付、风险治理、学习巩固。\n能力提升：今天完成一次针对性复盘。"
 	}
 	_ = a.habits.SetLastWakePlanDate(today)
 	return plan

@@ -582,6 +582,99 @@ func TestHandleUserMessage_MorningPlanningPrependsReplyAndTracksDate(t *testing.
 	}
 }
 
+func TestRunScheduledHumanRoutine_NightReviewAppendsOncePerDay(t *testing.T) {
+	store := conversation.NewStore()
+	fakeLLM := &mockLLM{responses: map[string][]string{
+		"night_reflection_evolution": {`{"reflection":"生活：收束。工作：复盘。学习：迭代。","system_prompt":"你是用户的 AI 数字分身，名字叫“傻毛”，女性，8 年全栈开发经验。你始终不使用表情符号，并保持务实稳定。","compression_system_prompt":"你是“傻毛”数字分身的上下文压缩器，保留人格事实与进度，输出纯文本。"}`},
+	}}
+
+	agentSvc := New(Config{
+		Model:                      "test-model",
+		MaxRecentMessages:          10,
+		CompressionTriggerMessages: 99,
+		CompressionTriggerChars:    99999,
+		KeepRecentAfterCompression: 1,
+		MaxCompressionLoopsPerTurn: 1,
+		MaxToolCallRounds:          2,
+		SystemPrompt:               "system",
+		CompressionSystemPrompt:    "compressor",
+		EnforceHumanRoutine:        true,
+	}, store, fakeLLM, nil)
+	agentSvc.nowFn = func() time.Time {
+		return time.Date(2026, 2, 14, 2, 30, 0, 0, time.Local)
+	}
+	updater := &mockPromptUpdater{}
+	habits := &mockHabits{}
+	agentSvc.SetPromptUpdater(updater)
+	agentSvc.SetHabitProvider(habits)
+
+	if err := agentSvc.RunScheduledHumanRoutine(context.Background()); err != nil {
+		t.Fatalf("RunScheduledHumanRoutine error: %v", err)
+	}
+	_, messages := store.Snapshot()
+	if len(messages) != 1 {
+		t.Fatalf("expected one auto message, got %d", len(messages))
+	}
+	if !strings.Contains(messages[0].Content, "夜间复盘（自动）") {
+		t.Fatalf("unexpected auto message: %q", messages[0].Content)
+	}
+	if updater.calls != 1 {
+		t.Fatalf("expected one prompt update, got %d", updater.calls)
+	}
+
+	if err := agentSvc.RunScheduledHumanRoutine(context.Background()); err != nil {
+		t.Fatalf("RunScheduledHumanRoutine second call error: %v", err)
+	}
+	_, messages = store.Snapshot()
+	if len(messages) != 1 {
+		t.Fatalf("expected no duplicate nightly message, got %d", len(messages))
+	}
+}
+
+func TestRunScheduledHumanRoutine_MorningPlanAppendsOncePerDay(t *testing.T) {
+	store := conversation.NewStore()
+	fakeLLM := &mockLLM{responses: map[string][]string{
+		"morning_planning": {"回顾：昨日 2/3 完成。\n今日 Top3：A/B/C。\n能力提升：复盘线上问题。"},
+	}}
+
+	agentSvc := New(Config{
+		Model:                      "test-model",
+		MaxRecentMessages:          10,
+		CompressionTriggerMessages: 99,
+		CompressionTriggerChars:    99999,
+		KeepRecentAfterCompression: 1,
+		MaxCompressionLoopsPerTurn: 1,
+		MaxToolCallRounds:          2,
+		SystemPrompt:               "system",
+		CompressionSystemPrompt:    "compressor",
+		EnforceHumanRoutine:        true,
+	}, store, fakeLLM, nil)
+	agentSvc.nowFn = func() time.Time {
+		return time.Date(2026, 2, 14, 9, 0, 0, 0, time.Local)
+	}
+	habits := &mockHabits{}
+	agentSvc.SetHabitProvider(habits)
+
+	if err := agentSvc.RunScheduledHumanRoutine(context.Background()); err != nil {
+		t.Fatalf("RunScheduledHumanRoutine error: %v", err)
+	}
+	_, messages := store.Snapshot()
+	if len(messages) != 1 {
+		t.Fatalf("expected one auto message, got %d", len(messages))
+	}
+	if !strings.Contains(messages[0].Content, "晨间规划（自动）") {
+		t.Fatalf("unexpected auto message: %q", messages[0].Content)
+	}
+
+	if err := agentSvc.RunScheduledHumanRoutine(context.Background()); err != nil {
+		t.Fatalf("RunScheduledHumanRoutine second call error: %v", err)
+	}
+	_, messages = store.Snapshot()
+	if len(messages) != 1 {
+		t.Fatalf("expected no duplicate morning message, got %d", len(messages))
+	}
+}
+
 func TestRetryLastUserMessage_ReusesPendingUserMessage(t *testing.T) {
 	store := conversation.NewStore()
 	fakeLLM := &mockLLM{
