@@ -53,9 +53,9 @@ func Load() (Config, error) {
 		MaxToolCallRounds:          envInt("AGENT_MAX_TOOL_CALL_ROUNDS", 6),
 		LLMLogLimit:                envInt("APP_LLM_LOG_LIMIT", 500),
 		AgentSystemPrompt: envOrDefault("AGENT_SYSTEM_PROMPT",
-			"你是一个务实、准确的中文 AI 助手。回答要直接，优先给可执行建议。"),
+			defaultAgentSystemPrompt),
 		CompressionSystemPrompt: envOrDefault("AGENT_COMPRESSION_SYSTEM_PROMPT",
-			"你是对话上下文压缩器。请保留事实、约束、用户偏好、未完成事项，删除冗余。输出纯文本摘要。"),
+			defaultCompressionSystemPrompt),
 	}
 
 	if cfg.CerberAPIKey == "" {
