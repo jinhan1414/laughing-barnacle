@@ -35,7 +35,10 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	convStore := conversation.NewStore()
+	convStore, err := conversation.NewStoreWithFile(cfg.ConversationFile)
+	if err != nil {
+		return err
+	}
 	mcpStore, err := mcp.NewStore(cfg.SettingsFile)
 	if err != nil {
 		return err
@@ -63,6 +66,7 @@ func run() error {
 		CompressionSystemPrompt:    cfg.CompressionSystemPrompt,
 	}, convStore, llmClient, mcpToolProvider)
 	agentSvc.SetSkillProvider(mcpStore)
+	agentSvc.SetPromptProvider(mcpStore)
 
 	webServer, err := web.NewServer(agentSvc, convStore, logStore, mcpStore, mcpToolProvider)
 	if err != nil {

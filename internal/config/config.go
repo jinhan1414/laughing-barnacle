@@ -10,6 +10,7 @@ import (
 type Config struct {
 	Addr                       string
 	SettingsFile               string
+	ConversationFile           string
 	LLMLogFile                 string
 	CerberBaseURL              string
 	CerberAPIKey               string
@@ -34,6 +35,7 @@ func Load() (Config, error) {
 	cfg := Config{
 		Addr:                       envOrDefault("APP_ADDR", ":8080"),
 		SettingsFile:               envOrDefault("APP_SETTINGS_FILE", "./data/settings.json"),
+		ConversationFile:           envOrDefault("APP_CONVERSATION_FILE", "./data/conversation.json"),
 		LLMLogFile:                 envOrDefault("APP_LLM_LOG_FILE", "./data/llm_logs.json"),
 		CerberBaseURL:              envOrDefault("CERBER_BASE_URL", "https://api.cerber.ai"),
 		CerberAPIKey:               os.Getenv("CERBER_API_KEY"),
@@ -76,6 +78,9 @@ func Load() (Config, error) {
 	}
 	if cfg.LLMLogFile == "" {
 		return Config{}, fmt.Errorf("APP_LLM_LOG_FILE is required")
+	}
+	if cfg.ConversationFile == "" {
+		return Config{}, fmt.Errorf("APP_CONVERSATION_FILE is required")
 	}
 
 	return cfg, nil

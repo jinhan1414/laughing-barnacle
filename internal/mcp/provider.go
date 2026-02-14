@@ -16,7 +16,14 @@ type ServiceStatus struct {
 	Service   Service
 	Connected bool
 	ToolCount int
+	Tools     []ServiceToolStatus
 	Error     string
+}
+
+type ServiceToolStatus struct {
+	Name        string
+	Description string
+	Enabled     bool
 }
 
 type ToolProvider struct {
@@ -71,6 +78,9 @@ func (p *ToolProvider) RefreshTools(ctx context.Context) ([]llm.ToolDefinition, 
 			continue
 		}
 		for _, tool := range tools {
+			if !p.store.IsServiceToolEnabled(svc.ID, tool.Name) {
+				continue
+			}
 			def, binding := toToolDefinition(svc, tool)
 			name := def.Function.Name
 			for i := 2; bindingExists(bindings, name); i++ {
@@ -114,6 +124,9 @@ func (p *ToolProvider) CallTool(ctx context.Context, call llm.ToolCall) (string,
 	}
 	if !service.Enabled {
 		return "", fmt.Errorf("mcp service %q is disabled", binding.ServiceID)
+	}
+	if !p.store.IsServiceToolEnabled(binding.ServiceID, binding.ToolName) {
+		return "", fmt.Errorf("mcp service %q tool %q is disabled", binding.ServiceID, binding.ToolName)
 	}
 
 	args, err := parseToolArguments(call.Function.Arguments)
@@ -159,10 +172,28 @@ func (p *ToolProvider) ListServiceStatuses(ctx context.Context) []ServiceStatus 
 			continue
 		}
 
+		toolStatuses := make([]ServiceToolStatus, 0, len(tools))
+		enabledCount := 0
+		for _, tool := range tools {
+			enabled := p.store.IsServiceToolEnabled(svc.ID, tool.Name)
+			if enabled {
+				enabledCount++
+			}
+			toolStatuses = append(toolStatuses, ServiceToolStatus{
+				Name:        tool.Name,
+				Description: strings.TrimSpace(tool.Description),
+				Enabled:     enabled,
+			})
+		}
+		sort.Slice(toolStatuses, func(i, j int) bool {
+			return toolStatuses[i].Name < toolStatuses[j].Name
+		})
+
 		statuses = append(statuses, ServiceStatus{
 			Service:   svc,
 			Connected: true,
-			ToolCount: len(tools),
+			ToolCount: enabledCount,
+			Tools:     toolStatuses,
 		})
 	}
 

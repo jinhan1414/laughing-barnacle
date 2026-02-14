@@ -5,7 +5,10 @@
 - Agent 自动压缩上下文（loop）
 - LLM 提供商采用 Cerber（按 OpenAI 兼容 Chat Completions 调用）
 - Agent 工具调用仅通过 MCP（Model Context Protocol）服务
+- 支持按 MCP 服务内单工具启用/禁用
 - 支持在设置页配置 Agent Skills（可启用/禁用的系统级技能指令）
+- 支持在设置页配置 Agent 系统提示词与压缩提示词（保存后即时生效）
+- 会话历史持久化，重启后可恢复聊天记录
 - 独立日志页展示每次真实 LLM 输入/输出
 - 独立设置页管理 MCP 服务与 Skills
 - 非流式输出
@@ -68,6 +71,7 @@ docker run --rm -p 8080:8080 \
 
 说明：
 - 容器内默认将 MCP/Skills 配置写入 `/data/settings.json`。
+- 容器内默认将会话历史写入 `/data/conversation.json`。
 - 容器内默认将 LLM 调用日志写入 `/data/llm_logs.json`。
 - 通过 `-v $(pwd)/data:/data`（或命名卷）可在容器重建后保留配置。
 - 若不挂载卷，配置与日志只在该容器生命周期内有效。
@@ -106,7 +110,8 @@ docker run --rm -p 8080:8080 \
 ## 关键配置
 
 - `APP_ADDR`: HTTP 监听地址
-- `APP_SETTINGS_FILE`: 设置持久化文件路径（含 MCP 与 Skills 配置）
+- `APP_SETTINGS_FILE`: 设置持久化文件路径（含 MCP、Skills、Agent 提示词配置）
+- `APP_CONVERSATION_FILE`: 对话历史持久化文件路径
 - `APP_LLM_LOG_FILE`: LLM 调用日志持久化文件路径
 - `CERBER_BASE_URL`: Cerber 服务地址
 - `CERBER_API_KEY`: Cerber API Key（必填）
@@ -122,4 +127,6 @@ docker run --rm -p 8080:8080 \
 - `AGENT_KEEP_RECENT_AFTER_COMPRESSION`: 压缩后保留最近消息条数
 - `AGENT_MAX_COMPRESSION_LOOPS`: 每轮用户请求最大压缩循环次数
 - `AGENT_MAX_TOOL_CALL_ROUNDS`: 单轮对话最大工具调用回合数
+- `AGENT_SYSTEM_PROMPT`: 默认系统提示词（可被设置页覆盖）
+- `AGENT_COMPRESSION_SYSTEM_PROMPT`: 默认压缩提示词（可被设置页覆盖）
 - `APP_LLM_LOG_LIMIT`: 内存日志上限

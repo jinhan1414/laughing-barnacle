@@ -254,3 +254,110 @@ func TestStoreUpsertService_EmptyIDUpdatesExistingByEndpoint(t *testing.T) {
 		t.Fatalf("expected normalized streamable transport, got %q", services[0].Transport)
 	}
 }
+
+func TestStoreSetServiceToolEnabled_Persisted(t *testing.T) {
+	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	store, err := NewStore(settingsPath)
+	if err != nil {
+		t.Fatalf("NewStore error: %v", err)
+	}
+
+	if err := store.UpsertService(Service{
+		ID:        "search",
+		Name:      "Search",
+		Endpoint:  "https://example.com/mcp",
+		Transport: "streamable_http",
+		Enabled:   true,
+	}); err != nil {
+		t.Fatalf("UpsertService error: %v", err)
+	}
+
+	if !store.IsServiceToolEnabled("search", "web_search") {
+		t.Fatalf("tool should be enabled by default")
+	}
+	if err := store.SetServiceToolEnabled("search", "web_search", false); err != nil {
+		t.Fatalf("SetServiceToolEnabled disable error: %v", err)
+	}
+	if store.IsServiceToolEnabled("search", "web_search") {
+		t.Fatalf("tool should be disabled")
+	}
+
+	if err := store.SetServiceToolEnabled("search", "web_search", true); err != nil {
+		t.Fatalf("SetServiceToolEnabled enable error: %v", err)
+	}
+	if !store.IsServiceToolEnabled("search", "web_search") {
+		t.Fatalf("tool should be enabled after toggle back")
+	}
+
+	if err := store.SetServiceToolEnabled("search", "weather", false); err != nil {
+		t.Fatalf("SetServiceToolEnabled second tool disable error: %v", err)
+	}
+
+	reloaded, err := NewStore(settingsPath)
+	if err != nil {
+		t.Fatalf("reload store error: %v", err)
+	}
+	if !reloaded.IsServiceToolEnabled("search", "web_search") {
+		t.Fatalf("web_search should stay enabled after reload")
+	}
+	if reloaded.IsServiceToolEnabled("search", "weather") {
+		t.Fatalf("weather should stay disabled after reload")
+	}
+}
+
+func TestStoreUpsertAgentPromptConfig_Persisted(t *testing.T) {
+	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	store, err := NewStore(settingsPath)
+	if err != nil {
+		t.Fatalf("NewStore error: %v", err)
+	}
+
+	if err := store.UpsertAgentPromptConfig(AgentPromptConfig{
+		SystemPrompt:            "你是数字分身，保持一致人格。",
+		CompressionSystemPrompt: "你负责压缩对话，保留事实和待办。",
+	}); err != nil {
+		t.Fatalf("UpsertAgentPromptConfig error: %v", err)
+	}
+
+	cfg := store.GetAgentPromptConfig()
+	if cfg.SystemPrompt != "你是数字分身，保持一致人格。" {
+		t.Fatalf("unexpected system prompt: %q", cfg.SystemPrompt)
+	}
+	if cfg.CompressionSystemPrompt != "你负责压缩对话，保留事实和待办。" {
+		t.Fatalf("unexpected compression prompt: %q", cfg.CompressionSystemPrompt)
+	}
+	if cfg.UpdatedAt.IsZero() {
+		t.Fatalf("expected updated_at to be set")
+	}
+
+	reloaded, err := NewStore(settingsPath)
+	if err != nil {
+		t.Fatalf("reload store error: %v", err)
+	}
+	reloadedCfg := reloaded.GetAgentPromptConfig()
+	if reloadedCfg.SystemPrompt != cfg.SystemPrompt {
+		t.Fatalf("unexpected system prompt after reload: %q", reloadedCfg.SystemPrompt)
+	}
+	if reloadedCfg.CompressionSystemPrompt != cfg.CompressionSystemPrompt {
+		t.Fatalf("unexpected compression prompt after reload: %q", reloadedCfg.CompressionSystemPrompt)
+	}
+}
+
+func TestStoreUpsertAgentPromptConfig_RequiresBothWhenConfigured(t *testing.T) {
+	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	store, err := NewStore(settingsPath)
+	if err != nil {
+		t.Fatalf("NewStore error: %v", err)
+	}
+
+	if err := store.UpsertAgentPromptConfig(AgentPromptConfig{
+		SystemPrompt: "only system",
+	}); err == nil {
+		t.Fatalf("expected error when compression prompt is missing")
+	}
+	if err := store.UpsertAgentPromptConfig(AgentPromptConfig{
+		CompressionSystemPrompt: "only compression",
+	}); err == nil {
+		t.Fatalf("expected error when system prompt is missing")
+	}
+}

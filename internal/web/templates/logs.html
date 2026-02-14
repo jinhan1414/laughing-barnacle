@@ -5,169 +5,85 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>LLM 调用日志</title>
-  <style>
-    :root {
-      --bg: #f7f8fb;
-      --card: #ffffff;
-      --text: #1b2236;
-      --muted: #5a6178;
-      --border: #d8dce8;
-      --accent: #1868db;
-    }
-    body {
-      margin: 0;
-      font-family: "IBM Plex Sans", "PingFang SC", "Microsoft YaHei", sans-serif;
-      color: var(--text);
-      background: linear-gradient(180deg, #f1f4fb 0, var(--bg) 30%);
-    }
-    .container {
-      max-width: 1100px;
-      margin: 24px auto;
-      padding: 0 16px;
-    }
-    .topbar {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 16px;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-    .topbar > div {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-    .topbar a {
-      color: var(--accent);
-      text-decoration: none;
-      font-weight: 600;
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      background: #fff;
-      padding: 8px 12px;
-    }
-    .entry {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      margin-bottom: 14px;
-      overflow: hidden;
-    }
-    .head {
-      display: grid;
-      grid-template-columns: 70px 190px 180px 130px 120px 1fr;
-      gap: 8px;
-      padding: 10px 12px;
-      background: #f5f7ff;
-      border-bottom: 1px solid var(--border);
-      font-size: 13px;
-    }
-    .body {
-      padding: 12px;
-      display: grid;
-      gap: 12px;
-    }
-    .label {
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: var(--muted);
-      margin-bottom: 6px;
-    }
-    pre {
-      margin: 0;
-      padding: 10px;
-      border-radius: 8px;
-      background: #101a2a;
-      color: #e6ecff;
-      overflow-x: auto;
-      overflow-y: auto;
-      white-space: pre-wrap;
-      word-break: break-word;
-      overflow-wrap: anywhere;
-      font-size: 12px;
-      line-height: 1.45;
-      max-height: 48vh;
-    }
-    .empty {
-      border: 1px dashed var(--border);
-      border-radius: 12px;
-      padding: 16px;
-      color: var(--muted);
-      background: var(--card);
-    }
-    .error {
-      color: #b42318;
-      font-weight: 600;
-    }
-    @media (max-width: 900px) {
-      .head {
-        grid-template-columns: 1fr 1fr;
-      }
-    }
-    @media (max-width: 720px) {
-      .container {
-        margin: 12px auto;
-        padding: 0 12px;
-      }
-      .topbar h1 {
-        margin: 0;
-        font-size: 24px;
-      }
-      .topbar > div {
-        width: 100%;
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-      }
-      .topbar a {
-        text-align: center;
-      }
-      pre {
-        font-size: 11px;
-        max-height: 38vh;
-      }
-    }
-  </style>
+  {{template "shared.tailwind.head" .}}
 </head>
-<body>
-  <div class="container">
-    <div class="topbar">
-      <h1>LLM 真实调用日志</h1>
-      <div>
-        <a href="/chat">返回聊天</a>
-        <a href="/settings">系统配置</a>
+<body class="min-h-screen bg-[#ededed] font-sans text-slate-900">
+  <main class="mx-auto w-full max-w-screen-sm px-2 py-2 sm:max-w-5xl sm:px-4 sm:py-4">
+    <header class="sticky top-0 z-20 rounded-xl border border-slate-300 bg-[#f6f6f6]/95 px-3 py-2 backdrop-blur">
+      <div class="flex items-center justify-between">
+        <a href="/chat" class="inline-flex min-h-9 items-center rounded-lg px-2 text-sm font-medium text-slate-600 active:bg-slate-200">聊天</a>
+        <h1 class="text-base font-semibold tracking-tight">LLM 调用日志</h1>
+        <a href="/settings" class="inline-flex min-h-9 items-center rounded-lg px-2 text-sm font-medium text-slate-600 active:bg-slate-200">配置</a>
       </div>
-    </div>
+    </header>
 
-    {{if .Entries}}
-      {{range .Entries}}
-      <div class="entry">
-        <div class="head">
-          <div>#{{.ID}}</div>
-          <div>{{.Time.Format "2006-01-02 15:04:05"}}</div>
-          <div>{{.Purpose}}</div>
-          <div>{{.Model}}</div>
-          <div>{{.DurationMS}}ms</div>
-          <div>HTTP {{.StatusCode}}</div>
-        </div>
-        <div class="body">
-          {{if .Error}}<div class="error">错误: {{.Error}}</div>{{end}}
-          <div>
-            <div class="label">Request Body</div>
-            <pre>{{.Request}}</pre>
+    <section class="mt-2 space-y-3">
+      {{if .Entries}}
+        {{range .Entries}}
+        <article class="overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-sm">
+          <div class="drag-scroll overflow-x-auto border-b border-slate-200 bg-slate-50 px-3 py-2.5 cursor-grab">
+            <div class="grid min-w-[760px] grid-cols-[70px_180px_180px_130px_120px_1fr] gap-2 text-xs text-slate-600">
+              <div>#{{.ID}}</div>
+              <div>{{.Time.Format "2006-01-02 15:04:05"}}</div>
+              <div>{{.Purpose}}</div>
+              <div>{{.Model}}</div>
+              <div>{{.DurationMS}}ms</div>
+              <div>HTTP {{.StatusCode}}</div>
+            </div>
           </div>
-          <div>
-            <div class="label">Response Body</div>
-            <pre>{{.Response}}</pre>
+
+          <div class="space-y-3 p-3">
+            {{if .Error}}<div class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">错误: {{.Error}}</div>{{end}}
+
+            <div>
+              <div class="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Request Body</div>
+              <pre class="drag-scroll max-h-[36vh] overflow-auto rounded-xl bg-slate-900 p-3 font-mono text-[11px] leading-5 text-slate-100 cursor-grab">{{.Request}}</pre>
+            </div>
+
+            <div>
+              <div class="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Response Body</div>
+              <pre class="drag-scroll max-h-[40vh] overflow-auto rounded-xl bg-slate-900 p-3 font-mono text-[11px] leading-5 text-slate-100 cursor-grab">{{.Response}}</pre>
+            </div>
           </div>
-        </div>
-      </div>
+        </article>
+        {{end}}
+      {{else}}
+        <div class="rounded-2xl border border-dashed border-slate-300 bg-white px-3 py-4 text-sm leading-6 text-slate-500">暂无日志。发送一条聊天消息后会出现真实 LLM 请求与响应。</div>
       {{end}}
-    {{else}}
-      <div class="empty">暂无日志。发送一条聊天消息后会出现真实 LLM 请求与响应。</div>
-    {{end}}
-  </div>
+    </section>
+  </main>
+
+  <script>
+    (function () {
+      var active = null;
+      var startX = 0;
+      var scrollStart = 0;
+      var nodes = document.querySelectorAll('.drag-scroll');
+
+      for (var i = 0; i < nodes.length; i++) {
+        nodes[i].addEventListener('mousedown', function (e) {
+          active = e.currentTarget;
+          startX = e.clientX;
+          scrollStart = active.scrollLeft;
+          active.style.cursor = 'grabbing';
+          document.body.style.userSelect = 'none';
+          e.preventDefault();
+        });
+      }
+
+      window.addEventListener('mousemove', function (e) {
+        if (!active) return;
+        active.scrollLeft = scrollStart - (e.clientX - startX);
+      });
+
+      window.addEventListener('mouseup', function () {
+        if (!active) return;
+        active.style.cursor = 'grab';
+        document.body.style.userSelect = '';
+        active = null;
+      });
+    })();
+  </script>
 </body>
 </html>
 {{end}}

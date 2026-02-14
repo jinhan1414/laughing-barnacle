@@ -3,7 +3,6 @@ package web
 import (
 	"context"
 	"embed"
-	"encoding/json"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -32,17 +31,9 @@ type Server struct {
 type chatPageData struct {
 	Summary        string
 	Messages       []conversation.Message
-	ToolCalls      []toolCallView
 	Error          string
 	RetryAvailable bool
 	Draft          string
-}
-
-type toolCallView struct {
-	Time      string
-	CallID    string
-	Name      string
-	Arguments string
 }
 
 type logsPageData struct {
@@ -64,8 +55,15 @@ type mcpServiceView struct {
 	UpdatedAt   string
 	Connected   bool
 	ToolCount   int
+	Tools       []mcpServiceToolView
 	StatusLabel string
 	StatusError string
+}
+
+type mcpServiceToolView struct {
+	Name        string
+	Description string
+	Enabled     bool
 }
 
 type settingsPageData struct {
@@ -73,6 +71,7 @@ type settingsPageData struct {
 	Sections      []settingsSection
 	Services      []mcpServiceView
 	Skills        []skillView
+	AgentPrompts  agentPromptsView
 	Success       string
 	Error         string
 }
@@ -83,6 +82,12 @@ type skillView struct {
 	Prompt    string
 	Enabled   bool
 	UpdatedAt string
+}
+
+type agentPromptsView struct {
+	SystemPrompt            string
+	CompressionSystemPrompt string
+	UpdatedAt               string
 }
 
 func NewServer(
@@ -119,9 +124,11 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/settings/mcp/save", s.handleSettingsMCPSave)
 	mux.HandleFunc("/settings/mcp/delete", s.handleSettingsMCPDelete)
 	mux.HandleFunc("/settings/mcp/toggle", s.handleSettingsMCPToggle)
+	mux.HandleFunc("/settings/mcp/tool/toggle", s.handleSettingsMCPToolToggle)
 	mux.HandleFunc("/settings/skills/save", s.handleSettingsSkillSave)
 	mux.HandleFunc("/settings/skills/delete", s.handleSettingsSkillDelete)
 	mux.HandleFunc("/settings/skills/toggle", s.handleSettingsSkillToggle)
+	mux.HandleFunc("/settings/llm/prompts/save", s.handleSettingsLLMPromptsSave)
 	mux.HandleFunc("/healthz", s.handleHealthz)
 }
 
@@ -138,7 +145,6 @@ func (s *Server) handleChatPage(w http.ResponseWriter, r *http.Request) {
 	data := chatPageData{
 		Summary:        summary,
 		Messages:       messages,
-		ToolCalls:      extractRecentToolCalls(s.logStore.List(), 10),
 		Error:          r.URL.Query().Get("error"),
 		RetryAvailable: r.URL.Query().Get("retry") == "1",
 		Draft:          r.URL.Query().Get("draft"),
@@ -216,7 +222,7 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 		ActiveSection: section,
 		Sections: []settingsSection{
 			{Key: "mcp", Title: "MCP 服务", Description: "管理 Agent 可用的 MCP 工具服务"},
-			{Key: "llm", Title: "模型策略", Description: "预留：模型与路由策略配置"},
+			{Key: "llm", Title: "提示词策略", Description: "配置 Agent 系统提示词与压缩提示词"},
 			{Key: "security", Title: "安全策略", Description: "预留：权限与审计配置"},
 			{Key: "skills", Title: "Skill 技能", Description: "配置 Agent 的可复用技能指令"},
 		},
@@ -245,6 +251,14 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 				view.Connected = true
 				view.StatusLabel = "连接正常"
 				view.ToolCount = status.ToolCount
+				view.Tools = make([]mcpServiceToolView, 0, len(status.Tools))
+				for _, tool := range status.Tools {
+					view.Tools = append(view.Tools, mcpServiceToolView{
+						Name:        tool.Name,
+						Description: tool.Description,
+						Enabled:     tool.Enabled,
+					})
+				}
 			default:
 				view.StatusLabel = "连接失败"
 				view.StatusError = status.Error
@@ -265,6 +279,16 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 				view.UpdatedAt = skill.UpdatedAt.Format("2006-01-02 15:04:05")
 			}
 			data.Skills = append(data.Skills, view)
+		}
+	} else if section == "llm" {
+		cfg := s.mcpStore.GetAgentPromptConfig()
+		systemPrompt, compressionPrompt := s.agent.GetEffectivePrompts()
+		data.AgentPrompts = agentPromptsView{
+			SystemPrompt:            systemPrompt,
+			CompressionSystemPrompt: compressionPrompt,
+		}
+		if !cfg.UpdatedAt.IsZero() {
+			data.AgentPrompts.UpdatedAt = cfg.UpdatedAt.Format("2006-01-02 15:04:05")
 		}
 	}
 
@@ -338,6 +362,30 @@ func (s *Server) handleSettingsMCPToggle(w http.ResponseWriter, r *http.Request)
 	s.redirectSettings(w, r, "mcp", fmt.Sprintf("MCP 服务 %s 已禁用", id), "")
 }
 
+func (s *Server) handleSettingsMCPToolToggle(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		s.redirectSettings(w, r, "mcp", "", "请求参数解析失败")
+		return
+	}
+	serviceID := strings.TrimSpace(r.FormValue("service_id"))
+	toolName := strings.TrimSpace(r.FormValue("tool_name"))
+	enable := r.FormValue("enabled") == "true"
+	if err := s.mcpStore.SetServiceToolEnabled(serviceID, toolName, enable); err != nil {
+		s.redirectSettings(w, r, "mcp", "", err.Error())
+		return
+	}
+	s.mcpTools.InvalidateCache()
+	if enable {
+		s.redirectSettings(w, r, "mcp", fmt.Sprintf("工具 %s 已启用", toolName), "")
+		return
+	}
+	s.redirectSettings(w, r, "mcp", fmt.Sprintf("工具 %s 已禁用", toolName), "")
+}
+
 func (s *Server) handleSettingsSkillSave(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -402,6 +450,27 @@ func (s *Server) handleSettingsSkillToggle(w http.ResponseWriter, r *http.Reques
 	s.redirectSettings(w, r, "skills", fmt.Sprintf("Skill %s 已禁用", id), "")
 }
 
+func (s *Server) handleSettingsLLMPromptsSave(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		s.redirectSettings(w, r, "llm", "", "请求参数解析失败")
+		return
+	}
+
+	cfg := mcp.AgentPromptConfig{
+		SystemPrompt:            strings.TrimSpace(r.FormValue("system_prompt")),
+		CompressionSystemPrompt: strings.TrimSpace(r.FormValue("compression_system_prompt")),
+	}
+	if err := s.mcpStore.UpsertAgentPromptConfig(cfg); err != nil {
+		s.redirectSettings(w, r, "llm", "", err.Error())
+		return
+	}
+	s.redirectSettings(w, r, "llm", "系统提示词已更新", "")
+}
+
 func (s *Server) redirectSettings(w http.ResponseWriter, r *http.Request, section, success, failure string) {
 	values := url.Values{}
 	if strings.TrimSpace(section) == "" {
@@ -429,64 +498,4 @@ func displayTransport(raw string) string {
 	default:
 		return "streamableHttp"
 	}
-}
-
-func extractRecentToolCalls(entries []llmlog.Entry, limit int) []toolCallView {
-	if limit <= 0 {
-		limit = 10
-	}
-	out := make([]toolCallView, 0, limit)
-	for _, entry := range entries {
-		if strings.TrimSpace(entry.Response) == "" {
-			continue
-		}
-		calls := parseToolCallsFromResponse(entry.Response)
-		if len(calls) == 0 {
-			continue
-		}
-		for _, call := range calls {
-			view := toolCallView{
-				Time:      entry.Time.Format("2006-01-02 15:04:05"),
-				CallID:    strings.TrimSpace(call.ID),
-				Name:      strings.TrimSpace(call.Function.Name),
-				Arguments: strings.TrimSpace(call.Function.Arguments),
-			}
-			if view.Name == "" {
-				view.Name = "(unknown)"
-			}
-			if view.Arguments == "" {
-				view.Arguments = "{}"
-			}
-			out = append(out, view)
-			if len(out) >= limit {
-				return out
-			}
-		}
-	}
-	return out
-}
-
-func parseToolCallsFromResponse(raw string) []mcpToolCall {
-	var payload struct {
-		Choices []struct {
-			Message struct {
-				ToolCalls []mcpToolCall `json:"tool_calls"`
-			} `json:"message"`
-		} `json:"choices"`
-	}
-	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
-		return nil
-	}
-	if len(payload.Choices) == 0 {
-		return nil
-	}
-	return payload.Choices[0].Message.ToolCalls
-}
-
-type mcpToolCall struct {
-	ID       string `json:"id"`
-	Function struct {
-		Name      string `json:"name"`
-		Arguments string `json:"arguments"`
-	} `json:"function"`
 }

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -20,13 +21,20 @@ const (
 )
 
 type Service struct {
-	ID        string    `json:"id"`
+	ID         string             `json:"id"`
+	Name       string             `json:"name"`
+	Endpoint   string             `json:"endpoint"`
+	Transport  string             `json:"transport,omitempty"`
+	AuthToken  string             `json:"auth_token,omitempty"`
+	Enabled    bool               `json:"enabled"`
+	ToolStates []ServiceToolState `json:"tool_states,omitempty"`
+	UpdatedAt  time.Time          `json:"updated_at"`
+}
+
+type ServiceToolState struct {
 	Name      string    `json:"name"`
-	Endpoint  string    `json:"endpoint"`
-	Transport string    `json:"transport,omitempty"`
-	AuthToken string    `json:"auth_token,omitempty"`
 	Enabled   bool      `json:"enabled"`
-	UpdatedAt time.Time `json:"updated_at"`
+	UpdatedAt time.Time `json:"updated_at,omitempty"`
 }
 
 type Skill struct {
@@ -37,6 +45,12 @@ type Skill struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+type AgentPromptConfig struct {
+	SystemPrompt            string    `json:"system_prompt"`
+	CompressionSystemPrompt string    `json:"compression_system_prompt"`
+	UpdatedAt               time.Time `json:"updated_at,omitempty"`
+}
+
 type fileConfig struct {
 	MCP struct {
 		Services []Service `json:"services"`
@@ -44,6 +58,9 @@ type fileConfig struct {
 	Skills struct {
 		Items []Skill `json:"items"`
 	} `json:"skills"`
+	Agent struct {
+		Prompts AgentPromptConfig `json:"prompts"`
+	} `json:"agent"`
 }
 
 type Store struct {
@@ -67,7 +84,7 @@ func NewStore(path string) (*Store, error) {
 func (s *Store) ListServices() []Service {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return slices.Clone(s.cfg.MCP.Services)
+	return cloneServices(s.cfg.MCP.Services)
 }
 
 func (s *Store) ListEnabledServices() []Service {
@@ -89,7 +106,7 @@ func (s *Store) GetService(id string) (Service, bool) {
 
 	for _, svc := range s.cfg.MCP.Services {
 		if svc.ID == id {
-			return svc, true
+			return cloneService(svc), true
 		}
 	}
 	return Service{}, false
@@ -101,6 +118,7 @@ func (s *Store) UpsertService(service Service) error {
 	service.Endpoint = strings.TrimSpace(service.Endpoint)
 	service.Transport = normalizeServiceTransport(service.Transport)
 	service.AuthToken = strings.TrimSpace(service.AuthToken)
+	service.ToolStates = normalizeServiceToolStates(service.ToolStates)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -125,6 +143,9 @@ func (s *Store) UpsertService(service Service) error {
 		if s.cfg.MCP.Services[i].ID == service.ID {
 			if service.AuthToken == "" {
 				service.AuthToken = s.cfg.MCP.Services[i].AuthToken
+			}
+			if len(service.ToolStates) == 0 {
+				service.ToolStates = cloneToolStates(s.cfg.MCP.Services[i].ToolStates)
 			}
 			s.cfg.MCP.Services[i] = service
 			updated = true
@@ -180,6 +201,77 @@ func (s *Store) SetEnabled(id string, enabled bool) error {
 	}
 
 	return s.persistLocked()
+}
+
+func (s *Store) SetServiceToolEnabled(serviceID, toolName string, enabled bool) error {
+	serviceID = strings.TrimSpace(serviceID)
+	toolName = strings.TrimSpace(toolName)
+	if serviceID == "" {
+		return fmt.Errorf("service id is required")
+	}
+	if toolName == "" {
+		return fmt.Errorf("tool name is required")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for i := range s.cfg.MCP.Services {
+		if s.cfg.MCP.Services[i].ID != serviceID {
+			continue
+		}
+
+		now := time.Now()
+		states := cloneToolStates(s.cfg.MCP.Services[i].ToolStates)
+		idx := -1
+		for j := range states {
+			if states[j].Name == toolName {
+				idx = j
+				break
+			}
+		}
+
+		if enabled {
+			if idx >= 0 {
+				states = append(states[:idx], states[idx+1:]...)
+			}
+		} else {
+			if idx >= 0 {
+				states[idx].Enabled = false
+				states[idx].UpdatedAt = now
+			} else {
+				states = append(states, ServiceToolState{
+					Name:      toolName,
+					Enabled:   false,
+					UpdatedAt: now,
+				})
+			}
+		}
+
+		s.cfg.MCP.Services[i].ToolStates = normalizeServiceToolStates(states)
+		s.cfg.MCP.Services[i].UpdatedAt = now
+		return s.persistLocked()
+	}
+
+	return fmt.Errorf("service %q not found", serviceID)
+}
+
+func (s *Store) IsServiceToolEnabled(serviceID, toolName string) bool {
+	serviceID = strings.TrimSpace(serviceID)
+	toolName = strings.TrimSpace(toolName)
+	if serviceID == "" || toolName == "" {
+		return false
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, svc := range s.cfg.MCP.Services {
+		if svc.ID == serviceID {
+			return serviceToolEnabled(svc, toolName)
+		}
+	}
+	return false
 }
 
 func (s *Store) ListSkills() []Skill {
@@ -283,6 +375,40 @@ func (s *Store) SetSkillEnabled(id string, enabled bool) error {
 	return s.persistLocked()
 }
 
+func (s *Store) GetAgentPromptConfig() AgentPromptConfig {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	cfg := s.cfg.Agent.Prompts
+	cfg.SystemPrompt = strings.TrimSpace(cfg.SystemPrompt)
+	cfg.CompressionSystemPrompt = strings.TrimSpace(cfg.CompressionSystemPrompt)
+	return cfg
+}
+
+func (s *Store) GetSystemPrompt() string {
+	return s.GetAgentPromptConfig().SystemPrompt
+}
+
+func (s *Store) GetCompressionSystemPrompt() string {
+	return s.GetAgentPromptConfig().CompressionSystemPrompt
+}
+
+func (s *Store) UpsertAgentPromptConfig(cfg AgentPromptConfig) error {
+	cfg.SystemPrompt = strings.TrimSpace(cfg.SystemPrompt)
+	cfg.CompressionSystemPrompt = strings.TrimSpace(cfg.CompressionSystemPrompt)
+
+	if err := validateAgentPromptConfig(cfg); err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	cfg.UpdatedAt = time.Now()
+	s.cfg.Agent.Prompts = cfg
+	return s.persistLocked()
+}
+
 func (s *Store) load() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -302,6 +428,7 @@ func (s *Store) load() error {
 	}
 	for i, svc := range cfg.MCP.Services {
 		svc.Transport = normalizeServiceTransport(svc.Transport)
+		svc.ToolStates = normalizeServiceToolStates(svc.ToolStates)
 		if err := validateService(svc); err != nil {
 			return fmt.Errorf("invalid mcp service %q: %w", svc.ID, err)
 		}
@@ -311,6 +438,9 @@ func (s *Store) load() error {
 		if err := validateSkill(skill); err != nil {
 			return fmt.Errorf("invalid skill %q: %w", skill.ID, err)
 		}
+	}
+	if err := validateAgentPromptConfig(cfg.Agent.Prompts); err != nil {
+		return fmt.Errorf("invalid agent prompts: %w", err)
 	}
 
 	s.cfg = cfg
@@ -353,6 +483,11 @@ func validateService(service Service) error {
 	if service.Transport != ServiceTransportStreamableHTTP && service.Transport != ServiceTransportSSE {
 		return fmt.Errorf("service transport must be streamable_http or sse")
 	}
+	for _, state := range service.ToolStates {
+		if strings.TrimSpace(state.Name) == "" {
+			return fmt.Errorf("service tool state name is required")
+		}
+	}
 	return nil
 }
 
@@ -368,6 +503,21 @@ func validateSkill(skill Skill) error {
 	}
 	if strings.TrimSpace(skill.Prompt) == "" {
 		return fmt.Errorf("skill prompt is required")
+	}
+	return nil
+}
+
+func validateAgentPromptConfig(cfg AgentPromptConfig) error {
+	systemPrompt := strings.TrimSpace(cfg.SystemPrompt)
+	compressionPrompt := strings.TrimSpace(cfg.CompressionSystemPrompt)
+	if systemPrompt == "" && compressionPrompt == "" {
+		return nil
+	}
+	if systemPrompt == "" {
+		return fmt.Errorf("agent system prompt is required")
+	}
+	if compressionPrompt == "" {
+		return fmt.Errorf("agent compression system prompt is required")
 	}
 	return nil
 }
@@ -488,4 +638,77 @@ func (s *Store) findSkillIDForUpdateLocked(skill Skill) string {
 		matchedID = existing.ID
 	}
 	return matchedID
+}
+
+func cloneServices(in []Service) []Service {
+	out := make([]Service, len(in))
+	for i := range in {
+		out[i] = cloneService(in[i])
+	}
+	return out
+}
+
+func cloneService(in Service) Service {
+	out := in
+	out.ToolStates = cloneToolStates(in.ToolStates)
+	return out
+}
+
+func cloneToolStates(in []ServiceToolState) []ServiceToolState {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]ServiceToolState, len(in))
+	copy(out, in)
+	return out
+}
+
+func normalizeServiceToolStates(states []ServiceToolState) []ServiceToolState {
+	if len(states) == 0 {
+		return nil
+	}
+
+	byName := make(map[string]ServiceToolState, len(states))
+	for _, state := range states {
+		name := strings.TrimSpace(state.Name)
+		if name == "" {
+			continue
+		}
+		// Default is enabled; only store explicit non-default states.
+		if state.Enabled {
+			delete(byName, name)
+			continue
+		}
+		state.Name = name
+		state.Enabled = false
+		byName[name] = state
+	}
+	if len(byName) == 0 {
+		return nil
+	}
+
+	names := make([]string, 0, len(byName))
+	for name := range byName {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	out := make([]ServiceToolState, 0, len(names))
+	for _, name := range names {
+		out = append(out, byName[name])
+	}
+	return out
+}
+
+func serviceToolEnabled(service Service, toolName string) bool {
+	toolName = strings.TrimSpace(toolName)
+	if toolName == "" {
+		return false
+	}
+	for _, state := range service.ToolStates {
+		if strings.TrimSpace(state.Name) == toolName {
+			return state.Enabled
+		}
+	}
+	return true
 }

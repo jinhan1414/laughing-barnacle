@@ -1,0 +1,15 @@
+{{define "shared.tailwind.head"}}
+  <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ["IBM Plex Sans", "PingFang SC", "Microsoft YaHei", "sans-serif"],
+            mono: ["IBM Plex Mono", "SFMono-Regular", "Menlo", "monospace"]
+          }
+        }
+      }
+    };
+  </script>
+{{end}}

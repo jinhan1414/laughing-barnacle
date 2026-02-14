@@ -62,6 +62,19 @@ func (m *mockSkills) ListEnabledSkillPrompts() []string {
 	return m.prompts
 }
 
+type mockPromptProvider struct {
+	systemPrompt            string
+	compressionSystemPrompt string
+}
+
+func (m *mockPromptProvider) GetSystemPrompt() string {
+	return m.systemPrompt
+}
+
+func (m *mockPromptProvider) GetCompressionSystemPrompt() string {
+	return m.compressionSystemPrompt
+}
+
 func (m *mockTools) ListTools(_ context.Context) ([]llm.ToolDefinition, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -229,6 +242,16 @@ func TestHandleUserMessage_WithToolCalls(t *testing.T) {
 	if len(fakeTools.calls) != 1 || fakeTools.calls[0].Function.Name != "weather__query" {
 		t.Fatalf("unexpected tool calls: %+v", fakeTools.calls)
 	}
+	_, messages := store.Snapshot()
+	if len(messages) != 2 {
+		t.Fatalf("expected user + assistant messages, got %d", len(messages))
+	}
+	if len(messages[0].ToolCalls) != 1 {
+		t.Fatalf("expected tool calls attached to user message, got %d", len(messages[0].ToolCalls))
+	}
+	if messages[0].ToolCalls[0].Name != "weather__query" {
+		t.Fatalf("unexpected attached tool name: %s", messages[0].ToolCalls[0].Name)
+	}
 }
 
 func TestHandleUserMessage_IncludesEnabledSkillPrompts(t *testing.T) {
@@ -272,6 +295,83 @@ func TestHandleUserMessage_IncludesEnabledSkillPrompts(t *testing.T) {
 	}
 	if !strings.Contains(msgs[1].Content, "先检索再回答") {
 		t.Fatalf("skill prompt not injected: %q", msgs[1].Content)
+	}
+}
+
+func TestHandleUserMessage_UsesPromptProviderSystemPrompt(t *testing.T) {
+	store := conversation.NewStore()
+	fakeLLM := &mockLLM{responses: map[string][]string{
+		"chat_reply": {"ok"},
+	}}
+
+	agentSvc := New(Config{
+		Model:                      "test-model",
+		MaxRecentMessages:          10,
+		CompressionTriggerMessages: 99,
+		CompressionTriggerChars:    99999,
+		KeepRecentAfterCompression: 1,
+		MaxCompressionLoopsPerTurn: 1,
+		MaxToolCallRounds:          2,
+		SystemPrompt:               "default-system",
+		CompressionSystemPrompt:    "default-compressor",
+	}, store, fakeLLM, nil)
+	agentSvc.SetPromptProvider(&mockPromptProvider{
+		systemPrompt:            "override-system",
+		compressionSystemPrompt: "override-compressor",
+	})
+
+	reply, err := agentSvc.HandleUserMessage(context.Background(), "hello")
+	if err != nil {
+		t.Fatalf("HandleUserMessage error: %v", err)
+	}
+	if reply != "ok" {
+		t.Fatalf("unexpected reply: %s", reply)
+	}
+	if len(fakeLLM.calls) != 1 {
+		t.Fatalf("expected one llm call, got %d", len(fakeLLM.calls))
+	}
+	if got := fakeLLM.calls[0].Messages[0].Content; got != "override-system" {
+		t.Fatalf("expected provider system prompt, got %q", got)
+	}
+}
+
+func TestHandleUserMessage_UsesPromptProviderCompressionPrompt(t *testing.T) {
+	store := conversation.NewStore()
+	store.Append("user", "old question")
+	store.Append("assistant", "old answer")
+
+	fakeLLM := &mockLLM{responses: map[string][]string{
+		"compress_context": {"summary-v1"},
+		"chat_reply":       {"ok"},
+	}}
+
+	agentSvc := New(Config{
+		Model:                      "test-model",
+		MaxRecentMessages:          10,
+		CompressionTriggerMessages: 3,
+		CompressionTriggerChars:    0,
+		KeepRecentAfterCompression: 1,
+		MaxCompressionLoopsPerTurn: 2,
+		MaxToolCallRounds:          2,
+		SystemPrompt:               "default-system",
+		CompressionSystemPrompt:    "default-compressor",
+	}, store, fakeLLM, nil)
+	agentSvc.SetPromptProvider(&mockPromptProvider{
+		systemPrompt:            "override-system",
+		compressionSystemPrompt: "override-compressor",
+	})
+
+	if _, err := agentSvc.HandleUserMessage(context.Background(), "new input"); err != nil {
+		t.Fatalf("HandleUserMessage error: %v", err)
+	}
+	if len(fakeLLM.calls) < 1 {
+		t.Fatalf("expected at least one llm call")
+	}
+	if fakeLLM.calls[0].Purpose != "compress_context" {
+		t.Fatalf("first call purpose mismatch: %s", fakeLLM.calls[0].Purpose)
+	}
+	if got := fakeLLM.calls[0].Messages[0].Content; got != "override-compressor" {
+		t.Fatalf("expected provider compression prompt, got %q", got)
 	}
 }
 

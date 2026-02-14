@@ -5,425 +5,209 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>系统配置</title>
-  <style>
-    :root {
-      --bg: #f4f7fb;
-      --panel: #ffffff;
-      --text: #102340;
-      --muted: #556b8a;
-      --line: #d6deeb;
-      --accent: #0e7490;
-      --ok: #0f766e;
-      --warn: #b91c1c;
-      --soft: #eef5ff;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: "IBM Plex Sans", "PingFang SC", "Microsoft YaHei", sans-serif;
-      background: radial-gradient(circle at top left, #e9f3ff 0, var(--bg) 48%);
-      color: var(--text);
-    }
-    .container {
-      max-width: 1180px;
-      margin: 24px auto;
-      padding: 0 16px 24px;
-    }
-    .topbar {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 14px;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-    .topbar > div {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-    .topbar a {
-      color: var(--accent);
-      text-decoration: none;
-      font-weight: 600;
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      background: #fff;
-      padding: 8px 12px;
-    }
-    .layout {
-      display: grid;
-      grid-template-columns: 280px 1fr;
-      gap: 16px;
-    }
-    .card {
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      background: var(--panel);
-      box-shadow: 0 10px 24px rgba(16, 35, 64, 0.07);
-    }
-    .sidebar {
-      padding: 12px;
-    }
-    .nav-item {
-      display: block;
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      padding: 10px;
-      margin-bottom: 10px;
-      text-decoration: none;
-      color: inherit;
-      background: #fff;
-    }
-    .nav-item.active {
-      border-color: var(--accent);
-      background: var(--soft);
-    }
-    .nav-title {
-      font-weight: 700;
-      margin-bottom: 4px;
-    }
-    .nav-desc {
-      color: var(--muted);
-      font-size: 13px;
-      line-height: 1.5;
-    }
-    .main {
-      padding: 16px;
-    }
-    .flash {
-      border-radius: 10px;
-      padding: 10px 12px;
-      margin-bottom: 12px;
-      font-size: 14px;
-    }
-    .flash.success {
-      border: 1px solid #8dd4b8;
-      background: #ecfdf5;
-      color: #065f46;
-    }
-    .flash.error {
-      border: 1px solid #f5b1b1;
-      background: #fff1f2;
-      color: #9f1239;
-    }
-    h2 {
-      margin: 0 0 10px;
-    }
-    .hint {
-      color: var(--muted);
-      margin-bottom: 16px;
-      line-height: 1.6;
-    }
-    .form-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
-      margin-bottom: 16px;
-    }
-    label {
-      display: grid;
-      gap: 6px;
-      font-size: 13px;
-      color: var(--muted);
-    }
-    input[type="text"], input[type="url"], input[type="password"], select, textarea {
-      width: 100%;
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      padding: 10px;
-      font: inherit;
-      color: var(--text);
-      background: #fff;
-    }
-    textarea {
-      min-height: 120px;
-      resize: vertical;
-    }
-    .full {
-      grid-column: 1 / -1;
-    }
-    .action-row {
-      display: flex;
-      gap: 10px;
-      align-items: center;
-    }
-    button {
-      border: none;
-      border-radius: 8px;
-      padding: 10px 14px;
-      background: var(--accent);
-      color: #fff;
-      font: inherit;
-      font-weight: 600;
-      cursor: pointer;
-    }
-    button.ghost {
-      background: #fff;
-      color: var(--text);
-      border: 1px solid var(--line);
-    }
-    button.danger {
-      background: var(--warn);
-    }
-    .service-list {
-      display: grid;
-      gap: 10px;
-      margin-top: 10px;
-    }
-    .service {
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      padding: 12px;
-      background: #fff;
-    }
-    .service-head {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 10px;
-      margin-bottom: 8px;
-      flex-wrap: wrap;
-    }
-    .service-title {
-      font-weight: 700;
-    }
-    .status {
-      font-size: 12px;
-      padding: 4px 8px;
-      border-radius: 999px;
-      border: 1px solid var(--line);
-      background: #fff;
-    }
-    .status.ok {
-      border-color: #8dd4b8;
-      color: var(--ok);
-      background: #ecfdf5;
-    }
-    .status.err {
-      border-color: #f5b1b1;
-      color: var(--warn);
-      background: #fff1f2;
-    }
-    .meta {
-      color: var(--muted);
-      font-size: 13px;
-      line-height: 1.6;
-      margin-bottom: 8px;
-      word-break: break-all;
-    }
-    .service-actions {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-    .placeholder {
-      border: 1px dashed var(--line);
-      border-radius: 12px;
-      padding: 14px;
-      color: var(--muted);
-      background: #fff;
-      line-height: 1.6;
-    }
-    @media (max-width: 960px) {
-      .layout {
-        grid-template-columns: 1fr;
-      }
-      .form-grid {
-        grid-template-columns: 1fr;
-      }
-    }
-    @media (max-width: 720px) {
-      .container {
-        margin: 12px auto;
-        padding: 0 12px 18px;
-      }
-      .topbar h1 {
-        margin: 0;
-        font-size: 24px;
-      }
-      .topbar > div {
-        width: 100%;
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-      }
-      .topbar a {
-        text-align: center;
-      }
-      .main {
-        padding: 12px;
-      }
-      .action-row {
-        display: grid;
-      }
-      button {
-        width: 100%;
-      }
-    }
-  </style>
+  {{template "shared.tailwind.head" .}}
 </head>
-<body>
-  <div class="container">
-    <div class="topbar">
-      <h1>系统配置</h1>
-      <div>
-        <a href="/chat">聊天</a>
-        <a href="/logs">日志</a>
+<body class="min-h-screen bg-[#ededed] font-sans text-slate-900">
+  <main class="mx-auto w-full max-w-screen-sm px-2 py-2 sm:max-w-5xl sm:px-4 sm:py-4">
+    <header class="sticky top-0 z-20 rounded-xl border border-slate-300 bg-[#f6f6f6]/95 px-3 py-2 backdrop-blur">
+      <div class="flex items-center justify-between">
+        <a href="/chat" class="inline-flex min-h-9 items-center rounded-lg px-2 text-sm font-medium text-slate-600 active:bg-slate-200">聊天</a>
+        <h1 class="text-base font-semibold tracking-tight">系统配置</h1>
+        <a href="/logs" class="inline-flex min-h-9 items-center rounded-lg px-2 text-sm font-medium text-slate-600 active:bg-slate-200">日志</a>
       </div>
-    </div>
+    </header>
 
-    <div class="layout">
-      <div class="card sidebar">
+    <section class="mt-2 rounded-2xl border border-slate-300 bg-white p-2 shadow-sm sm:p-3">
+      <div class="mb-3 flex gap-2 overflow-x-auto pb-1">
         {{range .Sections}}
-          <a class="nav-item {{if eq $.ActiveSection .Key}}active{{end}}" href="/settings?section={{.Key}}">
-            <div class="nav-title">{{.Title}}</div>
-            <div class="nav-desc">{{.Description}}</div>
+          <a href="/settings?section={{.Key}}" class="min-w-[10.5rem] rounded-xl border px-3 py-2 text-left transition active:scale-[0.99] {{if eq $.ActiveSection .Key}}border-emerald-300 bg-emerald-50{{else}}border-slate-200 bg-slate-50{{end}}">
+            <div class="text-sm font-semibold text-slate-800">{{.Title}}</div>
+            <div class="mt-1 text-[12px] leading-5 text-slate-500">{{.Description}}</div>
           </a>
         {{end}}
       </div>
 
-      <div class="card main">
-        {{if .Success}}<div class="flash success">{{.Success}}</div>{{end}}
-        {{if .Error}}<div class="flash error">错误: {{.Error}}</div>{{end}}
+      <div class="rounded-xl border border-slate-200 bg-white p-3 sm:p-4">
+        {{if .Success}}<div class="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{{.Success}}</div>{{end}}
+        {{if .Error}}<div class="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">错误: {{.Error}}</div>{{end}}
 
         {{if eq .ActiveSection "mcp"}}
-          <h2>MCP 服务配置</h2>
-          <div class="hint">
-            Agent 的工具调用只会走 MCP。配置并启用服务后，Agent 会自动发现该服务提供的工具。服务 ID 由系统内部维护。
-          </div>
+          <h2 class="text-base font-semibold">MCP 服务配置</h2>
+          <p class="mt-1 text-sm leading-6 text-slate-500">Agent 的工具调用只会走 MCP。配置并启用服务后，Agent 会自动发现该服务提供的工具。服务 ID 由系统内部维护。</p>
 
-          <form method="post" action="/settings/mcp/save">
-            <div class="form-grid">
-              <label>
+          <form method="post" action="/settings/mcp/save" class="mt-3 space-y-3">
+            <div class="grid gap-3 sm:grid-cols-2">
+              <label class="flex flex-col gap-1 text-xs font-medium text-slate-600">
                 服务名称
-                <input type="text" name="name" placeholder="例如：Search MCP">
+                <input type="text" name="name" placeholder="例如：Search MCP" class="rounded-xl border-slate-300 text-sm">
               </label>
-              <label class="full">
+              <label class="flex flex-col gap-1 text-xs font-medium text-slate-600 sm:col-span-2">
                 Endpoint
-                <input type="url" name="endpoint" placeholder="https://example.com/mcp" required>
+                <input type="url" name="endpoint" placeholder="https://example.com/mcp" required class="rounded-xl border-slate-300 text-sm">
               </label>
-              <label>
+              <label class="flex flex-col gap-1 text-xs font-medium text-slate-600">
                 连接类型
-                <select name="transport">
+                <select name="transport" class="rounded-xl border-slate-300 text-sm">
                   <option value="streamable_http" selected>streamableHttp</option>
                   <option value="sse">sse</option>
                 </select>
               </label>
-              <label class="full">
+              <label class="flex flex-col gap-1 text-xs font-medium text-slate-600 sm:col-span-2">
                 鉴权 Token（留空表示不变）
-                <input type="password" name="auth_token" placeholder="Bearer token">
+                <input type="password" name="auth_token" placeholder="Bearer token" class="rounded-xl border-slate-300 text-sm">
               </label>
-              <label class="full">
-                <span style="display:flex;align-items:center;gap:8px;color:var(--text)">
-                  <input type="checkbox" name="enabled">
-                  保存后立即启用
-                </span>
+              <label class="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 sm:col-span-2">
+                <input type="checkbox" name="enabled" class="h-4 w-4 rounded border-slate-300 text-emerald-500 focus:ring-emerald-200">
+                保存后立即启用
               </label>
             </div>
-            <div class="action-row">
-              <button type="submit">新增/更新服务</button>
+            <div class="flex">
+              <button type="submit" class="w-full rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-white active:scale-[0.99] sm:w-auto">新增/更新服务</button>
             </div>
           </form>
 
-          <div class="service-list">
+          <div class="mt-4 space-y-3">
             {{if .Services}}
               {{range .Services}}
-                <div class="service">
-                  <div class="service-head">
-                    <div class="service-title">{{.Name}} <small>({{.ID}})</small></div>
-                    <div class="status {{if .Connected}}ok{{else if .Enabled}}err{{end}}">{{.StatusLabel}}</div>
+                {{$serviceID := .ID}}
+                <article class="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <div class="flex flex-wrap items-center justify-between gap-2">
+                    <div class="text-sm font-semibold text-slate-800">{{.Name}} <span class="text-xs font-normal text-slate-500">({{.ID}})</span></div>
+                    <span class="rounded-full border px-2 py-0.5 text-xs font-medium {{if .Connected}}border-emerald-200 bg-emerald-50 text-emerald-700{{else if .Enabled}}border-rose-200 bg-rose-50 text-rose-700{{else}}border-slate-200 bg-white text-slate-500{{end}}">{{.StatusLabel}}</span>
                   </div>
-                  <div class="meta">
+
+                  <div class="mt-2 break-all text-xs leading-6 text-slate-500">
                     Endpoint: {{.Endpoint}}<br>
                     连接类型: {{.Transport}}<br>
-                    已发现工具数: {{.ToolCount}}<br>
+                    可用工具数: {{.ToolCount}}<br>
                     最后更新: {{.UpdatedAt}}
                     {{if .StatusError}}<br>错误详情: {{.StatusError}}{{end}}
                   </div>
 
-                  <div class="service-actions">
+                  {{if and .Enabled .Connected}}
+                    <div class="mt-2 space-y-2">
+                      {{if .Tools}}
+                        {{range .Tools}}
+                          <div class="rounded-xl border border-slate-200 bg-white p-2.5">
+                            <div class="flex flex-wrap items-center justify-between gap-2">
+                              <div class="font-mono text-xs text-slate-700">{{.Name}}</div>
+                              <span class="rounded-full border px-2 py-0.5 text-xs {{if .Enabled}}border-emerald-200 bg-emerald-50 text-emerald-700{{else}}border-slate-200 bg-slate-50 text-slate-500{{end}}">{{if .Enabled}}已启用{{else}}已禁用{{end}}</span>
+                            </div>
+                            {{if .Description}}<div class="mt-1 text-xs leading-5 text-slate-500">{{.Description}}</div>{{end}}
+                            <div class="mt-2">
+                              <form method="post" action="/settings/mcp/tool/toggle">
+                                <input type="hidden" name="service_id" value="{{$serviceID}}">
+                                <input type="hidden" name="tool_name" value="{{.Name}}">
+                                <input type="hidden" name="enabled" value="{{if .Enabled}}false{{else}}true{{end}}">
+                                <button class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 active:scale-[0.99] sm:w-auto" type="submit">{{if .Enabled}}禁用工具{{else}}启用工具{{end}}</button>
+                              </form>
+                            </div>
+                          </div>
+                        {{end}}
+                      {{else}}
+                        <div class="rounded-xl border border-dashed border-slate-300 bg-white px-3 py-2 text-sm text-slate-500">该服务当前未返回可配置的工具。</div>
+                      {{end}}
+                    </div>
+                  {{end}}
+
+                  <div class="mt-3 grid grid-cols-2 gap-2">
                     <form method="post" action="/settings/mcp/toggle">
                       <input type="hidden" name="id" value="{{.ID}}">
                       <input type="hidden" name="enabled" value="{{if .Enabled}}false{{else}}true{{end}}">
-                      <button class="ghost" type="submit">{{if .Enabled}}禁用{{else}}启用{{end}}</button>
+                      <button class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 active:scale-[0.99]" type="submit">{{if .Enabled}}禁用{{else}}启用{{end}}</button>
                     </form>
                     <form method="post" action="/settings/mcp/delete" onsubmit="return confirm('确认删除服务 {{.ID}} ?')">
                       <input type="hidden" name="id" value="{{.ID}}">
-                      <button class="danger" type="submit">删除</button>
+                      <button class="w-full rounded-lg bg-rose-600 px-3 py-2 text-sm font-medium text-white active:scale-[0.99]" type="submit">删除</button>
                     </form>
                   </div>
-                </div>
+                </article>
               {{end}}
             {{else}}
-              <div class="placeholder">暂无 MCP 服务。先在上方添加一个服务并启用。</div>
+              <div class="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm text-slate-500">暂无 MCP 服务。先在上方添加一个服务并启用。</div>
             {{end}}
           </div>
-        {{else if eq .ActiveSection "skills"}}
-          <h2>Skill 技能配置</h2>
-          <div class="hint">
-            Skill 是可复用的 Agent 行为指令。启用后会自动注入到系统提示词，影响每轮回答策略。Skill ID 由系统内部维护。
-          </div>
+        {{else if eq .ActiveSection "llm"}}
+          <h2 class="text-base font-semibold">提示词策略</h2>
+          <p class="mt-1 text-sm leading-6 text-slate-500">这里配置 Agent 的基础系统提示词与上下文压缩提示词。保存后立即生效并持久化到设置文件。</p>
 
-          <form method="post" action="/settings/skills/save">
-            <div class="form-grid">
-              <label>
-                Skill 名称
-                <input type="text" name="name" placeholder="例如：Research Mode">
+          <form method="post" action="/settings/llm/prompts/save" class="mt-3 space-y-3">
+            <div class="grid gap-3">
+              <label class="flex flex-col gap-1 text-xs font-medium text-slate-600">
+                系统提示词（每轮对话生效）
+                <textarea name="system_prompt" required class="min-h-36 rounded-xl border-slate-300 text-sm">{{.AgentPrompts.SystemPrompt}}</textarea>
               </label>
-              <label class="full">
-                Skill 指令
-                <textarea name="prompt" placeholder="例如：先检索，再给结论，并附引用来源。" required></textarea>
-              </label>
-              <label class="full">
-                <span style="display:flex;align-items:center;gap:8px;color:var(--text)">
-                  <input type="checkbox" name="enabled">
-                  保存后立即启用
-                </span>
+              <label class="flex flex-col gap-1 text-xs font-medium text-slate-600">
+                压缩提示词（上下文整理生效）
+                <textarea name="compression_system_prompt" required class="min-h-28 rounded-xl border-slate-300 text-sm">{{.AgentPrompts.CompressionSystemPrompt}}</textarea>
               </label>
             </div>
-            <div class="action-row">
-              <button type="submit">新增/更新 Skill</button>
+            <div class="flex flex-wrap items-center gap-2">
+              <button type="submit" class="w-full rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-white active:scale-[0.99] sm:w-auto">保存提示词</button>
+              {{if .AgentPrompts.UpdatedAt}}
+                <span class="text-xs text-slate-500">最后更新: {{.AgentPrompts.UpdatedAt}}</span>
+              {{else}}
+                <span class="text-xs text-slate-500">当前为默认提示词（来自环境配置）</span>
+              {{end}}
+            </div>
+          </form>
+        {{else if eq .ActiveSection "skills"}}
+          <h2 class="text-base font-semibold">Skill 技能配置</h2>
+          <p class="mt-1 text-sm leading-6 text-slate-500">Skill 是可复用的 Agent 行为指令。启用后会自动注入到系统提示词，影响每轮回答策略。Skill ID 由系统内部维护。</p>
+
+          <form method="post" action="/settings/skills/save" class="mt-3 space-y-3">
+            <div class="grid gap-3 sm:grid-cols-2">
+              <label class="flex flex-col gap-1 text-xs font-medium text-slate-600">
+                Skill 名称
+                <input type="text" name="name" placeholder="例如：Research Mode" class="rounded-xl border-slate-300 text-sm">
+              </label>
+              <label class="flex flex-col gap-1 text-xs font-medium text-slate-600 sm:col-span-2">
+                Skill 指令
+                <textarea name="prompt" placeholder="例如：先检索，再给结论，并附引用来源。" required class="min-h-28 rounded-xl border-slate-300 text-sm"></textarea>
+              </label>
+              <label class="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 sm:col-span-2">
+                <input type="checkbox" name="enabled" class="h-4 w-4 rounded border-slate-300 text-emerald-500 focus:ring-emerald-200">
+                保存后立即启用
+              </label>
+            </div>
+            <div class="flex">
+              <button type="submit" class="w-full rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-white active:scale-[0.99] sm:w-auto">新增/更新 Skill</button>
             </div>
           </form>
 
-          <div class="service-list">
+          <div class="mt-4 space-y-3">
             {{if .Skills}}
               {{range .Skills}}
-                <div class="service">
-                  <div class="service-head">
-                    <div class="service-title">{{.Name}} <small>({{.ID}})</small></div>
-                    <div class="status {{if .Enabled}}ok{{end}}">{{if .Enabled}}已启用{{else}}已禁用{{end}}</div>
+                <article class="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <div class="flex flex-wrap items-center justify-between gap-2">
+                    <div class="text-sm font-semibold text-slate-800">{{.Name}} <span class="text-xs font-normal text-slate-500">({{.ID}})</span></div>
+                    <span class="rounded-full border px-2 py-0.5 text-xs {{if .Enabled}}border-emerald-200 bg-emerald-50 text-emerald-700{{else}}border-slate-200 bg-white text-slate-500{{end}}">{{if .Enabled}}已启用{{else}}已禁用{{end}}</span>
                   </div>
-                  <div class="meta">
-                    指令: {{.Prompt}}<br>
-                    最后更新: {{.UpdatedAt}}
-                  </div>
-                  <div class="service-actions">
+                  <div class="mt-2 text-xs leading-6 text-slate-500">指令: {{.Prompt}}<br>最后更新: {{.UpdatedAt}}</div>
+                  <div class="mt-3 grid grid-cols-2 gap-2">
                     <form method="post" action="/settings/skills/toggle">
                       <input type="hidden" name="id" value="{{.ID}}">
                       <input type="hidden" name="enabled" value="{{if .Enabled}}false{{else}}true{{end}}">
-                      <button class="ghost" type="submit">{{if .Enabled}}禁用{{else}}启用{{end}}</button>
+                      <button class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 active:scale-[0.99]" type="submit">{{if .Enabled}}禁用{{else}}启用{{end}}</button>
                     </form>
                     <form method="post" action="/settings/skills/delete" onsubmit="return confirm('确认删除 Skill {{.ID}} ?')">
                       <input type="hidden" name="id" value="{{.ID}}">
-                      <button class="danger" type="submit">删除</button>
+                      <button class="w-full rounded-lg bg-rose-600 px-3 py-2 text-sm font-medium text-white active:scale-[0.99]" type="submit">删除</button>
                     </form>
                   </div>
-                </div>
+                </article>
               {{end}}
             {{else}}
-              <div class="placeholder">暂无 Skill。先在上方添加一个并启用。</div>
+              <div class="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm text-slate-500">暂无 Skill。先在上方添加一个并启用。</div>
             {{end}}
           </div>
         {{else}}
-          <h2>{{.ActiveSection}} 配置</h2>
-          <div class="placeholder">
-            该配置分组已预留，后续可无缝扩展并复用当前左侧分类 + 右侧配置区布局。
-          </div>
+          <h2 class="text-base font-semibold">{{.ActiveSection}} 配置</h2>
+          <div class="mt-2 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm leading-6 text-slate-500">该配置分组已预留，后续可无缝扩展并复用当前布局。</div>
         {{end}}
       </div>
-    </div>
-  </div>
+    </section>
+  </main>
 </body>
 </html>
 {{end}}

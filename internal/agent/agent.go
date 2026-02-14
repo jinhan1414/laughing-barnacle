@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"laughing-barnacle/internal/conversation"
 	"laughing-barnacle/internal/llm"
@@ -32,13 +33,19 @@ type SkillProvider interface {
 	ListEnabledSkillPrompts() []string
 }
 
+type PromptProvider interface {
+	GetSystemPrompt() string
+	GetCompressionSystemPrompt() string
+}
+
 type Agent struct {
-	cfg    Config
-	llm    llm.Client
-	tools  ToolProvider
-	skills SkillProvider
-	store  *conversation.Store
-	mu     sync.Mutex
+	cfg     Config
+	llm     llm.Client
+	tools   ToolProvider
+	skills  SkillProvider
+	prompts PromptProvider
+	store   *conversation.Store
+	mu      sync.Mutex
 }
 
 func New(cfg Config, store *conversation.Store, llmClient llm.Client, tools ToolProvider) *Agent {
@@ -54,6 +61,18 @@ func (a *Agent) SetSkillProvider(provider SkillProvider) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.skills = provider
+}
+
+func (a *Agent) SetPromptProvider(provider PromptProvider) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.prompts = provider
+}
+
+func (a *Agent) GetEffectivePrompts() (systemPrompt string, compressionSystemPrompt string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.resolvePromptsLocked()
 }
 
 // HandleUserMessage processes one user turn, updating shared conversation state.
@@ -73,7 +92,8 @@ func (a *Agent) HandleUserMessage(ctx context.Context, userInput string) (string
 	}
 
 	_, messages := a.store.Snapshot()
-	reply, err := a.generateReply(ctx, messages)
+	reply, toolCalls, err := a.generateReply(ctx, messages)
+	_ = a.store.SetLatestUserToolCalls(toolCalls)
 	if err != nil {
 		return "", err
 	}
@@ -102,7 +122,8 @@ func (a *Agent) RetryLastUserMessage(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("no pending user message to retry")
 	}
 
-	reply, err := a.generateReply(ctx, messages)
+	reply, toolCalls, err := a.generateReply(ctx, messages)
+	_ = a.store.SetLatestUserToolCalls(toolCalls)
 	if err != nil {
 		return "", err
 	}
@@ -144,6 +165,8 @@ func (a *Agent) shouldCompress(summary string, messages []conversation.Message) 
 }
 
 func (a *Agent) compressContext(ctx context.Context, summary string, messages []conversation.Message) (string, error) {
+	_, compressionSystemPrompt := a.resolvePromptsLocked()
+
 	prompt := strings.Builder{}
 	prompt.WriteString("当前历史摘要：\n")
 	if strings.TrimSpace(summary) == "" {
@@ -160,7 +183,7 @@ func (a *Agent) compressContext(ctx context.Context, summary string, messages []
 		Purpose: "compress_context",
 		Model:   a.cfg.Model,
 		Messages: []llm.Message{
-			{Role: "system", Content: a.cfg.CompressionSystemPrompt},
+			{Role: "system", Content: compressionSystemPrompt},
 			{Role: "user", Content: prompt.String()},
 		},
 		Temperature: 0,
@@ -171,13 +194,14 @@ func (a *Agent) compressContext(ctx context.Context, summary string, messages []
 	return resp.Content, nil
 }
 
-func (a *Agent) generateReply(ctx context.Context, messages []conversation.Message) (string, error) {
+func (a *Agent) generateReply(ctx context.Context, messages []conversation.Message) (string, []conversation.ToolCall, error) {
 	summary, _ := a.store.Snapshot()
+	systemPrompt, _ := a.resolvePromptsLocked()
 
 	requestMessages := make([]llm.Message, 0, 2+len(messages))
 	requestMessages = append(requestMessages, llm.Message{
 		Role:    "system",
-		Content: a.cfg.SystemPrompt,
+		Content: systemPrompt,
 	})
 	if a.skills != nil {
 		skillPrompts := a.skills.ListEnabledSkillPrompts()
@@ -219,9 +243,9 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 			Temperature: a.cfg.Temperature,
 		})
 		if err != nil {
-			return "", fmt.Errorf("generate reply failed: %w", err)
+			return "", nil, fmt.Errorf("generate reply failed: %w", err)
 		}
-		return resp.Content, nil
+		return resp.Content, nil, nil
 	}
 
 	toolDefs, err := a.tools.ListTools(ctx)
@@ -233,6 +257,7 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 	if maxRounds <= 0 {
 		maxRounds = 1
 	}
+	executedCalls := make([]conversation.ToolCall, 0)
 
 	for i := 0; i < maxRounds; i++ {
 		resp, err := a.llm.Chat(ctx, llm.ChatRequest{
@@ -243,11 +268,11 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 			Temperature: a.cfg.Temperature,
 		})
 		if err != nil {
-			return "", fmt.Errorf("generate reply failed: %w", err)
+			return "", executedCalls, fmt.Errorf("generate reply failed: %w", err)
 		}
 
 		if len(resp.ToolCalls) == 0 {
-			return resp.Content, nil
+			return resp.Content, executedCalls, nil
 		}
 
 		requestMessages = append(requestMessages, llm.Message{
@@ -261,6 +286,25 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 			if callErr != nil {
 				result = "tool execution error: " + callErr.Error()
 			}
+			callName := strings.TrimSpace(call.Function.Name)
+			if callName == "" {
+				callName = "(unknown)"
+			}
+			callArgs := strings.TrimSpace(call.Function.Arguments)
+			if callArgs == "" {
+				callArgs = "{}"
+			}
+			callRecord := conversation.ToolCall{
+				ID:        strings.TrimSpace(call.ID),
+				Name:      callName,
+				Arguments: callArgs,
+				Result:    strings.TrimSpace(result),
+				CreatedAt: time.Now(),
+			}
+			if callErr != nil {
+				callRecord.Error = callErr.Error()
+			}
+			executedCalls = append(executedCalls, callRecord)
 
 			toolCallID := strings.TrimSpace(call.ID)
 			if toolCallID == "" {
@@ -274,7 +318,7 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 		}
 	}
 
-	return "", fmt.Errorf("tool call rounds exceeded %d", maxRounds)
+	return "", executedCalls, fmt.Errorf("tool call rounds exceeded %d", maxRounds)
 }
 
 func renderConversation(messages []conversation.Message) string {
@@ -283,4 +327,20 @@ func renderConversation(messages []conversation.Message) string {
 		b.WriteString(fmt.Sprintf("%d. [%s] %s\n", i+1, msg.Role, msg.Content))
 	}
 	return b.String()
+}
+
+func (a *Agent) resolvePromptsLocked() (systemPrompt string, compressionSystemPrompt string) {
+	systemPrompt = strings.TrimSpace(a.cfg.SystemPrompt)
+	compressionSystemPrompt = strings.TrimSpace(a.cfg.CompressionSystemPrompt)
+
+	if a.prompts != nil {
+		if v := strings.TrimSpace(a.prompts.GetSystemPrompt()); v != "" {
+			systemPrompt = v
+		}
+		if v := strings.TrimSpace(a.prompts.GetCompressionSystemPrompt()); v != "" {
+			compressionSystemPrompt = v
+		}
+	}
+
+	return systemPrompt, compressionSystemPrompt
 }
