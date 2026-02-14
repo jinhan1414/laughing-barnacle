@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"laughing-barnacle/internal/conversation"
 	"laughing-barnacle/internal/llm"
@@ -375,6 +376,76 @@ func TestHandleUserMessage_UsesPromptProviderCompressionPrompt(t *testing.T) {
 	}
 }
 
+func TestHandleUserMessage_SleepWindowNonUrgentBypassesLLM(t *testing.T) {
+	store := conversation.NewStore()
+	fakeLLM := &mockLLM{responses: map[string][]string{
+		"chat_reply": {"ok"},
+	}}
+
+	agentSvc := New(Config{
+		Model:                      "test-model",
+		MaxRecentMessages:          10,
+		CompressionTriggerMessages: 99,
+		CompressionTriggerChars:    99999,
+		KeepRecentAfterCompression: 1,
+		MaxCompressionLoopsPerTurn: 1,
+		MaxToolCallRounds:          2,
+		SystemPrompt:               "system",
+		CompressionSystemPrompt:    "compressor",
+	}, store, fakeLLM, nil)
+	agentSvc.nowFn = func() time.Time {
+		return time.Date(2026, 2, 14, 2, 0, 0, 0, time.Local)
+	}
+
+	reply, err := agentSvc.HandleUserMessage(context.Background(), "帮我整理下周学习计划")
+	if err != nil {
+		t.Fatalf("HandleUserMessage error: %v", err)
+	}
+	if !strings.Contains(reply, "休息时段") {
+		t.Fatalf("expected sleep-window reply, got %q", reply)
+	}
+	if len(fakeLLM.calls) != 0 {
+		t.Fatalf("expected no llm calls in sleep-window non-urgent path, got %d", len(fakeLLM.calls))
+	}
+	_, messages := store.Snapshot()
+	if len(messages) != 2 || messages[1].Role != "assistant" {
+		t.Fatalf("expected user + assistant messages, got %+v", messages)
+	}
+}
+
+func TestHandleUserMessage_SleepWindowUrgentStillCallsLLM(t *testing.T) {
+	store := conversation.NewStore()
+	fakeLLM := &mockLLM{responses: map[string][]string{
+		"chat_reply": {"紧急止损方案"},
+	}}
+
+	agentSvc := New(Config{
+		Model:                      "test-model",
+		MaxRecentMessages:          10,
+		CompressionTriggerMessages: 99,
+		CompressionTriggerChars:    99999,
+		KeepRecentAfterCompression: 1,
+		MaxCompressionLoopsPerTurn: 1,
+		MaxToolCallRounds:          2,
+		SystemPrompt:               "system",
+		CompressionSystemPrompt:    "compressor",
+	}, store, fakeLLM, nil)
+	agentSvc.nowFn = func() time.Time {
+		return time.Date(2026, 2, 14, 2, 0, 0, 0, time.Local)
+	}
+
+	reply, err := agentSvc.HandleUserMessage(context.Background(), "紧急：生产环境宕机，马上给我止损方案")
+	if err != nil {
+		t.Fatalf("HandleUserMessage error: %v", err)
+	}
+	if reply != "紧急止损方案" {
+		t.Fatalf("unexpected reply: %q", reply)
+	}
+	if len(fakeLLM.calls) != 1 {
+		t.Fatalf("expected llm to be called for urgent message, got %d", len(fakeLLM.calls))
+	}
+}
+
 func TestRetryLastUserMessage_ReusesPendingUserMessage(t *testing.T) {
 	store := conversation.NewStore()
 	fakeLLM := &mockLLM{
@@ -424,6 +495,38 @@ func TestRetryLastUserMessage_ReusesPendingUserMessage(t *testing.T) {
 	}
 	if len(fakeLLM.calls) != 2 {
 		t.Fatalf("expected 2 llm calls, got %d", len(fakeLLM.calls))
+	}
+}
+
+func TestRetryLastUserMessage_SleepWindowNonUrgentBypassesLLM(t *testing.T) {
+	store := conversation.NewStore()
+	store.Append("user", "帮我规划一下明天任务")
+	fakeLLM := &mockLLM{}
+
+	agentSvc := New(Config{
+		Model:                      "test-model",
+		MaxRecentMessages:          10,
+		CompressionTriggerMessages: 99,
+		CompressionTriggerChars:    99999,
+		KeepRecentAfterCompression: 1,
+		MaxCompressionLoopsPerTurn: 1,
+		MaxToolCallRounds:          2,
+		SystemPrompt:               "system",
+		CompressionSystemPrompt:    "compressor",
+	}, store, fakeLLM, nil)
+	agentSvc.nowFn = func() time.Time {
+		return time.Date(2026, 2, 14, 3, 0, 0, 0, time.Local)
+	}
+
+	reply, err := agentSvc.RetryLastUserMessage(context.Background())
+	if err != nil {
+		t.Fatalf("RetryLastUserMessage error: %v", err)
+	}
+	if !strings.Contains(reply, "休息时段") {
+		t.Fatalf("expected sleep-window reply, got %q", reply)
+	}
+	if len(fakeLLM.calls) != 0 {
+		t.Fatalf("expected no llm calls, got %d", len(fakeLLM.calls))
 	}
 }
 

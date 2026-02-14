@@ -45,6 +45,7 @@ type Agent struct {
 	skills  SkillProvider
 	prompts PromptProvider
 	store   *conversation.Store
+	nowFn   func() time.Time
 	mu      sync.Mutex
 }
 
@@ -54,6 +55,7 @@ func New(cfg Config, store *conversation.Store, llmClient llm.Client, tools Tool
 		llm:   llmClient,
 		tools: tools,
 		store: store,
+		nowFn: time.Now,
 	}
 }
 
@@ -86,6 +88,11 @@ func (a *Agent) HandleUserMessage(ctx context.Context, userInput string) (string
 	defer a.mu.Unlock()
 
 	a.store.Append("user", text)
+	if shouldEnforceSleepReply(text, a.nowFn()) {
+		reply := sleepWindowReply()
+		a.store.Append("assistant", reply)
+		return reply, nil
+	}
 
 	if err := a.autonomousCompressionLoop(ctx); err != nil {
 		return "", err
@@ -111,6 +118,12 @@ func (a *Agent) RetryLastUserMessage(ctx context.Context) (string, error) {
 	_, messages := a.store.Snapshot()
 	if len(messages) == 0 || messages[len(messages)-1].Role != "user" {
 		return "", fmt.Errorf("no pending user message to retry")
+	}
+	pendingUserMessage := messages[len(messages)-1].Content
+	if shouldEnforceSleepReply(pendingUserMessage, a.nowFn()) {
+		reply := sleepWindowReply()
+		a.store.Append("assistant", reply)
+		return reply, nil
 	}
 
 	if err := a.autonomousCompressionLoop(ctx); err != nil {
@@ -299,7 +312,7 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 				Name:      callName,
 				Arguments: callArgs,
 				Result:    strings.TrimSpace(result),
-				CreatedAt: time.Now(),
+				CreatedAt: a.nowFn(),
 			}
 			if callErr != nil {
 				callRecord.Error = callErr.Error()
@@ -343,4 +356,40 @@ func (a *Agent) resolvePromptsLocked() (systemPrompt string, compressionSystemPr
 	}
 
 	return systemPrompt, compressionSystemPrompt
+}
+
+func shouldEnforceSleepReply(userInput string, now time.Time) bool {
+	if !isSleepWindow(now) {
+		return false
+	}
+	return !isUrgentMessage(userInput)
+}
+
+func isSleepWindow(now time.Time) bool {
+	minutes := now.Hour()*60 + now.Minute()
+	sleepStartMinutes := 30
+	sleepEndMinutes := 8*60 + 30
+	return minutes >= sleepStartMinutes && minutes < sleepEndMinutes
+}
+
+func isUrgentMessage(userInput string) bool {
+	text := strings.ToLower(strings.TrimSpace(userInput))
+	if text == "" {
+		return false
+	}
+	keywords := []string{
+		"紧急", "加急", "立刻", "马上", "尽快", "urgent", "asap", "emergency",
+		"线上故障", "故障", "宕机", "事故", "生产事故", "p0", "sev0", "sev1",
+		"安全漏洞", "入侵", "数据泄露", "deadline", "ddl", "硬截止",
+	}
+	for _, kw := range keywords {
+		if strings.Contains(text, kw) {
+			return true
+		}
+	}
+	return false
+}
+
+func sleepWindowReply() string {
+	return "当前是我的休息时段（00:30-08:30）。我已记录你的请求；若不是紧急事项，我会在醒来后优先处理。如有硬截止，请补充时间与优先级。"
 }
