@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -31,9 +32,17 @@ type Server struct {
 type chatPageData struct {
 	Summary        string
 	Messages       []conversation.Message
+	ToolCalls      []toolCallView
 	Error          string
 	RetryAvailable bool
 	Draft          string
+}
+
+type toolCallView struct {
+	Time      string
+	CallID    string
+	Name      string
+	Arguments string
 }
 
 type logsPageData struct {
@@ -129,6 +138,7 @@ func (s *Server) handleChatPage(w http.ResponseWriter, r *http.Request) {
 	data := chatPageData{
 		Summary:        summary,
 		Messages:       messages,
+		ToolCalls:      extractRecentToolCalls(s.logStore.List(), 10),
 		Error:          r.URL.Query().Get("error"),
 		RetryAvailable: r.URL.Query().Get("retry") == "1",
 		Draft:          r.URL.Query().Get("draft"),
@@ -419,4 +429,64 @@ func displayTransport(raw string) string {
 	default:
 		return "streamableHttp"
 	}
+}
+
+func extractRecentToolCalls(entries []llmlog.Entry, limit int) []toolCallView {
+	if limit <= 0 {
+		limit = 10
+	}
+	out := make([]toolCallView, 0, limit)
+	for _, entry := range entries {
+		if strings.TrimSpace(entry.Response) == "" {
+			continue
+		}
+		calls := parseToolCallsFromResponse(entry.Response)
+		if len(calls) == 0 {
+			continue
+		}
+		for _, call := range calls {
+			view := toolCallView{
+				Time:      entry.Time.Format("2006-01-02 15:04:05"),
+				CallID:    strings.TrimSpace(call.ID),
+				Name:      strings.TrimSpace(call.Function.Name),
+				Arguments: strings.TrimSpace(call.Function.Arguments),
+			}
+			if view.Name == "" {
+				view.Name = "(unknown)"
+			}
+			if view.Arguments == "" {
+				view.Arguments = "{}"
+			}
+			out = append(out, view)
+			if len(out) >= limit {
+				return out
+			}
+		}
+	}
+	return out
+}
+
+func parseToolCallsFromResponse(raw string) []mcpToolCall {
+	var payload struct {
+		Choices []struct {
+			Message struct {
+				ToolCalls []mcpToolCall `json:"tool_calls"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		return nil
+	}
+	if len(payload.Choices) == 0 {
+		return nil
+	}
+	return payload.Choices[0].Message.ToolCalls
+}
+
+type mcpToolCall struct {
+	ID       string `json:"id"`
+	Function struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"function"`
 }

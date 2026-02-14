@@ -64,6 +64,48 @@
       margin-top: 8px;
       font-size: 14px;
     }
+    .tool-section {
+      margin-top: 16px;
+    }
+    .tool-list {
+      margin-top: 8px;
+      display: grid;
+      gap: 8px;
+      max-height: 28vh;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+    .tool-item {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px;
+      background: #fbfcff;
+    }
+    .tool-meta {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 6px;
+      line-height: 1.5;
+    }
+    .tool-args {
+      margin: 0;
+      white-space: pre-wrap;
+      font-family: "IBM Plex Mono", "SFMono-Regular", "Menlo", monospace;
+      font-size: 12px;
+      line-height: 1.45;
+      color: #1c2841;
+      background: #eef3ff;
+      border: 1px solid #dbe4ff;
+      border-radius: 8px;
+      padding: 8px 10px;
+      overflow-x: auto;
+      word-break: break-word;
+    }
+    .tool-empty {
+      color: var(--muted);
+      font-size: 14px;
+      padding: 10px 0;
+    }
     .messages {
       margin-top: 16px;
       display: grid;
@@ -182,6 +224,25 @@
     <div class="card">
       <strong>自动压缩后的上下文摘要</strong>
       <div class="summary">{{if .Summary}}{{.Summary}}{{else}}(暂无摘要){{end}}</div>
+
+      <div class="tool-section">
+        <strong>最近工具调用</strong>
+        <div class="tool-list">
+          {{if .ToolCalls}}
+            {{range .ToolCalls}}
+            <div class="tool-item">
+              <div class="tool-meta">
+                时间：{{.Time}}<br>
+                工具：{{.Name}}{{if .CallID}}<br>调用 ID：{{.CallID}}{{end}}
+              </div>
+              <pre class="tool-args">{{.Arguments}}</pre>
+            </div>
+            {{end}}
+          {{else}}
+            <div class="tool-empty">(暂无工具调用)</div>
+          {{end}}
+        </div>
+      </div>
 
       <div class="messages">
         {{if .Messages}}

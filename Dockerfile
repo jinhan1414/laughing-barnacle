@@ -14,15 +14,20 @@ ARG TARGETARCH
 
 RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-arm64} \
     go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/server
+RUN mkdir -p /out/data
 
 FROM gcr.io/distroless/static-debian12:nonroot AS runtime
 
 WORKDIR /app
 
-COPY --from=builder /out/server /app/server
+COPY --from=builder --chown=nonroot:nonroot /out/server /app/server
+COPY --from=builder --chown=nonroot:nonroot /out/data /data
 
 ENV APP_ADDR=:8080
+ENV APP_SETTINGS_FILE=/data/settings.json
+ENV APP_LLM_LOG_FILE=/data/llm_logs.json
 EXPOSE 8080
+VOLUME ["/data"]
 
 USER nonroot:nonroot
 ENTRYPOINT ["/app/server"]

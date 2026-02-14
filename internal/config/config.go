@@ -10,6 +10,7 @@ import (
 type Config struct {
 	Addr                       string
 	SettingsFile               string
+	LLMLogFile                 string
 	CerberBaseURL              string
 	CerberAPIKey               string
 	CerberModel                string
@@ -33,6 +34,7 @@ func Load() (Config, error) {
 	cfg := Config{
 		Addr:                       envOrDefault("APP_ADDR", ":8080"),
 		SettingsFile:               envOrDefault("APP_SETTINGS_FILE", "./data/settings.json"),
+		LLMLogFile:                 envOrDefault("APP_LLM_LOG_FILE", "./data/llm_logs.json"),
 		CerberBaseURL:              envOrDefault("CERBER_BASE_URL", "https://api.cerber.ai"),
 		CerberAPIKey:               os.Getenv("CERBER_API_KEY"),
 		CerberModel:                envOrDefault("CERBER_MODEL", "gpt-4o-mini"),
@@ -71,6 +73,9 @@ func Load() (Config, error) {
 	}
 	if cfg.LLMLogLimit <= 0 {
 		return Config{}, fmt.Errorf("APP_LLM_LOG_LIMIT must be > 0")
+	}
+	if cfg.LLMLogFile == "" {
+		return Config{}, fmt.Errorf("APP_LLM_LOG_FILE is required")
 	}
 
 	return cfg, nil

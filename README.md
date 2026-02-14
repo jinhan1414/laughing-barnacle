@@ -61,9 +61,16 @@ go build ./...
 ```bash
 docker buildx build --platform linux/arm64 -t laughing-barnacle:local --load .
 docker run --rm -p 8080:8080 \
+  -v $(pwd)/data:/data \
   -e CERBER_API_KEY=your_api_key_here \
   laughing-barnacle:local
 ```
+
+说明：
+- 容器内默认将 MCP/Skills 配置写入 `/data/settings.json`。
+- 容器内默认将 LLM 调用日志写入 `/data/llm_logs.json`。
+- 通过 `-v $(pwd)/data:/data`（或命名卷）可在容器重建后保留配置。
+- 若不挂载卷，配置与日志只在该容器生命周期内有效。
 
 ## CI/CD 自动构建并推送镜像
 
@@ -100,6 +107,7 @@ docker run --rm -p 8080:8080 \
 
 - `APP_ADDR`: HTTP 监听地址
 - `APP_SETTINGS_FILE`: 设置持久化文件路径（含 MCP 与 Skills 配置）
+- `APP_LLM_LOG_FILE`: LLM 调用日志持久化文件路径
 - `CERBER_BASE_URL`: Cerber 服务地址
 - `CERBER_API_KEY`: Cerber API Key（必填）
 - `CERBER_MODEL`: 默认模型

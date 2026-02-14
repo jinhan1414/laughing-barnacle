@@ -31,7 +31,10 @@ func run() error {
 		return err
 	}
 
-	logStore := llmlog.NewStore(cfg.LLMLogLimit)
+	logStore, err := llmlog.NewStoreWithFile(cfg.LLMLogLimit, cfg.LLMLogFile)
+	if err != nil {
+		return err
+	}
 	convStore := conversation.NewStore()
 	mcpStore, err := mcp.NewStore(cfg.SettingsFile)
 	if err != nil {
