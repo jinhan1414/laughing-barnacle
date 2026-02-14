@@ -77,10 +77,17 @@
     </section>
 
     <footer class="sticky bottom-0 z-20 border-t border-slate-300 bg-[#f7f7f7] px-2 py-2">
-      <form action="/chat/send" method="post" class="flex items-end gap-2">
-        <textarea name="message" placeholder="输入消息" required class="max-h-28 min-h-10 flex-1 resize-none rounded-xl border-slate-300 bg-white px-3 py-2 text-[15px] leading-6 text-slate-900 placeholder:text-slate-400 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100">{{.Draft}}</textarea>
-        <button type="submit" class="inline-flex h-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500 px-4 text-sm font-semibold text-white active:scale-[0.99]">发送</button>
+      <form id="chat-form" action="/chat/send" method="post" class="flex items-end gap-2">
+        <textarea id="chat-input" name="message" placeholder="输入消息" required class="max-h-28 min-h-10 flex-1 resize-none rounded-xl border-slate-300 bg-white px-3 py-2 text-[15px] leading-6 text-slate-900 placeholder:text-slate-400 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100">{{.Draft}}</textarea>
+        <button id="chat-submit" type="submit" class="inline-flex h-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500 px-4 text-sm font-semibold text-white active:scale-[0.99]">
+          <span id="chat-submit-label">发送</span>
+          <span id="chat-submit-spinner" class="ml-1 hidden h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/60 border-t-white"></span>
+        </button>
       </form>
+      <div id="chat-processing" class="mt-2 hidden items-center gap-2 px-1 text-[12px] text-slate-500">
+        <span class="h-2 w-2 animate-pulse rounded-full bg-emerald-500"></span>
+        <span>AI 正在处理消息...</span>
+      </div>
     </footer>
   </main>
 
@@ -130,6 +137,42 @@
       }
 
       container.scrollTop = container.scrollHeight;
+
+      var form = document.getElementById("chat-form");
+      var input = document.getElementById("chat-input");
+      var submitBtn = document.getElementById("chat-submit");
+      var submitLabel = document.getElementById("chat-submit-label");
+      var submitSpinner = document.getElementById("chat-submit-spinner");
+      var processing = document.getElementById("chat-processing");
+      var submitting = false;
+
+      if (form && input && submitBtn) {
+        form.addEventListener("submit", function () {
+          if (submitting) {
+            return;
+          }
+          var message = (input.value || "").trim();
+          if (!message) {
+            return;
+          }
+
+          submitting = true;
+          form.setAttribute("aria-busy", "true");
+          submitBtn.disabled = true;
+          submitBtn.classList.add("opacity-80");
+          input.readOnly = true;
+          if (submitLabel) {
+            submitLabel.textContent = "发送中";
+          }
+          if (submitSpinner) {
+            submitSpinner.classList.remove("hidden");
+          }
+          if (processing) {
+            processing.classList.remove("hidden");
+            processing.classList.add("flex");
+          }
+        });
+      }
     })();
   </script>
 </body>

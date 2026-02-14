@@ -716,7 +716,7 @@ func linuxBashToolDefinition() llm.ToolDefinition {
 		Type: "function",
 		Function: llm.ToolFunctionDefinition{
 			Name:        builtinLinuxBashToolName,
-			Description: "Run one bash command on local Linux and return stdout/stderr/exit_code.",
+			Description: "Run one Linux shell command (prefer bash, fallback sh) and return stdout/stderr/exit_code.",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -783,7 +783,10 @@ func runLinuxBash(ctx context.Context, req linuxBashRequest) (string, error) {
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(runCtx, "bash", "-lc", req.Command)
+	cmd, shellName, err := buildShellCommand(runCtx, req.Command)
+	if err != nil {
+		return "", err
+	}
 	if wd := strings.TrimSpace(req.WorkDir); wd != "" {
 		if abs, err := filepath.Abs(wd); err == nil {
 			cmd.Dir = abs
@@ -819,6 +822,7 @@ func runLinuxBash(ctx context.Context, req linuxBashRequest) (string, error) {
 
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("exit_code: %d\n", exitCode))
+	b.WriteString("shell: " + shellName + "\n")
 	if cmd.Dir != "" {
 		b.WriteString("working_dir: " + cmd.Dir + "\n")
 	}
@@ -831,6 +835,16 @@ func runLinuxBash(ctx context.Context, req linuxBashRequest) (string, error) {
 	b.WriteString("stderr:\n")
 	b.WriteString(safeOrEmpty(stderrText))
 	return strings.TrimSpace(b.String()), nil
+}
+
+func buildShellCommand(ctx context.Context, command string) (*exec.Cmd, string, error) {
+	if bashPath, err := exec.LookPath("bash"); err == nil {
+		return exec.CommandContext(ctx, bashPath, "-lc", command), "bash", nil
+	}
+	if shPath, err := exec.LookPath("sh"); err == nil {
+		return exec.CommandContext(ctx, shPath, "-c", command), "sh", nil
+	}
+	return nil, "", fmt.Errorf("run shell command: no bash/sh available in current environment")
 }
 
 func readToolArguments(raw string) (map[string]any, error) {

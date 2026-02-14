@@ -64,7 +64,7 @@ go build ./...
 
 项目根目录已提供两阶段 `Dockerfile`：
 - `builder` 阶段：使用 Go 镜像编译二进制
-- `runtime` 阶段：使用精简运行时镜像，仅包含可执行文件
+- `runtime` 阶段：使用 Debian 运行时，内置常用 Linux 工具，便于 `linux__bash` 工具调用
 
 本地构建与运行：
 
@@ -83,6 +83,7 @@ docker run --rm -p 8080:8080 \
 - 容器内默认将 LLM 调用日志写入 `/data/llm_logs.json`。
 - 通过 `-v $(pwd)/data:/data`（或命名卷）可在容器重建后保留配置。
 - 若不挂载卷，配置与日志只在该容器生命周期内有效。
+- 运行镜像内置常用工具：`bash`、`curl`、`wget`、`git`、`nodejs`、`npm`、`npx`、`jq`、`vim`、`nano`、`iproute2`、`net-tools`、`dnsutils`、`procps` 等。
 
 ## CI/CD 自动构建并推送镜像
 

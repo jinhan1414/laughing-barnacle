@@ -16,12 +16,42 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-arm64} \
     go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/server
 RUN mkdir -p /out/data
 
-FROM gcr.io/distroless/static-debian12:nonroot AS runtime
+FROM debian:12 AS runtime
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      bash \
+      ca-certificates \
+      curl \
+      wget \
+      git \
+      nodejs \
+      npm \
+      jq \
+      vim-tiny \
+      nano \
+      less \
+      procps \
+      iproute2 \
+      iputils-ping \
+      net-tools \
+      dnsutils \
+      unzip \
+      zip \
+      tzdata \
+      tree \
+      file \
+      lsof && \
+    if ! command -v npx >/dev/null 2>&1; then npm install -g npx; fi && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN groupadd --system app && \
+    useradd --system --gid app --create-home --home-dir /home/app app
 
 WORKDIR /app
 
-COPY --from=builder --chown=nonroot:nonroot /out/server /app/server
-COPY --from=builder --chown=nonroot:nonroot /out/data /data
+COPY --from=builder --chown=app:app /out/server /app/server
+COPY --from=builder --chown=app:app /out/data /data
 
 ENV APP_ADDR=:8080
 ENV APP_SETTINGS_FILE=/data/settings.json
@@ -32,5 +62,5 @@ ENV APP_LLM_LOG_FILE=/data/llm_logs.json
 EXPOSE 8080
 VOLUME ["/data"]
 
-USER nonroot:nonroot
+USER app:app
 ENTRYPOINT ["/app/server"]
