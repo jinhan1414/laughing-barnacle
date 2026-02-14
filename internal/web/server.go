@@ -3,10 +3,12 @@ package web
 import (
 	"context"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,18 +16,20 @@ import (
 	"laughing-barnacle/internal/conversation"
 	"laughing-barnacle/internal/llmlog"
 	"laughing-barnacle/internal/mcp"
+	"laughing-barnacle/internal/skills"
 )
 
 //go:embed templates/*.html
 var embeddedTemplates embed.FS
 
 type Server struct {
-	agent     *agent.Agent
-	convStore *conversation.Store
-	logStore  *llmlog.Store
-	mcpStore  *mcp.Store
-	mcpTools  *mcp.ToolProvider
-	tmpl      *template.Template
+	agent      *agent.Agent
+	convStore  *conversation.Store
+	logStore   *llmlog.Store
+	mcpStore   *mcp.Store
+	mcpTools   *mcp.ToolProvider
+	skillStore *skills.Store
+	tmpl       *template.Template
 }
 
 type chatPageData struct {
@@ -50,6 +54,8 @@ type mcpServiceView struct {
 	ID          string
 	Name        string
 	Endpoint    string
+	Command     string
+	Args        string
 	Transport   string
 	Enabled     bool
 	UpdatedAt   string
@@ -81,6 +87,7 @@ type skillView struct {
 	Name        string
 	Description string
 	Prompt      string
+	Source      string
 	Enabled     bool
 	UpdatedAt   string
 }
@@ -91,12 +98,33 @@ type agentPromptsView struct {
 	UpdatedAt               string
 }
 
+type apiMCPService struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Transport string    `json:"transport"`
+	Endpoint  string    `json:"endpoint,omitempty"`
+	Command   string    `json:"command,omitempty"`
+	Args      []string  `json:"args,omitempty"`
+	Enabled   bool      `json:"enabled"`
+	UpdatedAt time.Time `json:"updated_at,omitempty"`
+}
+
+type apiSkill struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description,omitempty"`
+	Source      string    `json:"source,omitempty"`
+	Enabled     bool      `json:"enabled"`
+	UpdatedAt   time.Time `json:"updated_at,omitempty"`
+}
+
 func NewServer(
 	agent *agent.Agent,
 	convStore *conversation.Store,
 	logStore *llmlog.Store,
 	mcpStore *mcp.Store,
 	mcpTools *mcp.ToolProvider,
+	skillStore *skills.Store,
 ) (*Server, error) {
 	tmpl, err := template.ParseFS(embeddedTemplates, "templates/*.html")
 	if err != nil {
@@ -104,12 +132,13 @@ func NewServer(
 	}
 
 	return &Server{
-		agent:     agent,
-		convStore: convStore,
-		logStore:  logStore,
-		mcpStore:  mcpStore,
-		mcpTools:  mcpTools,
-		tmpl:      tmpl,
+		agent:      agent,
+		convStore:  convStore,
+		logStore:   logStore,
+		mcpStore:   mcpStore,
+		mcpTools:   mcpTools,
+		skillStore: skillStore,
+		tmpl:       tmpl,
 	}, nil
 }
 
@@ -126,11 +155,15 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/settings/mcp/delete", s.handleSettingsMCPDelete)
 	mux.HandleFunc("/settings/mcp/toggle", s.handleSettingsMCPToggle)
 	mux.HandleFunc("/settings/mcp/tool/toggle", s.handleSettingsMCPToolToggle)
+	mux.HandleFunc("/settings/skills/install", s.handleSettingsSkillInstall)
 	mux.HandleFunc("/settings/skills/save", s.handleSettingsSkillSave)
 	mux.HandleFunc("/settings/skills/delete", s.handleSettingsSkillDelete)
 	mux.HandleFunc("/settings/skills/toggle", s.handleSettingsSkillToggle)
 	mux.HandleFunc("/settings/llm/prompts/save", s.handleSettingsLLMPromptsSave)
 	mux.HandleFunc("/settings/llm/prompts/reset", s.handleSettingsLLMPromptsReset)
+	mux.HandleFunc("/api/mcp/services", s.handleAPIMCPServices)
+	mux.HandleFunc("/api/skills", s.handleAPISkills)
+	mux.HandleFunc("/api/skills/catalog/search", s.handleAPISkillsCatalogSearch)
 	mux.HandleFunc("/healthz", s.handleHealthz)
 }
 
@@ -242,6 +275,8 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 				ID:        status.Service.ID,
 				Name:      status.Service.Name,
 				Endpoint:  status.Service.Endpoint,
+				Command:   status.Service.Command,
+				Args:      strings.Join(status.Service.Args, " "),
 				Transport: displayTransport(status.Service.Transport),
 				Enabled:   status.Service.Enabled,
 				UpdatedAt: status.Service.UpdatedAt.Format("2006-01-02 15:04:05"),
@@ -268,14 +303,15 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 			data.Services = append(data.Services, view)
 		}
 	} else if section == "skills" {
-		skills := s.mcpStore.ListSkills()
-		data.Skills = make([]skillView, 0, len(skills))
-		for _, skill := range skills {
+		allSkills := s.skillStore.ListSkills()
+		data.Skills = make([]skillView, 0, len(allSkills))
+		for _, skill := range allSkills {
 			view := skillView{
 				ID:          skill.ID,
 				Name:        skill.Name,
 				Description: skill.Description,
 				Prompt:      skill.Prompt,
+				Source:      skill.Source,
 				Enabled:     skill.Enabled,
 			}
 			if !skill.UpdatedAt.IsZero() {
@@ -311,10 +347,17 @@ func (s *Server) handleSettingsMCPSave(w http.ResponseWriter, r *http.Request) {
 		ID:        "",
 		Name:      strings.TrimSpace(r.FormValue("name")),
 		Endpoint:  strings.TrimSpace(r.FormValue("endpoint")),
+		Command:   strings.TrimSpace(r.FormValue("command")),
 		Transport: strings.TrimSpace(r.FormValue("transport")),
 		AuthToken: strings.TrimSpace(r.FormValue("auth_token")),
 		Enabled:   r.FormValue("enabled") == "on",
 	}
+	args, err := parseJSONArgsList(strings.TrimSpace(r.FormValue("args_json")))
+	if err != nil {
+		s.redirectSettings(w, r, "mcp", "", err.Error())
+		return
+	}
+	service.Args = args
 	if err := s.mcpStore.UpsertService(service); err != nil {
 		s.redirectSettings(w, r, "mcp", "", err.Error())
 		return
@@ -388,6 +431,27 @@ func (s *Server) handleSettingsMCPToolToggle(w http.ResponseWriter, r *http.Requ
 	s.redirectSettings(w, r, "mcp", fmt.Sprintf("工具 %s 已禁用", toolName), "")
 }
 
+func (s *Server) handleSettingsSkillInstall(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		s.redirectSettings(w, r, "skills", "", "请求参数解析失败")
+		return
+	}
+
+	rawURL := strings.TrimSpace(r.FormValue("skills_sh_url"))
+	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
+	defer cancel()
+	installed, err := s.skillStore.InstallFromSkillsSH(ctx, rawURL)
+	if err != nil {
+		s.redirectSettings(w, r, "skills", "", err.Error())
+		return
+	}
+	s.redirectSettings(w, r, "skills", fmt.Sprintf("Skill 已安装：%s (%s)", installed.Name, installed.ID), "")
+}
+
 func (s *Server) handleSettingsSkillSave(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -398,14 +462,14 @@ func (s *Server) handleSettingsSkillSave(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	skill := mcp.Skill{
+	skill := skills.Skill{
 		ID:          "",
 		Name:        strings.TrimSpace(r.FormValue("name")),
 		Description: strings.TrimSpace(r.FormValue("description")),
 		Prompt:      strings.TrimSpace(r.FormValue("prompt")),
 		Enabled:     r.FormValue("enabled") == "on",
 	}
-	if err := s.mcpStore.UpsertSkill(skill); err != nil {
+	if err := s.skillStore.UpsertSkill(skill); err != nil {
 		s.redirectSettings(w, r, "skills", "", err.Error())
 		return
 	}
@@ -423,7 +487,7 @@ func (s *Server) handleSettingsSkillDelete(w http.ResponseWriter, r *http.Reques
 	}
 
 	id := strings.TrimSpace(r.FormValue("id"))
-	if err := s.mcpStore.DeleteSkill(id); err != nil {
+	if err := s.skillStore.DeleteSkill(id); err != nil {
 		s.redirectSettings(w, r, "skills", "", err.Error())
 		return
 	}
@@ -442,7 +506,7 @@ func (s *Server) handleSettingsSkillToggle(w http.ResponseWriter, r *http.Reques
 
 	id := strings.TrimSpace(r.FormValue("id"))
 	enable := r.FormValue("enabled") == "true"
-	if err := s.mcpStore.SetSkillEnabled(id, enable); err != nil {
+	if err := s.skillStore.SetSkillEnabled(id, enable); err != nil {
 		s.redirectSettings(w, r, "skills", "", err.Error())
 		return
 	}
@@ -486,6 +550,89 @@ func (s *Server) handleSettingsLLMPromptsReset(w http.ResponseWriter, r *http.Re
 	s.redirectSettings(w, r, "llm", "已重置为内置默认提示词", "")
 }
 
+func (s *Server) handleAPIMCPServices(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	services := s.mcpStore.ListServices()
+	items := make([]apiMCPService, 0, len(services))
+	for _, svc := range services {
+		items = append(items, apiMCPService{
+			ID:        svc.ID,
+			Name:      svc.Name,
+			Transport: strings.TrimSpace(svc.Transport),
+			Endpoint:  strings.TrimSpace(svc.Endpoint),
+			Command:   strings.TrimSpace(svc.Command),
+			Args:      append([]string(nil), svc.Args...),
+			Enabled:   svc.Enabled,
+			UpdatedAt: svc.UpdatedAt,
+		})
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(map[string]any{"services": items})
+}
+
+func (s *Server) handleAPISkills(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	skillsList := s.skillStore.ListSkills()
+	items := make([]apiSkill, 0, len(skillsList))
+	for _, item := range skillsList {
+		items = append(items, apiSkill{
+			ID:          item.ID,
+			Name:        item.Name,
+			Description: item.Description,
+			Source:      item.Source,
+			Enabled:     item.Enabled,
+			UpdatedAt:   item.UpdatedAt,
+		})
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(map[string]any{"skills": items})
+}
+
+func (s *Server) handleAPISkillsCatalogSearch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	if query == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error": "query parameter q is required",
+		})
+		return
+	}
+
+	limit := 8
+	if rawLimit := strings.TrimSpace(r.URL.Query().Get("limit")); rawLimit != "" {
+		if parsed, err := strconv.Atoi(rawLimit); err == nil {
+			limit = parsed
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
+	defer cancel()
+	items, err := s.skillStore.SearchSkillsCatalog(ctx, query, limit)
+	if err != nil {
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"query":  query,
+		"skills": items,
+	})
+}
+
 func (s *Server) redirectSettings(w http.ResponseWriter, r *http.Request, section, success, failure string) {
 	values := url.Values{}
 	if strings.TrimSpace(section) == "" {
@@ -510,7 +657,34 @@ func displayTransport(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "sse":
 		return "sse"
+	case "stdio":
+		return "stdio"
 	default:
 		return "streamableHttp"
 	}
+}
+
+func parseJSONArgsList(raw string) ([]string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+
+	var values []string
+	if err := json.Unmarshal([]byte(raw), &values); err != nil {
+		return nil, fmt.Errorf("stdio 参数必须是 JSON 字符串数组，例如 [\"-y\",\"@modelcontextprotocol/server-filesystem\"]")
+	}
+
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		v := strings.TrimSpace(value)
+		if v == "" {
+			continue
+		}
+		out = append(out, v)
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
 }

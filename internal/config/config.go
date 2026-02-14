@@ -12,6 +12,8 @@ import (
 type Config struct {
 	Addr                       string
 	SettingsFile               string
+	SkillsDir                  string
+	SkillsStateFile            string
 	ConversationFile           string
 	LLMLogFile                 string
 	CerberBaseURL              string
@@ -37,6 +39,8 @@ func Load() (Config, error) {
 	cfg := Config{
 		Addr:                       envOrDefault("APP_ADDR", ":8080"),
 		SettingsFile:               envOrDefault("APP_SETTINGS_FILE", "./data/settings.json"),
+		SkillsDir:                  envOrDefault("APP_SKILLS_DIR", "./data/skills"),
+		SkillsStateFile:            envOrDefault("APP_SKILLS_STATE_FILE", "./data/skills_state.json"),
 		ConversationFile:           envOrDefault("APP_CONVERSATION_FILE", "./data/conversation.json"),
 		LLMLogFile:                 envOrDefault("APP_LLM_LOG_FILE", "./data/llm_logs.json"),
 		CerberBaseURL:              envOrDefault("CERBER_BASE_URL", "https://api.cerber.ai"),
@@ -83,6 +87,12 @@ func Load() (Config, error) {
 	}
 	if cfg.ConversationFile == "" {
 		return Config{}, fmt.Errorf("APP_CONVERSATION_FILE is required")
+	}
+	if cfg.SkillsDir == "" {
+		return Config{}, fmt.Errorf("APP_SKILLS_DIR is required")
+	}
+	if cfg.SkillsStateFile == "" {
+		return Config{}, fmt.Errorf("APP_SKILLS_STATE_FILE is required")
 	}
 
 	return cfg, nil

@@ -16,6 +16,7 @@ import (
 	"laughing-barnacle/internal/llm/cerber"
 	"laughing-barnacle/internal/llmlog"
 	"laughing-barnacle/internal/mcp"
+	"laughing-barnacle/internal/skills"
 	"laughing-barnacle/internal/web"
 )
 
@@ -36,6 +37,10 @@ func run() error {
 		return err
 	}
 	convStore, err := conversation.NewStoreWithFile(cfg.ConversationFile)
+	if err != nil {
+		return err
+	}
+	skillStore, err := skills.NewStore(cfg.SkillsDir, cfg.SkillsStateFile)
 	if err != nil {
 		return err
 	}
@@ -66,12 +71,12 @@ func run() error {
 		CompressionSystemPrompt:    cfg.CompressionSystemPrompt,
 		EnforceHumanRoutine:        true,
 	}, convStore, llmClient, mcpToolProvider)
-	agentSvc.SetSkillProvider(mcpStore)
+	agentSvc.SetSkillProvider(skillStore)
 	agentSvc.SetPromptProvider(mcpStore)
 	agentSvc.SetPromptUpdater(mcpStore)
 	agentSvc.SetHabitProvider(mcpStore)
 
-	webServer, err := web.NewServer(agentSvc, convStore, logStore, mcpStore, mcpToolProvider)
+	webServer, err := web.NewServer(agentSvc, convStore, logStore, mcpStore, mcpToolProvider, skillStore)
 	if err != nil {
 		return err
 	}

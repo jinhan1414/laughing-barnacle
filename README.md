@@ -5,12 +5,19 @@
 - Agent 自动压缩上下文（loop）
 - LLM 提供商采用 Cerber（按 OpenAI 兼容 Chat Completions 调用）
 - Agent 工具调用仅通过 MCP（Model Context Protocol）服务
+- 内置唯一本地工具 `linux__bash`（其他能力通过 MCP 工具扩展）
+- 支持 MCP `streamable_http` / `sse` / `stdio` 三种连接类型
 - 支持按 MCP 服务内单工具启用/禁用
 - 支持在设置页配置 Agent Skills（可启用/禁用的系统级技能指令）
 - 支持在设置页配置 Agent 系统提示词与压缩提示词（保存后即时生效）
+- 内置两个配置维护 Skill：`mcp-config-maintainer`、`skills-config-maintainer`
+- `skills-config-maintainer` 支持通过 `skills.sh` 检索候选技能并做模糊匹配（`/api/skills/catalog/search`）
+- 对 Skill/MCP 的写操作要求先给变更计划并等待用户确认
+- Skill 采用文件夹接入模式（`APP_SKILLS_DIR/<skill_id>/SKILL.md`）
 - 会话历史持久化，重启后可恢复聊天记录
 - 独立日志页展示每次真实 LLM 输入/输出
 - 独立设置页管理 MCP 服务与 Skills
+- 提供 API 供数字分身通过 `bash` 查询与检索：`/api/mcp/services`、`/api/skills`、`/api/skills/catalog/search`
 - 非流式输出
 
 ## 目录结构
@@ -70,7 +77,8 @@ docker run --rm -p 8080:8080 \
 ```
 
 说明：
-- 容器内默认将 MCP/Skills 配置写入 `/data/settings.json`。
+- 容器内默认将 MCP 配置写入 `/data/settings.json`。
+- 容器内默认将 Skill 文件写入 `/data/skills`，状态写入 `/data/skills_state.json`。
 - 容器内默认将会话历史写入 `/data/conversation.json`。
 - 容器内默认将 LLM 调用日志写入 `/data/llm_logs.json`。
 - 通过 `-v $(pwd)/data:/data`（或命名卷）可在容器重建后保留配置。
@@ -103,7 +111,7 @@ docker run --rm -p 8080:8080 \
 3. 若已起床且当天尚未晨间规划，先生成“任务进度回顾 + 今日 Top3 + 能力提升建议”，再继续处理用户请求
 4. 进入自动压缩 loop（达到阈值则触发压缩）
 5. 用“摘要 + 最近消息”调用 LLM 生成回复
-6. 若模型返回工具调用，则仅通过已启用 MCP 服务执行并回填结果，再继续推理
+6. 若模型返回工具调用，则通过 `linux__bash` 或已启用 MCP 服务执行并回填结果，再继续推理
 7. 将已启用 Skills 的指令注入系统提示词后生成回复
 8. 追加助手回复
 
@@ -117,7 +125,9 @@ docker run --rm -p 8080:8080 \
 ## 关键配置
 
 - `APP_ADDR`: HTTP 监听地址
-- `APP_SETTINGS_FILE`: 设置持久化文件路径（含 MCP、Skills、Agent 提示词配置）
+- `APP_SETTINGS_FILE`: 设置持久化文件路径（含 MCP 与 Agent 提示词配置）
+- `APP_SKILLS_DIR`: Skill 文件夹路径（目录内每个 Skill 以 `SKILL.md` 存储）
+- `APP_SKILLS_STATE_FILE`: Skill 状态文件路径（启用状态、来源、更新时间）
 - `APP_CONVERSATION_FILE`: 对话历史持久化文件路径
 - `APP_LLM_LOG_FILE`: LLM 调用日志持久化文件路径
 - `CERBER_BASE_URL`: Cerber 服务地址

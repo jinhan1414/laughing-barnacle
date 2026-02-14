@@ -21,6 +21,7 @@ var serviceIDPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 const (
 	ServiceTransportStreamableHTTP = "streamable_http"
 	ServiceTransportSSE            = "sse"
+	ServiceTransportStdio          = "stdio"
 	autoSkillIDPrefix              = "auto-skill-"
 	maxAutoSkillsRetained          = 24
 	maxAutoSkillNameRunes          = 24
@@ -31,6 +32,8 @@ type Service struct {
 	ID         string             `json:"id"`
 	Name       string             `json:"name"`
 	Endpoint   string             `json:"endpoint"`
+	Command    string             `json:"command,omitempty"`
+	Args       []string           `json:"args,omitempty"`
 	Transport  string             `json:"transport,omitempty"`
 	AuthToken  string             `json:"auth_token,omitempty"`
 	Enabled    bool               `json:"enabled"`
@@ -139,6 +142,8 @@ func (s *Store) UpsertService(service Service) error {
 	service.ID = strings.TrimSpace(service.ID)
 	service.Name = strings.TrimSpace(service.Name)
 	service.Endpoint = strings.TrimSpace(service.Endpoint)
+	service.Command = strings.TrimSpace(service.Command)
+	service.Args = normalizeServiceArgs(service.Args)
 	service.Transport = normalizeServiceTransport(service.Transport)
 	service.AuthToken = strings.TrimSpace(service.AuthToken)
 	service.ToolStates = normalizeServiceToolStates(service.ToolStates)
@@ -149,7 +154,7 @@ func (s *Store) UpsertService(service Service) error {
 		service.ID = s.findServiceIDForUpdateLocked(service)
 	}
 	if service.ID == "" {
-		service.ID = generateUniqueServiceID(s.cfg.MCP.Services, service.Name, service.Endpoint)
+		service.ID = generateUniqueServiceID(s.cfg.MCP.Services, service.Name, service.Endpoint, service.Command)
 	}
 	if service.Name == "" {
 		service.Name = service.ID
@@ -648,6 +653,8 @@ func (s *Store) load() error {
 	needsPersist := false
 	for i, svc := range cfg.MCP.Services {
 		svc.Transport = normalizeServiceTransport(svc.Transport)
+		svc.Command = strings.TrimSpace(svc.Command)
+		svc.Args = normalizeServiceArgs(svc.Args)
 		svc.ToolStates = normalizeServiceToolStates(svc.ToolStates)
 		if err := validateService(svc); err != nil {
 			return fmt.Errorf("invalid mcp service %q: %w", svc.ID, err)
@@ -714,14 +721,20 @@ func validateService(service Service) error {
 	if !serviceIDPattern.MatchString(service.ID) {
 		return fmt.Errorf("service id must match [a-zA-Z0-9_-]+")
 	}
-	if service.Endpoint == "" {
-		return fmt.Errorf("service endpoint is required")
-	}
-	if !strings.HasPrefix(service.Endpoint, "http://") && !strings.HasPrefix(service.Endpoint, "https://") {
-		return fmt.Errorf("service endpoint must start with http:// or https://")
-	}
-	if service.Transport != ServiceTransportStreamableHTTP && service.Transport != ServiceTransportSSE {
-		return fmt.Errorf("service transport must be streamable_http or sse")
+	switch service.Transport {
+	case ServiceTransportStreamableHTTP, ServiceTransportSSE:
+		if service.Endpoint == "" {
+			return fmt.Errorf("service endpoint is required")
+		}
+		if !strings.HasPrefix(service.Endpoint, "http://") && !strings.HasPrefix(service.Endpoint, "https://") {
+			return fmt.Errorf("service endpoint must start with http:// or https://")
+		}
+	case ServiceTransportStdio:
+		if strings.TrimSpace(service.Command) == "" {
+			return fmt.Errorf("service command is required for stdio transport")
+		}
+	default:
+		return fmt.Errorf("service transport must be streamable_http, sse or stdio")
 	}
 	for _, state := range service.ToolStates {
 		if strings.TrimSpace(state.Name) == "" {
@@ -788,12 +801,12 @@ func validateOptionalDate(v string) error {
 	return nil
 }
 
-func generateUniqueServiceID(existing []Service, name, endpoint string) string {
+func generateUniqueServiceID(existing []Service, name, endpoint, command string) string {
 	used := make(map[string]struct{}, len(existing))
 	for _, svc := range existing {
 		used[svc.ID] = struct{}{}
 	}
-	return generateUniqueID(used, []string{name, endpoint}, "service")
+	return generateUniqueID(used, []string{name, endpoint, command}, "service")
 }
 
 func generateUniqueSkillID(existing []Skill, name, prompt string) string {
@@ -870,12 +883,32 @@ func normalizeServiceTransport(raw string) string {
 		return ServiceTransportStreamableHTTP
 	case "sse":
 		return ServiceTransportSSE
+	case "stdio":
+		return ServiceTransportStdio
 	default:
 		return normalized
 	}
 }
 
 func (s *Store) findServiceIDForUpdateLocked(service Service) string {
+	if service.Transport == ServiceTransportStdio {
+		command := strings.TrimSpace(service.Command)
+		if command == "" {
+			return ""
+		}
+		argsKey := strings.Join(service.Args, "\x00")
+		for _, existing := range s.cfg.MCP.Services {
+			if normalizeServiceTransport(existing.Transport) != ServiceTransportStdio {
+				continue
+			}
+			if strings.TrimSpace(existing.Command) == command &&
+				strings.Join(normalizeServiceArgs(existing.Args), "\x00") == argsKey {
+				return existing.ID
+			}
+		}
+		return ""
+	}
+
 	endpoint := strings.TrimSpace(service.Endpoint)
 	if endpoint != "" {
 		for _, existing := range s.cfg.MCP.Services {
@@ -1125,7 +1158,26 @@ func cloneServices(in []Service) []Service {
 
 func cloneService(in Service) Service {
 	out := in
+	out.Args = slices.Clone(in.Args)
 	out.ToolStates = cloneToolStates(in.ToolStates)
+	return out
+}
+
+func normalizeServiceArgs(args []string) []string {
+	if len(args) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(args))
+	for _, raw := range args {
+		v := strings.TrimSpace(raw)
+		if v == "" {
+			continue
+		}
+		out = append(out, v)
+	}
+	if len(out) == 0 {
+		return nil
+	}
 	return out
 }
 

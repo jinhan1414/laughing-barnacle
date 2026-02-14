@@ -571,3 +571,60 @@ func TestStoreAgentHabitState_InvalidDateRejected(t *testing.T) {
 		t.Fatalf("expected invalid date to be rejected")
 	}
 }
+
+func TestStoreUpsertService_StdioPersisted(t *testing.T) {
+	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	store, err := NewStore(settingsPath)
+	if err != nil {
+		t.Fatalf("NewStore error: %v", err)
+	}
+
+	if err := store.UpsertService(Service{
+		Name:      "Filesystem MCP",
+		Transport: "stdio",
+		Command:   "npx",
+		Args:      []string{"-y", "@modelcontextprotocol/server-filesystem", "/workspace"},
+		Enabled:   true,
+	}); err != nil {
+		t.Fatalf("UpsertService stdio error: %v", err)
+	}
+
+	reloaded, err := NewStore(settingsPath)
+	if err != nil {
+		t.Fatalf("reload store error: %v", err)
+	}
+
+	services := reloaded.ListServices()
+	if len(services) != 1 {
+		t.Fatalf("expected one service, got %d", len(services))
+	}
+	if services[0].Transport != ServiceTransportStdio {
+		t.Fatalf("unexpected transport: %q", services[0].Transport)
+	}
+	if services[0].Command != "npx" {
+		t.Fatalf("unexpected command: %q", services[0].Command)
+	}
+	if len(services[0].Args) != 3 {
+		t.Fatalf("unexpected args: %+v", services[0].Args)
+	}
+}
+
+func TestStoreUpsertService_StdioRequiresCommand(t *testing.T) {
+	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	store, err := NewStore(settingsPath)
+	if err != nil {
+		t.Fatalf("NewStore error: %v", err)
+	}
+
+	err = store.UpsertService(Service{
+		Name:      "Broken stdio",
+		Transport: "stdio",
+		Enabled:   true,
+	})
+	if err == nil {
+		t.Fatalf("expected stdio command required error")
+	}
+	if !strings.Contains(err.Error(), "service command is required") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}

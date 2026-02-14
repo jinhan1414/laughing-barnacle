@@ -25,6 +25,9 @@ COPY --from=builder --chown=nonroot:nonroot /out/data /data
 
 ENV APP_ADDR=:8080
 ENV APP_SETTINGS_FILE=/data/settings.json
+ENV APP_SKILLS_DIR=/data/skills
+ENV APP_SKILLS_STATE_FILE=/data/skills_state.json
+ENV APP_CONVERSATION_FILE=/data/conversation.json
 ENV APP_LLM_LOG_FILE=/data/llm_logs.json
 EXPOSE 8080
 VOLUME ["/data"]

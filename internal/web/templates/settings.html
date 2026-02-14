@@ -43,13 +43,22 @@
               </label>
               <label class="flex flex-col gap-1 text-xs font-medium text-slate-600 sm:col-span-2">
                 Endpoint
-                <input type="url" name="endpoint" placeholder="https://example.com/mcp" required class="rounded-xl border-slate-300 text-sm">
+                <input type="text" name="endpoint" placeholder="https://example.com/mcp（streamable_http / sse 必填）" class="rounded-xl border-slate-300 text-sm">
+              </label>
+              <label class="flex flex-col gap-1 text-xs font-medium text-slate-600 sm:col-span-2">
+                Stdio Command
+                <input type="text" name="command" placeholder="例如：npx（stdio 必填）" class="rounded-xl border-slate-300 text-sm">
+              </label>
+              <label class="flex flex-col gap-1 text-xs font-medium text-slate-600 sm:col-span-2">
+                Stdio Args JSON
+                <input type="text" name="args_json" placeholder='例如：["-y","@modelcontextprotocol/server-filesystem","/workspace"]' class="rounded-xl border-slate-300 text-sm">
               </label>
               <label class="flex flex-col gap-1 text-xs font-medium text-slate-600">
                 连接类型
                 <select name="transport" class="rounded-xl border-slate-300 text-sm">
                   <option value="streamable_http" selected>streamableHttp</option>
                   <option value="sse">sse</option>
+                  <option value="stdio">stdio</option>
                 </select>
               </label>
               <label class="flex flex-col gap-1 text-xs font-medium text-slate-600 sm:col-span-2">
@@ -77,7 +86,7 @@
                   </div>
 
                   <div class="mt-2 break-all text-xs leading-6 text-slate-500">
-                    Endpoint: {{.Endpoint}}<br>
+                    {{if eq .Transport "stdio"}}Command: {{if .Command}}{{.Command}}{{else}}(未配置){{end}}<br>Args: {{if .Args}}{{.Args}}{{else}}(空){{end}}<br>{{else}}Endpoint: {{.Endpoint}}<br>{{end}}
                     连接类型: {{.Transport}}<br>
                     可用工具数: {{.ToolCount}}<br>
                     最后更新: {{.UpdatedAt}}
@@ -154,7 +163,17 @@
           </form>
         {{else if eq .ActiveSection "skills"}}
           <h2 class="text-base font-semibold">Skill 技能配置</h2>
-          <p class="mt-1 text-sm leading-6 text-slate-500">Skill 采用标准化定义：name + description + instructions。运行时先注入索引，模型按需读取单个 Skill 全文（渐进式披露）。Skill ID 由系统内部维护。</p>
+          <p class="mt-1 text-sm leading-6 text-slate-500">Skill 采用文件夹模式存储（`SKILL.md`）。支持从 skills.sh 安装，也支持本地手动新增。</p>
+
+          <form method="post" action="/settings/skills/install" class="mt-3 space-y-3">
+            <label class="flex flex-col gap-1 text-xs font-medium text-slate-600">
+              skills.sh 地址
+              <input type="url" name="skills_sh_url" placeholder="https://skills.sh/openai/skills/develop-web-game" required class="rounded-xl border-slate-300 text-sm">
+            </label>
+            <div class="flex">
+              <button type="submit" class="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 active:scale-[0.99] sm:w-auto">从 skills.sh 安装</button>
+            </div>
+          </form>
 
           <form method="post" action="/settings/skills/save" class="mt-3 space-y-3">
             <div class="grid gap-3 sm:grid-cols-2">
@@ -188,7 +207,7 @@
                     <div class="text-sm font-semibold text-slate-800">{{.Name}} <span class="text-xs font-normal text-slate-500">({{.ID}})</span></div>
                     <span class="rounded-full border px-2 py-0.5 text-xs {{if .Enabled}}border-emerald-200 bg-emerald-50 text-emerald-700{{else}}border-slate-200 bg-white text-slate-500{{end}}">{{if .Enabled}}已启用{{else}}已禁用{{end}}</span>
                   </div>
-                  <div class="mt-2 text-xs leading-6 text-slate-500">描述: {{.Description}}<br>指令: {{.Prompt}}<br>最后更新: {{.UpdatedAt}}</div>
+                  <div class="mt-2 text-xs leading-6 text-slate-500">描述: {{.Description}}<br>指令: {{.Prompt}}<br>来源: {{if .Source}}{{.Source}}{{else}}(local){{end}}<br>最后更新: {{.UpdatedAt}}</div>
                   <div class="mt-3 grid grid-cols-2 gap-2">
                     <form method="post" action="/settings/skills/toggle">
                       <input type="hidden" name="id" value="{{.ID}}">

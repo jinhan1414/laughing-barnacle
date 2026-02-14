@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -124,5 +126,61 @@ func TestHTTPClient_StreamableHTTPWithSSEResponse(t *testing.T) {
 	}
 	if len(calls) != 3 {
 		t.Fatalf("expected 3 rpc calls, got %d (%v)", len(calls), calls)
+	}
+}
+
+func TestHTTPClient_StdioListAndCallTool(t *testing.T) {
+	script := filepath.Join(t.TempDir(), "fake-mcp.sh")
+	err := os.WriteFile(script, []byte(`#!/bin/sh
+extract_id() {
+  printf "%s" "$1" | sed -n 's/.*"id":[ ]*\([0-9][0-9]*\).*/\1/p'
+}
+while IFS= read -r line; do
+  case "$line" in
+    *\"method\":\"initialize\"*)
+      id=$(extract_id "$line")
+      if [ -z "$id" ]; then id=1; fi
+      echo "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":\"2025-06-18\"}}"
+      ;;
+    *\"method\":\"tools/list\"*)
+      id=$(extract_id "$line")
+      if [ -z "$id" ]; then id=2; fi
+      echo "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"tools\":[{\"name\":\"echo\",\"description\":\"echo\",\"inputSchema\":{\"type\":\"object\"}}]}}"
+      ;;
+    *\"method\":\"tools/call\"*)
+      id=$(extract_id "$line")
+      if [ -z "$id" ]; then id=3; fi
+      echo "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"ok\"}]}}"
+      ;;
+  esac
+done
+`), 0o755)
+	if err != nil {
+		t.Fatalf("write fake stdio script: %v", err)
+	}
+
+	client := NewHTTPClient(3*time.Second, "")
+	service := Service{
+		ID:        "stdio_demo",
+		Name:      "stdio_demo",
+		Transport: "stdio",
+		Command:   script,
+		Enabled:   true,
+	}
+
+	tools, err := client.ListTools(context.Background(), service)
+	if err != nil {
+		t.Fatalf("ListTools error: %v", err)
+	}
+	if len(tools) != 1 || tools[0].Name != "echo" {
+		t.Fatalf("unexpected tools: %+v", tools)
+	}
+
+	result, err := client.CallTool(context.Background(), service, "echo", map[string]any{"text": "hi"})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if len(result.Content) != 1 || result.Content[0].Text != "ok" {
+		t.Fatalf("unexpected result: %+v", result)
 	}
 }

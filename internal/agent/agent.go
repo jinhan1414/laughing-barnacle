@@ -1,9 +1,13 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"os/exec"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -37,11 +41,6 @@ type SkillProvider interface {
 	ListEnabledSkillPrompts() []string
 }
 
-type SkillCatalogProvider interface {
-	ListEnabledSkillIndex() []string
-	ReadEnabledSkillPrompt(skillID string) (string, bool)
-}
-
 type AutoSkillWriter interface {
 	UpsertAutoSkill(name, prompt string) error
 }
@@ -58,7 +57,11 @@ const (
 	maxNightEvolvedSkills       = 3
 	maxEvolvedSkillNameRunes    = 24
 	maxEvolvedSkillPromptRunes  = 180
-	builtinSkillReadToolName    = "skill__read"
+	builtinLinuxBashToolName    = "linux__bash"
+	defaultBashTimeoutSeconds   = 20
+	maxBashTimeoutSeconds       = 180
+	maxBashStdoutRunes          = 4000
+	maxBashStderrRunes          = 2000
 )
 
 var skillTokenPattern = regexp.MustCompile(`[\p{Han}]{2,8}|[a-zA-Z][a-zA-Z0-9_-]{2,}`)
@@ -315,44 +318,27 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 		Role:    "system",
 		Content: systemPrompt,
 	})
-	builtinToolDefs := make([]llm.ToolDefinition, 0, 1)
+	builtinToolDefs := []llm.ToolDefinition{linuxBashToolDefinition()}
+	requestMessages = append(requestMessages, llm.Message{
+		Role:    "system",
+		Content: "内置工具仅有 linux__bash（用于本机命令执行）；其他能力应通过已加载的 MCP 工具完成。",
+	})
 	if a.skills != nil {
-		if catalog, ok := a.skills.(SkillCatalogProvider); ok {
-			allSkillIndex := catalog.ListEnabledSkillIndex()
-			selectedSkillIndex := selectSkillPromptsForTurn(allSkillIndex, summary, messages)
-			if len(selectedSkillIndex) > 0 {
-				var b strings.Builder
-				b.WriteString("技能索引（先看索引，按需读取完整技能）：\n")
-				for i, skillIndex := range selectedSkillIndex {
-					b.WriteString(fmt.Sprintf("%d. %s\n", i+1, strings.TrimSpace(skillIndex)))
-				}
-				b.WriteString("规则：当你需要某个技能的完整内容时，调用工具 skill__read，并传入 skill_id。不要臆造技能全文。")
-				if len(selectedSkillIndex) < len(allSkillIndex) {
-					b.WriteString(fmt.Sprintf("\n(共 %d 条启用技能，本轮注入索引 %d 条以控制上下文长度)", len(allSkillIndex), len(selectedSkillIndex)))
-				}
-				requestMessages = append(requestMessages, llm.Message{
-					Role:    "system",
-					Content: strings.TrimSpace(b.String()),
-				})
-				builtinToolDefs = append(builtinToolDefs, skillReadToolDefinition())
+		allSkillPrompts := a.skills.ListEnabledSkillPrompts()
+		skillPrompts := selectSkillPromptsForTurn(allSkillPrompts, summary, messages)
+		if len(skillPrompts) > 0 {
+			var b strings.Builder
+			b.WriteString("已启用技能（系统已按相关性和长度裁剪，按需遵循）：\n")
+			for i, prompt := range skillPrompts {
+				b.WriteString(fmt.Sprintf("%d. %s\n", i+1, strings.TrimSpace(prompt)))
 			}
-		} else {
-			allSkillPrompts := a.skills.ListEnabledSkillPrompts()
-			skillPrompts := selectSkillPromptsForTurn(allSkillPrompts, summary, messages)
-			if len(skillPrompts) > 0 {
-				var b strings.Builder
-				b.WriteString("已启用技能（系统已按相关性和长度裁剪，按需遵循）：\n")
-				for i, prompt := range skillPrompts {
-					b.WriteString(fmt.Sprintf("%d. %s\n", i+1, strings.TrimSpace(prompt)))
-				}
-				if len(skillPrompts) < len(allSkillPrompts) {
-					b.WriteString(fmt.Sprintf("(共 %d 条启用技能，本轮注入 %d 条以控制上下文长度)\n", len(allSkillPrompts), len(skillPrompts)))
-				}
-				requestMessages = append(requestMessages, llm.Message{
-					Role:    "system",
-					Content: strings.TrimSpace(b.String()),
-				})
+			if len(skillPrompts) < len(allSkillPrompts) {
+				b.WriteString(fmt.Sprintf("(共 %d 条启用技能，本轮注入 %d 条以控制上下文长度)\n", len(allSkillPrompts), len(skillPrompts)))
 			}
+			requestMessages = append(requestMessages, llm.Message{
+				Role:    "system",
+				Content: strings.TrimSpace(b.String()),
+			})
 		}
 	}
 	if strings.TrimSpace(summary) != "" {
@@ -472,7 +458,7 @@ func renderConversation(messages []conversation.Message) string {
 }
 
 func (a *Agent) callTool(ctx context.Context, call llm.ToolCall) (string, error) {
-	if result, err, handled := a.callBuiltinTool(call); handled {
+	if result, err, handled := a.callBuiltinTool(ctx, call); handled {
 		return result, err
 	}
 	if a.tools == nil {
@@ -481,28 +467,19 @@ func (a *Agent) callTool(ctx context.Context, call llm.ToolCall) (string, error)
 	return a.tools.CallTool(ctx, call)
 }
 
-func (a *Agent) callBuiltinTool(call llm.ToolCall) (result string, err error, handled bool) {
+func (a *Agent) callBuiltinTool(ctx context.Context, call llm.ToolCall) (result string, err error, handled bool) {
 	name := strings.TrimSpace(call.Function.Name)
-	if name != builtinSkillReadToolName {
+	switch name {
+	case builtinLinuxBashToolName:
+		req, err := parseLinuxBashArguments(call.Function.Arguments)
+		if err != nil {
+			return "", err, true
+		}
+		out, err := runLinuxBash(ctx, req)
+		return out, err, true
+	default:
 		return "", nil, false
 	}
-	if a.skills == nil {
-		return "", fmt.Errorf("skill provider unavailable"), true
-	}
-	catalog, ok := a.skills.(SkillCatalogProvider)
-	if !ok {
-		return "", fmt.Errorf("skill catalog unavailable"), true
-	}
-
-	skillID, err := readStringArgument(call.Function.Arguments, "skill_id")
-	if err != nil {
-		return "", err, true
-	}
-	prompt, found := catalog.ReadEnabledSkillPrompt(skillID)
-	if !found {
-		return "", fmt.Errorf("skill %q not found or disabled", skillID), true
-	}
-	return strings.TrimSpace("skill_id: " + skillID + "\nfull_prompt:\n" + prompt), nil, true
 }
 
 func (a *Agent) resolvePromptsLocked() (systemPrompt string, compressionSystemPrompt string) {
@@ -728,45 +705,176 @@ func extractJSONObject(content string) string {
 	return text
 }
 
-func skillReadToolDefinition() llm.ToolDefinition {
+type linuxBashRequest struct {
+	Command    string
+	WorkDir    string
+	TimeoutSec int
+}
+
+func linuxBashToolDefinition() llm.ToolDefinition {
 	return llm.ToolDefinition{
 		Type: "function",
 		Function: llm.ToolFunctionDefinition{
-			Name:        builtinSkillReadToolName,
-			Description: "Read one enabled skill full prompt by skill_id",
+			Name:        builtinLinuxBashToolName,
+			Description: "Run one bash command on local Linux and return stdout/stderr/exit_code.",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"skill_id": map[string]any{
+					"command": map[string]any{
 						"type":        "string",
-						"description": "Target skill id from injected skill index",
+						"description": "Bash command string to execute.",
+					},
+					"working_dir": map[string]any{
+						"type":        "string",
+						"description": "Optional working directory.",
+					},
+					"timeout_sec": map[string]any{
+						"type":        "integer",
+						"description": "Optional timeout in seconds, default 20, max 180.",
 					},
 				},
-				"required":             []string{"skill_id"},
+				"required":             []string{"command"},
 				"additionalProperties": false,
 			},
 		},
 	}
 }
 
-func readStringArgument(raw, key string) (string, error) {
+func parseLinuxBashArguments(raw string) (linuxBashRequest, error) {
+	args, err := readToolArguments(raw)
+	if err != nil {
+		return linuxBashRequest{}, err
+	}
+
+	commandRaw, ok := args["command"]
+	if !ok {
+		return linuxBashRequest{}, fmt.Errorf("tool argument %q is required", "command")
+	}
+	command, ok := commandRaw.(string)
+	if !ok || strings.TrimSpace(command) == "" {
+		return linuxBashRequest{}, fmt.Errorf("tool argument %q must be non-empty string", "command")
+	}
+
+	req := linuxBashRequest{
+		Command:    strings.TrimSpace(command),
+		TimeoutSec: defaultBashTimeoutSeconds,
+	}
+	if v, ok := readOptionalStringArgument(args, "working_dir"); ok {
+		req.WorkDir = v
+	}
+	if rawTimeout, exists := args["timeout_sec"]; exists {
+		timeout, ok := parsePositiveInt(rawTimeout)
+		if !ok {
+			return linuxBashRequest{}, fmt.Errorf("tool argument %q must be positive integer", "timeout_sec")
+		}
+		req.TimeoutSec = timeout
+	}
+	if req.TimeoutSec <= 0 {
+		req.TimeoutSec = defaultBashTimeoutSeconds
+	}
+	if req.TimeoutSec > maxBashTimeoutSeconds {
+		req.TimeoutSec = maxBashTimeoutSeconds
+	}
+	return req, nil
+}
+
+func runLinuxBash(ctx context.Context, req linuxBashRequest) (string, error) {
+	timeout := time.Duration(req.TimeoutSec) * time.Second
+	runCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(runCtx, "bash", "-lc", req.Command)
+	if wd := strings.TrimSpace(req.WorkDir); wd != "" {
+		if abs, err := filepath.Abs(wd); err == nil {
+			cmd.Dir = abs
+		} else {
+			cmd.Dir = wd
+		}
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	runErr := cmd.Run()
+
+	exitCode := 0
+	if runErr != nil {
+		var exitErr *exec.ExitError
+		if errors.As(runErr, &exitErr) {
+			exitCode = exitErr.ExitCode()
+		} else if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
+			exitCode = 124
+		} else {
+			return "", fmt.Errorf("run bash command: %w", runErr)
+		}
+	}
+	timedOut := errors.Is(runCtx.Err(), context.DeadlineExceeded)
+	if timedOut && exitCode == 0 {
+		exitCode = 124
+	}
+
+	stdoutText := trimRunes(stdout.String(), maxBashStdoutRunes)
+	stderrText := trimRunes(stderr.String(), maxBashStderrRunes)
+
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("exit_code: %d\n", exitCode))
+	if cmd.Dir != "" {
+		b.WriteString("working_dir: " + cmd.Dir + "\n")
+	}
+	if timedOut {
+		b.WriteString("timed_out: true\n")
+	}
+	b.WriteString("stdout:\n")
+	b.WriteString(safeOrEmpty(stdoutText))
+	b.WriteString("\n")
+	b.WriteString("stderr:\n")
+	b.WriteString(safeOrEmpty(stderrText))
+	return strings.TrimSpace(b.String()), nil
+}
+
+func readToolArguments(raw string) (map[string]any, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
-		return "", fmt.Errorf("tool argument %q is required", key)
+		return nil, fmt.Errorf("tool arguments are required")
 	}
 	var args map[string]any
 	if err := json.Unmarshal([]byte(trimmed), &args); err != nil {
-		return "", fmt.Errorf("invalid tool arguments: %w", err)
+		return nil, fmt.Errorf("invalid tool arguments: %w", err)
 	}
-	val, ok := args[key]
+	if args == nil {
+		return nil, fmt.Errorf("tool arguments are required")
+	}
+	return args, nil
+}
+
+func readOptionalStringArgument(args map[string]any, key string) (string, bool) {
+	raw, ok := args[key]
 	if !ok {
-		return "", fmt.Errorf("tool argument %q is required", key)
+		return "", false
 	}
-	s, ok := val.(string)
+	s, ok := raw.(string)
 	if !ok || strings.TrimSpace(s) == "" {
-		return "", fmt.Errorf("tool argument %q must be non-empty string", key)
+		return "", false
 	}
-	return strings.TrimSpace(s), nil
+	return strings.TrimSpace(s), true
+}
+
+func parsePositiveInt(v any) (int, bool) {
+	switch t := v.(type) {
+	case float64:
+		if t <= 0 || t != float64(int(t)) {
+			return 0, false
+		}
+		return int(t), true
+	case int:
+		if t <= 0 {
+			return 0, false
+		}
+		return t, true
+	default:
+		return 0, false
+	}
 }
 
 func (a *Agent) applyNightEvolvedSkills(skills []evolvedSkill) int {

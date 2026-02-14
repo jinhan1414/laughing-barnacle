@@ -315,8 +315,21 @@ func TestHandleUserMessage_WithToolCalls(t *testing.T) {
 	if len(fakeLLM.calls) != 2 {
 		t.Fatalf("expected 2 llm calls, got %d", len(fakeLLM.calls))
 	}
-	if len(fakeLLM.calls[0].Tools) != 1 {
-		t.Fatalf("expected tools to be passed to llm")
+	if len(fakeLLM.calls[0].Tools) < 2 {
+		t.Fatalf("expected builtin bash + external tools, got %d", len(fakeLLM.calls[0].Tools))
+	}
+	foundBash := false
+	foundWeather := false
+	for _, tool := range fakeLLM.calls[0].Tools {
+		if tool.Function.Name == builtinLinuxBashToolName {
+			foundBash = true
+		}
+		if tool.Function.Name == "weather__query" {
+			foundWeather = true
+		}
+	}
+	if !foundBash || !foundWeather {
+		t.Fatalf("expected both linux__bash and weather__query tools, got %+v", fakeLLM.calls[0].Tools)
 	}
 	if len(fakeTools.calls) != 1 || fakeTools.calls[0].Function.Name != "weather__query" {
 		t.Fatalf("unexpected tool calls: %+v", fakeTools.calls)
@@ -370,36 +383,26 @@ func TestHandleUserMessage_IncludesEnabledSkillPrompts(t *testing.T) {
 	if len(msgs) < 3 {
 		t.Fatalf("expected at least 3 messages, got %d", len(msgs))
 	}
-	if msgs[1].Role != "system" {
-		t.Fatalf("expected second message is system prompt for skills, got %s", msgs[1].Role)
+	foundSkillPrompt := false
+	for _, msg := range msgs {
+		if msg.Role == "system" && strings.Contains(msg.Content, "先检索再回答") {
+			foundSkillPrompt = true
+			break
+		}
 	}
-	if !strings.Contains(msgs[1].Content, "先检索再回答") {
-		t.Fatalf("skill prompt not injected: %q", msgs[1].Content)
+	if !foundSkillPrompt {
+		t.Fatalf("skill prompt not injected")
 	}
 }
 
-func TestHandleUserMessage_SkillCatalogReadViaBuiltinTool(t *testing.T) {
+func TestHandleUserMessage_UsesOnlyBuiltinLinuxBashTool(t *testing.T) {
 	store := conversation.NewStore()
 	fakeLLM := &mockLLM{
 		responses: map[string][]string{
-			"chat_reply": {"", "已读取技能并给出执行方案"},
-		},
-		toolCalls: map[string][][]llm.ToolCall{
-			"chat_reply": {
-				{
-					{
-						ID:   "call_skill_1",
-						Type: "function",
-						Function: llm.ToolFunctionCall{
-							Name:      builtinSkillReadToolName,
-							Arguments: `{"skill_id":"code-review-playbook"}`,
-						},
-					},
-				},
-				nil,
-			},
+			"chat_reply": {"done"},
 		},
 	}
+
 	agentSvc := New(Config{
 		Model:                      "test-model",
 		MaxRecentMessages:          10,
@@ -411,61 +414,91 @@ func TestHandleUserMessage_SkillCatalogReadViaBuiltinTool(t *testing.T) {
 		SystemPrompt:               "system",
 		CompressionSystemPrompt:    "compressor",
 	}, store, fakeLLM, nil)
-	agentSvc.SetSkillProvider(&mockSkills{
-		indexLines: []string{
-			"skill_id=code-review-playbook | name=代码评审手册 | brief=先确认验收标准，再检查风险与回滚。",
-		},
-		promptByID: map[string]string{
-			"code-review-playbook": "完整技能：先核对需求与验收口径；逐项评审改动风险；输出阻塞与可上线建议。",
-		},
-	})
-
-	reply, err := agentSvc.HandleUserMessage(context.Background(), "帮我做一次代码评审")
+	reply, err := agentSvc.HandleUserMessage(context.Background(), "test")
 	if err != nil {
 		t.Fatalf("HandleUserMessage error: %v", err)
 	}
-	if reply != "已读取技能并给出执行方案" {
+	if reply != "done" {
+		t.Fatalf("unexpected reply: %q", reply)
+	}
+
+	firstCall := fakeLLM.calls[0]
+	if len(firstCall.Tools) != 1 {
+		t.Fatalf("expected exactly one builtin tool, got %d", len(firstCall.Tools))
+	}
+	for _, tool := range firstCall.Tools {
+		if tool.Function.Name != builtinLinuxBashToolName {
+			t.Fatalf("unexpected builtin tool: %s", tool.Function.Name)
+		}
+	}
+}
+
+func TestHandleUserMessage_LinuxBashToolCall(t *testing.T) {
+	store := conversation.NewStore()
+	fakeLLM := &mockLLM{
+		responses: map[string][]string{
+			"chat_reply": {"", "bash ok"},
+		},
+		toolCalls: map[string][][]llm.ToolCall{
+			"chat_reply": {
+				{
+					{
+						ID:   "call_bash_1",
+						Type: "function",
+						Function: llm.ToolFunctionCall{
+							Name:      builtinLinuxBashToolName,
+							Arguments: `{"command":"echo hello-linux-bash"}`,
+						},
+					},
+				},
+				nil,
+			},
+		},
+	}
+
+	agentSvc := New(Config{
+		Model:                      "test-model",
+		MaxRecentMessages:          10,
+		CompressionTriggerMessages: 99,
+		CompressionTriggerChars:    99999,
+		KeepRecentAfterCompression: 1,
+		MaxCompressionLoopsPerTurn: 1,
+		MaxToolCallRounds:          3,
+		SystemPrompt:               "system",
+		CompressionSystemPrompt:    "compressor",
+	}, store, fakeLLM, nil)
+
+	reply, err := agentSvc.HandleUserMessage(context.Background(), "run bash")
+	if err != nil {
+		t.Fatalf("HandleUserMessage error: %v", err)
+	}
+	if reply != "bash ok" {
 		t.Fatalf("unexpected reply: %q", reply)
 	}
 	if len(fakeLLM.calls) != 2 {
 		t.Fatalf("expected 2 llm calls, got %d", len(fakeLLM.calls))
 	}
-	firstCall := fakeLLM.calls[0]
-	if len(firstCall.Tools) == 0 {
-		t.Fatalf("expected builtin skill read tool to be exposed")
-	}
-	foundBuiltinTool := false
-	for _, tool := range firstCall.Tools {
-		if tool.Function.Name == builtinSkillReadToolName {
-			foundBuiltinTool = true
-			break
-		}
-	}
-	if !foundBuiltinTool {
-		t.Fatalf("expected builtin skill read tool in tool list")
-	}
-	if !strings.Contains(firstCall.Messages[1].Content, "技能索引") {
-		t.Fatalf("expected skill index system message, got %q", firstCall.Messages[1].Content)
-	}
+
 	secondCall := fakeLLM.calls[1]
-	hasToolResponse := false
+	foundToolResult := false
 	for _, msg := range secondCall.Messages {
-		if msg.Role == "tool" && strings.Contains(msg.Content, "full_prompt") {
-			hasToolResponse = true
+		if msg.Role == "tool" && strings.Contains(msg.Content, "exit_code: 0") && strings.Contains(msg.Content, "hello-linux-bash") {
+			foundToolResult = true
 			break
 		}
 	}
-	if !hasToolResponse {
-		t.Fatalf("expected tool response containing full skill prompt in second llm call")
+	if !foundToolResult {
+		t.Fatalf("expected linux__bash tool result in second call")
 	}
+
 	_, messages := store.Snapshot()
 	if len(messages) != 2 {
 		t.Fatalf("expected user + assistant messages, got %d", len(messages))
 	}
 	if len(messages[0].ToolCalls) != 1 {
-		t.Fatalf("expected skill tool call recorded on user message, got %d", len(messages[0].ToolCalls))
+		t.Fatalf("expected one tool call recorded, got %d", len(messages[0].ToolCalls))
 	}
-	if messages[0].ToolCalls[0].Name != builtinSkillReadToolName {
+	if messages[0].ToolCalls[0].Name != builtinLinuxBashToolName {
 		t.Fatalf("unexpected tool call name: %s", messages[0].ToolCalls[0].Name)
 	}
 }
@@ -517,7 +550,16 @@ func TestHandleUserMessage_SkillPromptInjectionIsCapped(t *testing.T) {
 		t.Fatalf("expected skill system message")
 	}
 
-	content := msgs[1].Content
+	content := ""
+	for _, msg := range msgs {
+		if msg.Role == "system" && strings.Contains(msg.Content, "已启用技能") {
+			content = msg.Content
+			break
+		}
+	}
+	if strings.TrimSpace(content) == "" {
+		t.Fatalf("expected injected skill message")
+	}
 	if strings.Contains(content, longPrompt) {
 		t.Fatalf("expected long prompt to be trimmed out from injected skills")
 	}

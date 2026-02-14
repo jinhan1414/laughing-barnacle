@@ -27,7 +27,8 @@
           <article class="mb-2.5 flex items-end justify-end gap-2">
             <div class="max-w-[78%]">
               <div class="rounded-2xl rounded-br-md bg-[#95ec69] px-3 py-2 text-[15px] leading-6 text-slate-900 shadow-[0_1px_1px_rgba(0,0,0,0.08)]">
-                <div class="whitespace-pre-wrap">{{.Content}}</div>
+                <div class="js-chat-content whitespace-pre-wrap break-words transition-[max-height] duration-200">{{.Content}}</div>
+                <button type="button" class="js-chat-toggle mt-1 hidden text-[12px] font-medium text-emerald-700">展开</button>
               </div>
               {{if .ToolCalls}}
               <div class="mt-2 space-y-2">
@@ -53,7 +54,8 @@
           <article class="mb-2.5 flex items-end gap-2">
             <div class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-slate-700 text-xs font-semibold text-white">AI</div>
             <div class="max-w-[78%] rounded-2xl rounded-bl-md border border-slate-200 bg-white px-3 py-2 text-[15px] leading-6 text-slate-900 shadow-[0_1px_1px_rgba(0,0,0,0.08)]">
-              <div class="whitespace-pre-wrap">{{.Content}}</div>
+              <div class="js-chat-content whitespace-pre-wrap break-words transition-[max-height] duration-200">{{.Content}}</div>
+              <button type="button" class="js-chat-toggle mt-1 hidden text-[12px] font-medium text-slate-600">展开</button>
             </div>
           </article>
           {{end}}
@@ -85,7 +87,48 @@
   <script>
     (function () {
       var container = document.getElementById("chat-messages");
-      if (!container) return;
+      if (!container) {
+        return;
+      }
+
+      var maxHeight = 180;
+      var contents = container.querySelectorAll(".js-chat-content");
+      for (var i = 0; i < contents.length; i++) {
+        var content = contents[i];
+        var toggle = content.parentElement.querySelector(".js-chat-toggle");
+        if (!toggle) {
+          continue;
+        }
+        if (content.scrollHeight <= maxHeight + 6) {
+          continue;
+        }
+
+        content.style.maxHeight = maxHeight + "px";
+        content.style.overflow = "hidden";
+        toggle.classList.remove("hidden");
+        toggle.setAttribute("data-expanded", "0");
+
+        toggle.addEventListener("click", function (event) {
+          var btn = event.currentTarget;
+          var target = btn.parentElement.querySelector(".js-chat-content");
+          if (!target) {
+            return;
+          }
+          var expanded = btn.getAttribute("data-expanded") === "1";
+          if (expanded) {
+            target.style.maxHeight = maxHeight + "px";
+            target.style.overflow = "hidden";
+            btn.textContent = "展开";
+            btn.setAttribute("data-expanded", "0");
+          } else {
+            target.style.maxHeight = target.scrollHeight + "px";
+            target.style.overflow = "hidden";
+            btn.textContent = "收起";
+            btn.setAttribute("data-expanded", "1");
+          }
+        });
+      }
+
       container.scrollTop = container.scrollHeight;
     })();
   </script>
