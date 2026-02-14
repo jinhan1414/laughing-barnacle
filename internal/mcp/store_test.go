@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -359,5 +360,54 @@ func TestStoreUpsertAgentPromptConfig_RequiresBothWhenConfigured(t *testing.T) {
 		CompressionSystemPrompt: "only compression",
 	}); err == nil {
 		t.Fatalf("expected error when system prompt is missing")
+	}
+}
+
+func TestStoreInitializesDefaultAgentPromptConfig(t *testing.T) {
+	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	store, err := NewStore(settingsPath)
+	if err != nil {
+		t.Fatalf("NewStore error: %v", err)
+	}
+
+	cfg := store.GetAgentPromptConfig()
+	if !strings.Contains(cfg.SystemPrompt, "傻毛") {
+		t.Fatalf("expected default persona prompt, got %q", cfg.SystemPrompt)
+	}
+	if !strings.Contains(cfg.SystemPrompt, "不使用表情符号") {
+		t.Fatalf("expected no-emoji preference in default prompt")
+	}
+	if strings.TrimSpace(cfg.CompressionSystemPrompt) == "" {
+		t.Fatalf("expected default compression prompt")
+	}
+}
+
+func TestStoreResetAgentPromptConfig(t *testing.T) {
+	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	store, err := NewStore(settingsPath)
+	if err != nil {
+		t.Fatalf("NewStore error: %v", err)
+	}
+
+	if err := store.UpsertAgentPromptConfig(AgentPromptConfig{
+		SystemPrompt:            "custom-system",
+		CompressionSystemPrompt: "custom-compression",
+	}); err != nil {
+		t.Fatalf("UpsertAgentPromptConfig error: %v", err)
+	}
+
+	if err := store.ResetAgentPromptConfig(); err != nil {
+		t.Fatalf("ResetAgentPromptConfig error: %v", err)
+	}
+
+	cfg := store.GetAgentPromptConfig()
+	if !strings.Contains(cfg.SystemPrompt, "傻毛") {
+		t.Fatalf("expected reset to default prompt, got %q", cfg.SystemPrompt)
+	}
+	if !strings.Contains(cfg.CompressionSystemPrompt, "上下文压缩器") {
+		t.Fatalf("expected reset to default compression prompt, got %q", cfg.CompressionSystemPrompt)
+	}
+	if cfg.UpdatedAt.IsZero() {
+		t.Fatalf("expected updated time on reset")
 	}
 }

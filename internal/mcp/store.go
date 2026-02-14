@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"laughing-barnacle/internal/agentprompt"
 )
 
 var serviceIDPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
@@ -67,6 +69,13 @@ type Store struct {
 	path string
 	mu   sync.RWMutex
 	cfg  fileConfig
+}
+
+func DefaultAgentPromptConfig() AgentPromptConfig {
+	return AgentPromptConfig{
+		SystemPrompt:            strings.TrimSpace(agentprompt.DefaultSystemPrompt),
+		CompressionSystemPrompt: strings.TrimSpace(agentprompt.DefaultCompressionSystemPrompt),
+	}
 }
 
 func NewStore(path string) (*Store, error) {
@@ -409,6 +418,16 @@ func (s *Store) UpsertAgentPromptConfig(cfg AgentPromptConfig) error {
 	return s.persistLocked()
 }
 
+func (s *Store) ResetAgentPromptConfig() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	cfg := DefaultAgentPromptConfig()
+	cfg.UpdatedAt = time.Now()
+	s.cfg.Agent.Prompts = cfg
+	return s.persistLocked()
+}
+
 func (s *Store) load() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -417,6 +436,7 @@ func (s *Store) load() error {
 	if err != nil {
 		if os.IsNotExist(err) {
 			s.cfg = fileConfig{}
+			s.cfg.Agent.Prompts = DefaultAgentPromptConfig()
 			return s.persistLocked()
 		}
 		return fmt.Errorf("read settings file: %w", err)
@@ -426,6 +446,7 @@ func (s *Store) load() error {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return fmt.Errorf("decode settings file: %w", err)
 	}
+	needsPersist := false
 	for i, svc := range cfg.MCP.Services {
 		svc.Transport = normalizeServiceTransport(svc.Transport)
 		svc.ToolStates = normalizeServiceToolStates(svc.ToolStates)
@@ -442,8 +463,16 @@ func (s *Store) load() error {
 	if err := validateAgentPromptConfig(cfg.Agent.Prompts); err != nil {
 		return fmt.Errorf("invalid agent prompts: %w", err)
 	}
+	if strings.TrimSpace(cfg.Agent.Prompts.SystemPrompt) == "" &&
+		strings.TrimSpace(cfg.Agent.Prompts.CompressionSystemPrompt) == "" {
+		cfg.Agent.Prompts = DefaultAgentPromptConfig()
+		needsPersist = true
+	}
 
 	s.cfg = cfg
+	if needsPersist {
+		return s.persistLocked()
+	}
 	return nil
 }
 

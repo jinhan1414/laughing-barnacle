@@ -127,6 +127,5 @@ docker run --rm -p 8080:8080 \
 - `AGENT_KEEP_RECENT_AFTER_COMPRESSION`: 压缩后保留最近消息条数
 - `AGENT_MAX_COMPRESSION_LOOPS`: 每轮用户请求最大压缩循环次数
 - `AGENT_MAX_TOOL_CALL_ROUNDS`: 单轮对话最大工具调用回合数
-- `AGENT_SYSTEM_PROMPT`: 默认系统提示词（可被设置页覆盖）；未配置时使用内置数字分身“傻毛”提示词
-- `AGENT_COMPRESSION_SYSTEM_PROMPT`: 默认压缩提示词（可被设置页覆盖）；未配置时使用内置压缩模板
+- Agent 提示词统一通过设置页管理（单一来源，可编辑、可重置为内置默认）
 - `APP_LLM_LOG_LIMIT`: 内存日志上限

@@ -129,6 +129,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/settings/skills/delete", s.handleSettingsSkillDelete)
 	mux.HandleFunc("/settings/skills/toggle", s.handleSettingsSkillToggle)
 	mux.HandleFunc("/settings/llm/prompts/save", s.handleSettingsLLMPromptsSave)
+	mux.HandleFunc("/settings/llm/prompts/reset", s.handleSettingsLLMPromptsReset)
 	mux.HandleFunc("/healthz", s.handleHealthz)
 }
 
@@ -282,10 +283,9 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 		}
 	} else if section == "llm" {
 		cfg := s.mcpStore.GetAgentPromptConfig()
-		systemPrompt, compressionPrompt := s.agent.GetEffectivePrompts()
 		data.AgentPrompts = agentPromptsView{
-			SystemPrompt:            systemPrompt,
-			CompressionSystemPrompt: compressionPrompt,
+			SystemPrompt:            cfg.SystemPrompt,
+			CompressionSystemPrompt: cfg.CompressionSystemPrompt,
 		}
 		if !cfg.UpdatedAt.IsZero() {
 			data.AgentPrompts.UpdatedAt = cfg.UpdatedAt.Format("2006-01-02 15:04:05")
@@ -469,6 +469,18 @@ func (s *Server) handleSettingsLLMPromptsSave(w http.ResponseWriter, r *http.Req
 		return
 	}
 	s.redirectSettings(w, r, "llm", "系统提示词已更新", "")
+}
+
+func (s *Server) handleSettingsLLMPromptsReset(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if err := s.mcpStore.ResetAgentPromptConfig(); err != nil {
+		s.redirectSettings(w, r, "llm", "", err.Error())
+		return
+	}
+	s.redirectSettings(w, r, "llm", "已重置为内置默认提示词", "")
 }
 
 func (s *Server) redirectSettings(w http.ResponseWriter, r *http.Request, section, success, failure string) {

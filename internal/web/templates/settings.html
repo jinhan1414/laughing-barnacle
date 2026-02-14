@@ -144,10 +144,11 @@
             </div>
             <div class="flex flex-wrap items-center gap-2">
               <button type="submit" class="w-full rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-white active:scale-[0.99] sm:w-auto">保存提示词</button>
+              <button formaction="/settings/llm/prompts/reset" formmethod="post" class="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 active:scale-[0.99] sm:w-auto" type="submit">重置为默认</button>
               {{if .AgentPrompts.UpdatedAt}}
                 <span class="text-xs text-slate-500">最后更新: {{.AgentPrompts.UpdatedAt}}</span>
               {{else}}
-                <span class="text-xs text-slate-500">当前为默认提示词（来自环境配置）</span>
+                <span class="text-xs text-slate-500">当前为系统内置默认提示词</span>
               {{end}}
             </div>
           </form>

@@ -5,6 +5,8 @@ import (
 	"os"
 	"strconv"
 	"time"
+
+	"laughing-barnacle/internal/agentprompt"
 )
 
 type Config struct {
@@ -53,9 +55,9 @@ func Load() (Config, error) {
 		MaxToolCallRounds:          envInt("AGENT_MAX_TOOL_CALL_ROUNDS", 6),
 		LLMLogLimit:                envInt("APP_LLM_LOG_LIMIT", 500),
 		AgentSystemPrompt: envOrDefault("AGENT_SYSTEM_PROMPT",
-			defaultAgentSystemPrompt),
+			agentprompt.DefaultSystemPrompt),
 		CompressionSystemPrompt: envOrDefault("AGENT_COMPRESSION_SYSTEM_PROMPT",
-			defaultCompressionSystemPrompt),
+			agentprompt.DefaultCompressionSystemPrompt),
 	}
 
 	if cfg.CerberAPIKey == "" {
