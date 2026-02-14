@@ -37,6 +37,11 @@ type SkillProvider interface {
 	ListEnabledSkillPrompts() []string
 }
 
+type SkillCatalogProvider interface {
+	ListEnabledSkillIndex() []string
+	ReadEnabledSkillPrompt(skillID string) (string, bool)
+}
+
 type AutoSkillWriter interface {
 	UpsertAutoSkill(name, prompt string) error
 }
@@ -53,6 +58,7 @@ const (
 	maxNightEvolvedSkills       = 3
 	maxEvolvedSkillNameRunes    = 24
 	maxEvolvedSkillPromptRunes  = 180
+	builtinSkillReadToolName    = "skill__read"
 )
 
 var skillTokenPattern = regexp.MustCompile(`[\p{Han}]{2,8}|[a-zA-Z][a-zA-Z0-9_-]{2,}`)
@@ -309,22 +315,44 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 		Role:    "system",
 		Content: systemPrompt,
 	})
+	builtinToolDefs := make([]llm.ToolDefinition, 0, 1)
 	if a.skills != nil {
-		allSkillPrompts := a.skills.ListEnabledSkillPrompts()
-		skillPrompts := selectSkillPromptsForTurn(allSkillPrompts, summary, messages)
-		if len(skillPrompts) > 0 {
-			var b strings.Builder
-			b.WriteString("已启用技能（系统已按相关性和长度裁剪，按需遵循）：\n")
-			for i, prompt := range skillPrompts {
-				b.WriteString(fmt.Sprintf("%d. %s\n", i+1, strings.TrimSpace(prompt)))
+		if catalog, ok := a.skills.(SkillCatalogProvider); ok {
+			allSkillIndex := catalog.ListEnabledSkillIndex()
+			selectedSkillIndex := selectSkillPromptsForTurn(allSkillIndex, summary, messages)
+			if len(selectedSkillIndex) > 0 {
+				var b strings.Builder
+				b.WriteString("技能索引（先看索引，按需读取完整技能）：\n")
+				for i, skillIndex := range selectedSkillIndex {
+					b.WriteString(fmt.Sprintf("%d. %s\n", i+1, strings.TrimSpace(skillIndex)))
+				}
+				b.WriteString("规则：当你需要某个技能的完整内容时，调用工具 skill__read，并传入 skill_id。不要臆造技能全文。")
+				if len(selectedSkillIndex) < len(allSkillIndex) {
+					b.WriteString(fmt.Sprintf("\n(共 %d 条启用技能，本轮注入索引 %d 条以控制上下文长度)", len(allSkillIndex), len(selectedSkillIndex)))
+				}
+				requestMessages = append(requestMessages, llm.Message{
+					Role:    "system",
+					Content: strings.TrimSpace(b.String()),
+				})
+				builtinToolDefs = append(builtinToolDefs, skillReadToolDefinition())
 			}
-			if len(skillPrompts) < len(allSkillPrompts) {
-				b.WriteString(fmt.Sprintf("(共 %d 条启用技能，本轮注入 %d 条以控制上下文长度)\n", len(allSkillPrompts), len(skillPrompts)))
+		} else {
+			allSkillPrompts := a.skills.ListEnabledSkillPrompts()
+			skillPrompts := selectSkillPromptsForTurn(allSkillPrompts, summary, messages)
+			if len(skillPrompts) > 0 {
+				var b strings.Builder
+				b.WriteString("已启用技能（系统已按相关性和长度裁剪，按需遵循）：\n")
+				for i, prompt := range skillPrompts {
+					b.WriteString(fmt.Sprintf("%d. %s\n", i+1, strings.TrimSpace(prompt)))
+				}
+				if len(skillPrompts) < len(allSkillPrompts) {
+					b.WriteString(fmt.Sprintf("(共 %d 条启用技能，本轮注入 %d 条以控制上下文长度)\n", len(allSkillPrompts), len(skillPrompts)))
+				}
+				requestMessages = append(requestMessages, llm.Message{
+					Role:    "system",
+					Content: strings.TrimSpace(b.String()),
+				})
 			}
-			requestMessages = append(requestMessages, llm.Message{
-				Role:    "system",
-				Content: strings.TrimSpace(b.String()),
-			})
 		}
 	}
 	if strings.TrimSpace(summary) != "" {
@@ -345,7 +373,16 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 		})
 	}
 
-	if a.tools == nil {
+	toolDefs := make([]llm.ToolDefinition, 0, len(builtinToolDefs)+4)
+	toolDefs = append(toolDefs, builtinToolDefs...)
+	if a.tools != nil {
+		externalDefs, err := a.tools.ListTools(ctx)
+		if err == nil {
+			toolDefs = append(toolDefs, externalDefs...)
+		}
+	}
+
+	if len(toolDefs) == 0 {
 		resp, err := a.llm.Chat(ctx, llm.ChatRequest{
 			Purpose:     "chat_reply",
 			Model:       a.cfg.Model,
@@ -356,11 +393,6 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 			return "", nil, fmt.Errorf("generate reply failed: %w", err)
 		}
 		return resp.Content, nil, nil
-	}
-
-	toolDefs, err := a.tools.ListTools(ctx)
-	if err != nil {
-		toolDefs = nil
 	}
 
 	maxRounds := a.cfg.MaxToolCallRounds
@@ -392,7 +424,7 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 		})
 
 		for _, call := range resp.ToolCalls {
-			result, callErr := a.tools.CallTool(ctx, call)
+			result, callErr := a.callTool(ctx, call)
 			if callErr != nil {
 				result = "tool execution error: " + callErr.Error()
 			}
@@ -437,6 +469,40 @@ func renderConversation(messages []conversation.Message) string {
 		b.WriteString(fmt.Sprintf("%d. [%s] %s\n", i+1, msg.Role, msg.Content))
 	}
 	return b.String()
+}
+
+func (a *Agent) callTool(ctx context.Context, call llm.ToolCall) (string, error) {
+	if result, err, handled := a.callBuiltinTool(call); handled {
+		return result, err
+	}
+	if a.tools == nil {
+		return "", fmt.Errorf("unknown tool %q", strings.TrimSpace(call.Function.Name))
+	}
+	return a.tools.CallTool(ctx, call)
+}
+
+func (a *Agent) callBuiltinTool(call llm.ToolCall) (result string, err error, handled bool) {
+	name := strings.TrimSpace(call.Function.Name)
+	if name != builtinSkillReadToolName {
+		return "", nil, false
+	}
+	if a.skills == nil {
+		return "", fmt.Errorf("skill provider unavailable"), true
+	}
+	catalog, ok := a.skills.(SkillCatalogProvider)
+	if !ok {
+		return "", fmt.Errorf("skill catalog unavailable"), true
+	}
+
+	skillID, err := readStringArgument(call.Function.Arguments, "skill_id")
+	if err != nil {
+		return "", err, true
+	}
+	prompt, found := catalog.ReadEnabledSkillPrompt(skillID)
+	if !found {
+		return "", fmt.Errorf("skill %q not found or disabled", skillID), true
+	}
+	return strings.TrimSpace("skill_id: " + skillID + "\nfull_prompt:\n" + prompt), nil, true
 }
 
 func (a *Agent) resolvePromptsLocked() (systemPrompt string, compressionSystemPrompt string) {
@@ -660,6 +726,47 @@ func extractJSONObject(content string) string {
 		return text[start : end+1]
 	}
 	return text
+}
+
+func skillReadToolDefinition() llm.ToolDefinition {
+	return llm.ToolDefinition{
+		Type: "function",
+		Function: llm.ToolFunctionDefinition{
+			Name:        builtinSkillReadToolName,
+			Description: "Read one enabled skill full prompt by skill_id",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"skill_id": map[string]any{
+						"type":        "string",
+						"description": "Target skill id from injected skill index",
+					},
+				},
+				"required":             []string{"skill_id"},
+				"additionalProperties": false,
+			},
+		},
+	}
+}
+
+func readStringArgument(raw, key string) (string, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "", fmt.Errorf("tool argument %q is required", key)
+	}
+	var args map[string]any
+	if err := json.Unmarshal([]byte(trimmed), &args); err != nil {
+		return "", fmt.Errorf("invalid tool arguments: %w", err)
+	}
+	val, ok := args[key]
+	if !ok {
+		return "", fmt.Errorf("tool argument %q is required", key)
+	}
+	s, ok := val.(string)
+	if !ok || strings.TrimSpace(s) == "" {
+		return "", fmt.Errorf("tool argument %q must be non-empty string", key)
+	}
+	return strings.TrimSpace(s), nil
 }
 
 func (a *Agent) applyNightEvolvedSkills(skills []evolvedSkill) int {

@@ -77,11 +77,12 @@ type settingsPageData struct {
 }
 
 type skillView struct {
-	ID        string
-	Name      string
-	Prompt    string
-	Enabled   bool
-	UpdatedAt string
+	ID          string
+	Name        string
+	Description string
+	Prompt      string
+	Enabled     bool
+	UpdatedAt   string
 }
 
 type agentPromptsView struct {
@@ -271,10 +272,11 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 		data.Skills = make([]skillView, 0, len(skills))
 		for _, skill := range skills {
 			view := skillView{
-				ID:      skill.ID,
-				Name:    skill.Name,
-				Prompt:  skill.Prompt,
-				Enabled: skill.Enabled,
+				ID:          skill.ID,
+				Name:        skill.Name,
+				Description: skill.Description,
+				Prompt:      skill.Prompt,
+				Enabled:     skill.Enabled,
 			}
 			if !skill.UpdatedAt.IsZero() {
 				view.UpdatedAt = skill.UpdatedAt.Format("2006-01-02 15:04:05")
@@ -397,10 +399,11 @@ func (s *Server) handleSettingsSkillSave(w http.ResponseWriter, r *http.Request)
 	}
 
 	skill := mcp.Skill{
-		ID:      "",
-		Name:    strings.TrimSpace(r.FormValue("name")),
-		Prompt:  strings.TrimSpace(r.FormValue("prompt")),
-		Enabled: r.FormValue("enabled") == "on",
+		ID:          "",
+		Name:        strings.TrimSpace(r.FormValue("name")),
+		Description: strings.TrimSpace(r.FormValue("description")),
+		Prompt:      strings.TrimSpace(r.FormValue("prompt")),
+		Enabled:     r.FormValue("enabled") == "on",
 	}
 	if err := s.mcpStore.UpsertSkill(skill); err != nil {
 		s.redirectSettings(w, r, "skills", "", err.Error())

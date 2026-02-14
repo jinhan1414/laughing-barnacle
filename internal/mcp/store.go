@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -44,11 +45,12 @@ type ServiceToolState struct {
 }
 
 type Skill struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Prompt    string    `json:"prompt"`
-	Enabled   bool      `json:"enabled"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description,omitempty"`
+	Prompt      string    `json:"prompt"`
+	Enabled     bool      `json:"enabled"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type AgentPromptConfig struct {
@@ -317,6 +319,82 @@ func (s *Store) ListEnabledSkillPrompts() []string {
 	return out
 }
 
+func (s *Store) ListEnabledSkillIndex() []string {
+	skills := s.ListSkills()
+	out := make([]string, 0, len(skills))
+	for _, skill := range skills {
+		if !skill.Enabled {
+			continue
+		}
+		id := strings.TrimSpace(skill.ID)
+		name := strings.TrimSpace(skill.Name)
+		description := strings.TrimSpace(skill.Description)
+		prompt := strings.TrimSpace(skill.Prompt)
+		if id == "" || name == "" || prompt == "" {
+			continue
+		}
+		if description == "" {
+			description = normalizeSkillDescription("", name, prompt)
+		}
+		brief := trimSkillText(prompt, 72)
+		out = append(out, fmt.Sprintf(
+			"skill_id=%s | name=%s | description=%s | brief=%s | path=skill://%s/SKILL.md",
+			id,
+			name,
+			description,
+			brief,
+			id,
+		))
+	}
+	return out
+}
+
+func (s *Store) ReadEnabledSkillPrompt(skillID string) (string, bool) {
+	skillID = strings.TrimSpace(skillID)
+	if skillID == "" {
+		return "", false
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	// Prefer exact ID; fallback to unique name match for model robustness.
+	for _, skill := range s.cfg.Skills.Items {
+		if !skill.Enabled {
+			continue
+		}
+		if strings.TrimSpace(skill.ID) == skillID {
+			markdown := renderSkillMarkdown(skill)
+			return markdown, strings.TrimSpace(markdown) != ""
+		}
+	}
+
+	matchedSkill := Skill{}
+	matched := false
+	for _, skill := range s.cfg.Skills.Items {
+		if !skill.Enabled {
+			continue
+		}
+		if !strings.EqualFold(strings.TrimSpace(skill.Name), skillID) {
+			continue
+		}
+		prompt := strings.TrimSpace(skill.Prompt)
+		if prompt == "" {
+			continue
+		}
+		if matched {
+			return "", false
+		}
+		matchedSkill = skill
+		matched = true
+	}
+	if !matched {
+		return "", false
+	}
+	markdown := renderSkillMarkdown(matchedSkill)
+	return markdown, strings.TrimSpace(markdown) != ""
+}
+
 func (s *Store) UpsertAutoSkill(name, prompt string) error {
 	name = trimSkillText(name, maxAutoSkillNameRunes)
 	prompt = trimSkillText(prompt, maxAutoSkillPromptRunes)
@@ -336,10 +414,11 @@ func (s *Store) UpsertAutoSkill(name, prompt string) error {
 	}
 
 	skill := Skill{
-		ID:      id,
-		Name:    name,
-		Prompt:  prompt,
-		Enabled: true,
+		ID:          id,
+		Name:        name,
+		Description: normalizeSkillDescription("", name, prompt),
+		Prompt:      prompt,
+		Enabled:     true,
 	}
 	if err := validateSkill(skill); err != nil {
 		return err
@@ -365,6 +444,7 @@ func (s *Store) UpsertAutoSkill(name, prompt string) error {
 func (s *Store) UpsertSkill(skill Skill) error {
 	skill.ID = strings.TrimSpace(skill.ID)
 	skill.Name = strings.TrimSpace(skill.Name)
+	skill.Description = normalizeSkillDescription(skill.Description, skill.Name, skill.Prompt)
 	skill.Prompt = strings.TrimSpace(skill.Prompt)
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -378,6 +458,7 @@ func (s *Store) UpsertSkill(skill Skill) error {
 	if skill.Name == "" {
 		skill.Name = skill.ID
 	}
+	skill.Description = normalizeSkillDescription(skill.Description, skill.Name, skill.Prompt)
 	if err := validateSkill(skill); err != nil {
 		return err
 	}
@@ -573,10 +654,19 @@ func (s *Store) load() error {
 		}
 		cfg.MCP.Services[i] = svc
 	}
-	for _, skill := range cfg.Skills.Items {
+	for i, skill := range cfg.Skills.Items {
+		skill.ID = strings.TrimSpace(skill.ID)
+		skill.Name = strings.TrimSpace(skill.Name)
+		skill.Prompt = strings.TrimSpace(skill.Prompt)
+		nextDescription := normalizeSkillDescription(skill.Description, skill.Name, skill.Prompt)
+		if strings.TrimSpace(skill.Description) != nextDescription {
+			skill.Description = nextDescription
+			needsPersist = true
+		}
 		if err := validateSkill(skill); err != nil {
 			return fmt.Errorf("invalid skill %q: %w", skill.ID, err)
 		}
+		cfg.Skills.Items[i] = skill
 	}
 	if err := validateAgentPromptConfig(cfg.Agent.Prompts); err != nil {
 		return fmt.Errorf("invalid agent prompts: %w", err)
@@ -650,6 +740,9 @@ func validateSkill(skill Skill) error {
 	}
 	if strings.TrimSpace(skill.Name) == "" {
 		return fmt.Errorf("skill name is required")
+	}
+	if strings.TrimSpace(skill.Description) == "" {
+		return fmt.Errorf("skill description is required")
 	}
 	if strings.TrimSpace(skill.Prompt) == "" {
 		return fmt.Errorf("skill prompt is required")
@@ -934,6 +1027,92 @@ func trimSkillText(v string, max int) string {
 		return string(runes[:max])
 	}
 	return strings.TrimSpace(string(runes[:max-3])) + "..."
+}
+
+func normalizeSkillDescription(description, name, prompt string) string {
+	description = strings.TrimSpace(strings.ReplaceAll(description, "\n", " "))
+	if description != "" {
+		return trimSkillText(description, 140)
+	}
+
+	base := strings.TrimSpace(prompt)
+	if base == "" {
+		base = strings.TrimSpace(name)
+	}
+	if base == "" {
+		return ""
+	}
+	base = strings.ReplaceAll(base, "\n", " ")
+	return trimSkillText(base, 140)
+}
+
+func normalizeSkillStandardName(skill Skill) string {
+	raw := strings.TrimSpace(skill.ID)
+	if raw == "" {
+		raw = strings.TrimSpace(skill.Name)
+	}
+	raw = strings.ToLower(raw)
+
+	var b strings.Builder
+	lastDash := false
+	for _, r := range raw {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+			lastDash = false
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+			lastDash = false
+		case r == '-' || r == '_':
+			if b.Len() == 0 || lastDash {
+				continue
+			}
+			b.WriteRune('-')
+			lastDash = true
+		default:
+			if b.Len() == 0 || lastDash {
+				continue
+			}
+			b.WriteRune('-')
+			lastDash = true
+		}
+	}
+
+	name := strings.Trim(b.String(), "-")
+	if name == "" {
+		name = "skill"
+	}
+	if len(name) > 64 {
+		name = strings.Trim(name[:64], "-")
+		if name == "" {
+			name = "skill"
+		}
+	}
+	return name
+}
+
+func renderSkillMarkdown(skill Skill) string {
+	prompt := strings.TrimSpace(skill.Prompt)
+	if prompt == "" {
+		return ""
+	}
+	manifestName := normalizeSkillStandardName(skill)
+	description := normalizeSkillDescription(skill.Description, skill.Name, skill.Prompt)
+	if description == "" {
+		return ""
+	}
+
+	return strings.TrimSpace(
+		"---\n" +
+			"name: " + quoteYAMLString(manifestName) + "\n" +
+			"description: " + quoteYAMLString(description) + "\n" +
+			"---\n\n" +
+			prompt,
+	)
+}
+
+func quoteYAMLString(v string) string {
+	return strconv.Quote(strings.TrimSpace(strings.ReplaceAll(v, "\n", " ")))
 }
 
 func cloneServices(in []Service) []Service {

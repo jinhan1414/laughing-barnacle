@@ -153,6 +153,64 @@ func TestStoreUpsertAutoSkill_PersistedAndBounded(t *testing.T) {
 	}
 }
 
+func TestStoreSkillCatalogIndexAndRead(t *testing.T) {
+	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	store, err := NewStore(settingsPath)
+	if err != nil {
+		t.Fatalf("NewStore error: %v", err)
+	}
+
+	if err := store.UpsertSkill(Skill{
+		ID:          "code-review-playbook",
+		Name:        "代码评审手册",
+		Description: "用于代码评审与上线风险治理。",
+		Prompt:      "完整技能：先确认验收标准，再检查风险与回滚，最后给出上线建议。",
+		Enabled:     true,
+	}); err != nil {
+		t.Fatalf("UpsertSkill enabled error: %v", err)
+	}
+	if err := store.UpsertSkill(Skill{
+		ID:      "disabled-skill",
+		Name:    "禁用技能",
+		Prompt:  "这条不该出现在索引里",
+		Enabled: false,
+	}); err != nil {
+		t.Fatalf("UpsertSkill disabled error: %v", err)
+	}
+
+	index := store.ListEnabledSkillIndex()
+	if len(index) != 1 {
+		t.Fatalf("expected 1 enabled skill index line, got %d", len(index))
+	}
+	if !strings.Contains(index[0], "skill_id=code-review-playbook") {
+		t.Fatalf("unexpected skill index line: %q", index[0])
+	}
+	if !strings.Contains(index[0], "description=用于代码评审与上线风险治理。") {
+		t.Fatalf("expected description in skill index line, got %q", index[0])
+	}
+
+	prompt, ok := store.ReadEnabledSkillPrompt("code-review-playbook")
+	if !ok {
+		t.Fatalf("expected skill prompt by id")
+	}
+	if !strings.Contains(prompt, "---") || !strings.Contains(prompt, `name: "code-review-playbook"`) {
+		t.Fatalf("expected SKILL.md front matter, got %q", prompt)
+	}
+	if !strings.Contains(prompt, `description: "用于代码评审与上线风险治理。"`) {
+		t.Fatalf("expected SKILL.md description front matter, got %q", prompt)
+	}
+	if !strings.Contains(prompt, "验收标准") {
+		t.Fatalf("unexpected skill prompt: %q", prompt)
+	}
+
+	if _, ok := store.ReadEnabledSkillPrompt("disabled-skill"); ok {
+		t.Fatalf("disabled skill should not be readable")
+	}
+	if _, ok := store.ReadEnabledSkillPrompt("代码评审手册"); !ok {
+		t.Fatalf("expected name fallback read")
+	}
+}
+
 func TestStoreUpsertService_AutoGeneratesIDWhenMissing(t *testing.T) {
 	settingsPath := filepath.Join(t.TempDir(), "settings.json")
 	store, err := NewStore(settingsPath)
