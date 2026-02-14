@@ -411,3 +411,57 @@ func TestStoreResetAgentPromptConfig(t *testing.T) {
 		t.Fatalf("expected updated time on reset")
 	}
 }
+
+func TestStoreAgentHabitState_Persisted(t *testing.T) {
+	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	store, err := NewStore(settingsPath)
+	if err != nil {
+		t.Fatalf("NewStore error: %v", err)
+	}
+
+	if err := store.SetLastSleepReviewDate("2026-02-14"); err != nil {
+		t.Fatalf("SetLastSleepReviewDate error: %v", err)
+	}
+	if err := store.SetLastWakePlanDate("2026-02-14"); err != nil {
+		t.Fatalf("SetLastWakePlanDate error: %v", err)
+	}
+	if err := store.SetLastPromptEvolutionDate("2026-02-14"); err != nil {
+		t.Fatalf("SetLastPromptEvolutionDate error: %v", err)
+	}
+
+	if got := store.GetLastSleepReviewDate(); got != "2026-02-14" {
+		t.Fatalf("unexpected sleep review date: %q", got)
+	}
+	if got := store.GetLastWakePlanDate(); got != "2026-02-14" {
+		t.Fatalf("unexpected wake plan date: %q", got)
+	}
+	if got := store.GetLastPromptEvolutionDate(); got != "2026-02-14" {
+		t.Fatalf("unexpected prompt evolution date: %q", got)
+	}
+
+	reloaded, err := NewStore(settingsPath)
+	if err != nil {
+		t.Fatalf("reload store error: %v", err)
+	}
+	if got := reloaded.GetLastSleepReviewDate(); got != "2026-02-14" {
+		t.Fatalf("unexpected reloaded sleep review date: %q", got)
+	}
+	if got := reloaded.GetLastWakePlanDate(); got != "2026-02-14" {
+		t.Fatalf("unexpected reloaded wake plan date: %q", got)
+	}
+	if got := reloaded.GetLastPromptEvolutionDate(); got != "2026-02-14" {
+		t.Fatalf("unexpected reloaded prompt evolution date: %q", got)
+	}
+}
+
+func TestStoreAgentHabitState_InvalidDateRejected(t *testing.T) {
+	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	store, err := NewStore(settingsPath)
+	if err != nil {
+		t.Fatalf("NewStore error: %v", err)
+	}
+
+	if err := store.SetLastSleepReviewDate("2026/02/14"); err == nil {
+		t.Fatalf("expected invalid date to be rejected")
+	}
+}

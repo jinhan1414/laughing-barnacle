@@ -76,6 +76,52 @@ func (m *mockPromptProvider) GetCompressionSystemPrompt() string {
 	return m.compressionSystemPrompt
 }
 
+type mockPromptUpdater struct {
+	systemPrompt            string
+	compressionSystemPrompt string
+	calls                   int
+}
+
+func (m *mockPromptUpdater) UpdateAgentPrompts(systemPrompt, compressionSystemPrompt string) error {
+	m.systemPrompt = systemPrompt
+	m.compressionSystemPrompt = compressionSystemPrompt
+	m.calls++
+	return nil
+}
+
+type mockHabits struct {
+	lastSleepReviewDate     string
+	lastWakePlanDate        string
+	lastPromptEvolutionDate string
+}
+
+func (m *mockHabits) GetLastSleepReviewDate() string {
+	return m.lastSleepReviewDate
+}
+
+func (m *mockHabits) GetLastWakePlanDate() string {
+	return m.lastWakePlanDate
+}
+
+func (m *mockHabits) GetLastPromptEvolutionDate() string {
+	return m.lastPromptEvolutionDate
+}
+
+func (m *mockHabits) SetLastSleepReviewDate(date string) error {
+	m.lastSleepReviewDate = date
+	return nil
+}
+
+func (m *mockHabits) SetLastWakePlanDate(date string) error {
+	m.lastWakePlanDate = date
+	return nil
+}
+
+func (m *mockHabits) SetLastPromptEvolutionDate(date string) error {
+	m.lastPromptEvolutionDate = date
+	return nil
+}
+
 func (m *mockTools) ListTools(_ context.Context) ([]llm.ToolDefinition, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -271,6 +317,7 @@ func TestHandleUserMessage_IncludesEnabledSkillPrompts(t *testing.T) {
 		MaxToolCallRounds:          2,
 		SystemPrompt:               "system",
 		CompressionSystemPrompt:    "compressor",
+		EnforceHumanRoutine:        true,
 	}, store, fakeLLM, nil)
 	agentSvc.SetSkillProvider(&mockSkills{
 		prompts: []string{"先检索再回答，并提供引用链接。"},
@@ -392,6 +439,7 @@ func TestHandleUserMessage_SleepWindowNonUrgentBypassesLLM(t *testing.T) {
 		MaxToolCallRounds:          2,
 		SystemPrompt:               "system",
 		CompressionSystemPrompt:    "compressor",
+		EnforceHumanRoutine:        true,
 	}, store, fakeLLM, nil)
 	agentSvc.nowFn = func() time.Time {
 		return time.Date(2026, 2, 14, 2, 0, 0, 0, time.Local)
@@ -429,6 +477,7 @@ func TestHandleUserMessage_SleepWindowUrgentStillCallsLLM(t *testing.T) {
 		MaxToolCallRounds:          2,
 		SystemPrompt:               "system",
 		CompressionSystemPrompt:    "compressor",
+		EnforceHumanRoutine:        true,
 	}, store, fakeLLM, nil)
 	agentSvc.nowFn = func() time.Time {
 		return time.Date(2026, 2, 14, 2, 0, 0, 0, time.Local)
@@ -443,6 +492,93 @@ func TestHandleUserMessage_SleepWindowUrgentStillCallsLLM(t *testing.T) {
 	}
 	if len(fakeLLM.calls) != 1 {
 		t.Fatalf("expected llm to be called for urgent message, got %d", len(fakeLLM.calls))
+	}
+}
+
+func TestHandleUserMessage_SleepWindowRunsReflectionAndPromptEvolution(t *testing.T) {
+	store := conversation.NewStore()
+	fakeLLM := &mockLLM{responses: map[string][]string{
+		"night_reflection_evolution": {`{"reflection":"生活：按时休息。工作：推进核心任务。学习：补齐短板。","system_prompt":"你是用户的 AI 数字分身，名字叫“傻毛”，女性，8 年全栈开发经验。你始终不使用表情符号，回答务实、可执行、可复盘，并持续优化工作和学习策略。","compression_system_prompt":"你是“傻毛”数字分身的上下文压缩器，保留人格、事实、任务进度、学习进展与待办，输出简洁纯文本。 "}`},
+	}}
+
+	agentSvc := New(Config{
+		Model:                      "test-model",
+		MaxRecentMessages:          10,
+		CompressionTriggerMessages: 99,
+		CompressionTriggerChars:    99999,
+		KeepRecentAfterCompression: 1,
+		MaxCompressionLoopsPerTurn: 1,
+		MaxToolCallRounds:          2,
+		SystemPrompt:               "system",
+		CompressionSystemPrompt:    "compressor",
+		EnforceHumanRoutine:        true,
+	}, store, fakeLLM, nil)
+	agentSvc.nowFn = func() time.Time {
+		return time.Date(2026, 2, 14, 2, 10, 0, 0, time.Local)
+	}
+	updater := &mockPromptUpdater{}
+	habits := &mockHabits{}
+	agentSvc.SetPromptUpdater(updater)
+	agentSvc.SetHabitProvider(habits)
+
+	reply, err := agentSvc.HandleUserMessage(context.Background(), "帮我明天继续优化服务")
+	if err != nil {
+		t.Fatalf("HandleUserMessage error: %v", err)
+	}
+	if !strings.Contains(reply, "夜间复盘") {
+		t.Fatalf("expected reflection section in sleep reply, got %q", reply)
+	}
+	if updater.calls != 1 {
+		t.Fatalf("expected one prompt evolution update, got %d", updater.calls)
+	}
+	if habits.lastSleepReviewDate != "2026-02-14" {
+		t.Fatalf("expected sleep review date recorded, got %q", habits.lastSleepReviewDate)
+	}
+	if habits.lastPromptEvolutionDate != "2026-02-14" {
+		t.Fatalf("expected prompt evolution date recorded, got %q", habits.lastPromptEvolutionDate)
+	}
+}
+
+func TestHandleUserMessage_MorningPlanningPrependsReplyAndTracksDate(t *testing.T) {
+	store := conversation.NewStore()
+	fakeLLM := &mockLLM{responses: map[string][]string{
+		"morning_planning": {"回顾：昨天完成 2 项，1 项待推进。\n今日 Top3：A/B/C。\n能力提升：复盘一个线上问题。"},
+		"chat_reply":       {"好的，我先从任务 A 开始。"},
+	}}
+
+	agentSvc := New(Config{
+		Model:                      "test-model",
+		MaxRecentMessages:          10,
+		CompressionTriggerMessages: 99,
+		CompressionTriggerChars:    99999,
+		KeepRecentAfterCompression: 1,
+		MaxCompressionLoopsPerTurn: 1,
+		MaxToolCallRounds:          2,
+		SystemPrompt:               "system",
+		CompressionSystemPrompt:    "compressor",
+		EnforceHumanRoutine:        true,
+	}, store, fakeLLM, nil)
+	agentSvc.nowFn = func() time.Time {
+		return time.Date(2026, 2, 14, 9, 5, 0, 0, time.Local)
+	}
+	habits := &mockHabits{}
+	agentSvc.SetHabitProvider(habits)
+
+	reply, err := agentSvc.HandleUserMessage(context.Background(), "今天我应该先做什么")
+	if err != nil {
+		t.Fatalf("HandleUserMessage error: %v", err)
+	}
+	if !strings.Contains(reply, "晨间规划") {
+		t.Fatalf("expected morning planning prefix in reply, got %q", reply)
+	}
+	if habits.lastWakePlanDate != "2026-02-14" {
+		t.Fatalf("expected wake plan date recorded, got %q", habits.lastWakePlanDate)
+	}
+	if len(fakeLLM.calls) != 2 {
+		t.Fatalf("expected two llm calls (planning + reply), got %d", len(fakeLLM.calls))
+	}
+	if fakeLLM.calls[0].Purpose != "morning_planning" {
+		t.Fatalf("expected first call is morning planning, got %s", fakeLLM.calls[0].Purpose)
 	}
 }
 
@@ -467,6 +603,7 @@ func TestRetryLastUserMessage_ReusesPendingUserMessage(t *testing.T) {
 		MaxToolCallRounds:          2,
 		SystemPrompt:               "system",
 		CompressionSystemPrompt:    "compressor",
+		EnforceHumanRoutine:        true,
 	}, store, fakeLLM, nil)
 
 	if _, err := agentSvc.HandleUserMessage(context.Background(), "hello"); err == nil {
@@ -513,6 +650,7 @@ func TestRetryLastUserMessage_SleepWindowNonUrgentBypassesLLM(t *testing.T) {
 		MaxToolCallRounds:          2,
 		SystemPrompt:               "system",
 		CompressionSystemPrompt:    "compressor",
+		EnforceHumanRoutine:        true,
 	}, store, fakeLLM, nil)
 	agentSvc.nowFn = func() time.Time {
 		return time.Date(2026, 2, 14, 3, 0, 0, 0, time.Local)

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -22,6 +23,7 @@ type Config struct {
 	MaxToolCallRounds          int
 	SystemPrompt               string
 	CompressionSystemPrompt    string
+	EnforceHumanRoutine        bool
 }
 
 type ToolProvider interface {
@@ -38,12 +40,27 @@ type PromptProvider interface {
 	GetCompressionSystemPrompt() string
 }
 
+type PromptUpdater interface {
+	UpdateAgentPrompts(systemPrompt, compressionSystemPrompt string) error
+}
+
+type HabitProvider interface {
+	GetLastSleepReviewDate() string
+	GetLastWakePlanDate() string
+	GetLastPromptEvolutionDate() string
+	SetLastSleepReviewDate(date string) error
+	SetLastWakePlanDate(date string) error
+	SetLastPromptEvolutionDate(date string) error
+}
+
 type Agent struct {
 	cfg     Config
 	llm     llm.Client
 	tools   ToolProvider
 	skills  SkillProvider
 	prompts PromptProvider
+	updater PromptUpdater
+	habits  HabitProvider
 	store   *conversation.Store
 	nowFn   func() time.Time
 	mu      sync.Mutex
@@ -71,6 +88,18 @@ func (a *Agent) SetPromptProvider(provider PromptProvider) {
 	a.prompts = provider
 }
 
+func (a *Agent) SetPromptUpdater(updater PromptUpdater) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.updater = updater
+}
+
+func (a *Agent) SetHabitProvider(provider HabitProvider) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.habits = provider
+}
+
 func (a *Agent) GetEffectivePrompts() (systemPrompt string, compressionSystemPrompt string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -88,11 +117,17 @@ func (a *Agent) HandleUserMessage(ctx context.Context, userInput string) (string
 	defer a.mu.Unlock()
 
 	a.store.Append("user", text)
-	if shouldEnforceSleepReply(text, a.nowFn()) {
+	now := a.nowFn()
+	if a.cfg.EnforceHumanRoutine && shouldEnforceSleepReply(text, now) {
+		reflection := strings.TrimSpace(a.runNightReflectionAndEvolution(ctx, now))
 		reply := sleepWindowReply()
+		if reflection != "" {
+			reply = "【夜间复盘】\n" + reflection + "\n\n" + reply
+		}
 		a.store.Append("assistant", reply)
 		return reply, nil
 	}
+	morningPlan := strings.TrimSpace(a.runMorningPlanning(ctx, now))
 
 	if err := a.autonomousCompressionLoop(ctx); err != nil {
 		return "", err
@@ -106,6 +141,9 @@ func (a *Agent) HandleUserMessage(ctx context.Context, userInput string) (string
 	}
 
 	reply = strings.TrimSpace(reply)
+	if morningPlan != "" {
+		reply = strings.TrimSpace("【晨间规划】\n" + morningPlan + "\n\n" + reply)
+	}
 	a.store.Append("assistant", reply)
 	return reply, nil
 }
@@ -120,11 +158,17 @@ func (a *Agent) RetryLastUserMessage(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("no pending user message to retry")
 	}
 	pendingUserMessage := messages[len(messages)-1].Content
-	if shouldEnforceSleepReply(pendingUserMessage, a.nowFn()) {
+	now := a.nowFn()
+	if a.cfg.EnforceHumanRoutine && shouldEnforceSleepReply(pendingUserMessage, now) {
+		reflection := strings.TrimSpace(a.runNightReflectionAndEvolution(ctx, now))
 		reply := sleepWindowReply()
+		if reflection != "" {
+			reply = "【夜间复盘】\n" + reflection + "\n\n" + reply
+		}
 		a.store.Append("assistant", reply)
 		return reply, nil
 	}
+	morningPlan := strings.TrimSpace(a.runMorningPlanning(ctx, now))
 
 	if err := a.autonomousCompressionLoop(ctx); err != nil {
 		return "", err
@@ -142,6 +186,9 @@ func (a *Agent) RetryLastUserMessage(ctx context.Context) (string, error) {
 	}
 
 	reply = strings.TrimSpace(reply)
+	if morningPlan != "" {
+		reply = strings.TrimSpace("【晨间规划】\n" + morningPlan + "\n\n" + reply)
+	}
 	a.store.Append("assistant", reply)
 	return reply, nil
 }
@@ -392,4 +439,174 @@ func isUrgentMessage(userInput string) bool {
 
 func sleepWindowReply() string {
 	return "当前是我的休息时段（00:30-08:30）。我已记录你的请求；若不是紧急事项，我会在醒来后优先处理。如有硬截止，请补充时间与优先级。"
+}
+
+func (a *Agent) runNightReflectionAndEvolution(ctx context.Context, now time.Time) string {
+	if a.habits == nil {
+		return ""
+	}
+	today := now.Format("2006-01-02")
+	if strings.TrimSpace(a.habits.GetLastSleepReviewDate()) == today {
+		return ""
+	}
+
+	summary, messages := a.store.Snapshot()
+	reflection, systemPrompt, compressionPrompt, err := a.generateNightReflectionPayload(ctx, summary, messages)
+	if err != nil {
+		return ""
+	}
+
+	if strings.TrimSpace(systemPrompt) != "" &&
+		strings.TrimSpace(compressionPrompt) != "" &&
+		a.updater != nil &&
+		isValidEvolvedPrompt(systemPrompt, compressionPrompt) {
+		_ = a.updater.UpdateAgentPrompts(systemPrompt, compressionPrompt)
+		_ = a.habits.SetLastPromptEvolutionDate(today)
+	}
+
+	_ = a.habits.SetLastSleepReviewDate(today)
+	return strings.TrimSpace(reflection)
+}
+
+func (a *Agent) runMorningPlanning(ctx context.Context, now time.Time) string {
+	if !a.cfg.EnforceHumanRoutine || isSleepWindow(now) || a.habits == nil {
+		return ""
+	}
+	today := now.Format("2006-01-02")
+	if strings.TrimSpace(a.habits.GetLastWakePlanDate()) == today {
+		return ""
+	}
+
+	summary, messages := a.store.Snapshot()
+	plan, err := a.generateMorningPlan(ctx, summary, messages)
+	if err != nil {
+		return ""
+	}
+	plan = strings.TrimSpace(plan)
+	if plan == "" {
+		return ""
+	}
+	_ = a.habits.SetLastWakePlanDate(today)
+	return plan
+}
+
+func (a *Agent) generateNightReflectionPayload(ctx context.Context, summary string, messages []conversation.Message) (reflection, systemPrompt, compressionPrompt string, err error) {
+	currentSystemPrompt, currentCompressionPrompt := a.resolvePromptsLocked()
+
+	msgs := []llm.Message{
+		{
+			Role:    "system",
+			Content: "你是数字分身夜间复盘与进化引擎。请仅输出 JSON，不要输出 markdown 代码块。",
+		},
+		{
+			Role: "user",
+			Content: strings.TrimSpace(
+				"请基于以下信息执行两件事：\n" +
+					"1) 生成夜间复盘（生活/工作/学习三段，各 1-2 行）\n" +
+					"2) 生成升级后的系统提示词与压缩提示词\n\n" +
+					"约束：必须保持名字“傻毛”、女性、8年全栈开发经验、不使用表情符号。\n" +
+					"输出 JSON 字段：reflection, system_prompt, compression_system_prompt。\n\n" +
+					"当前系统提示词：\n" + currentSystemPrompt + "\n\n" +
+					"当前压缩提示词：\n" + currentCompressionPrompt + "\n\n" +
+					"历史摘要：\n" + safeOrEmpty(summary) + "\n\n" +
+					"最近对话：\n" + renderConversation(lastN(messages, 20)),
+			),
+		},
+	}
+
+	resp, err := a.llm.Chat(ctx, llm.ChatRequest{
+		Purpose:     "night_reflection_evolution",
+		Model:       a.cfg.Model,
+		Messages:    msgs,
+		Temperature: 0.1,
+	})
+	if err != nil {
+		return "", "", "", err
+	}
+
+	type payload struct {
+		Reflection              string `json:"reflection"`
+		SystemPrompt            string `json:"system_prompt"`
+		CompressionSystemPrompt string `json:"compression_system_prompt"`
+	}
+	var out payload
+	if err := json.Unmarshal([]byte(extractJSONObject(resp.Content)), &out); err != nil {
+		return "", "", "", err
+	}
+
+	return strings.TrimSpace(out.Reflection), strings.TrimSpace(out.SystemPrompt), strings.TrimSpace(out.CompressionSystemPrompt), nil
+}
+
+func (a *Agent) generateMorningPlan(ctx context.Context, summary string, messages []conversation.Message) (string, error) {
+	resp, err := a.llm.Chat(ctx, llm.ChatRequest{
+		Purpose: "morning_planning",
+		Model:   a.cfg.Model,
+		Messages: []llm.Message{
+			{
+				Role:    "system",
+				Content: "你是数字分身晨间计划器。输出简洁中文纯文本，不要代码块。",
+			},
+			{
+				Role: "user",
+				Content: strings.TrimSpace(
+					"请基于以下信息输出今日计划，必须包含：\n" +
+						"1) 任务进度回顾（昨天完成/未完成）\n" +
+						"2) 今日 Top 3 任务（按优先级）\n" +
+						"3) 学习与能力提升 1 条\n\n" +
+						"历史摘要：\n" + safeOrEmpty(summary) + "\n\n" +
+						"最近对话：\n" + renderConversation(lastN(messages, 20)),
+				),
+			},
+		},
+		Temperature: 0.2,
+	})
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(resp.Content), nil
+}
+
+func isValidEvolvedPrompt(systemPrompt, compressionPrompt string) bool {
+	systemPrompt = strings.TrimSpace(systemPrompt)
+	compressionPrompt = strings.TrimSpace(compressionPrompt)
+	if len(systemPrompt) < 100 || len(compressionPrompt) < 60 {
+		return false
+	}
+	if len(systemPrompt) > 16000 || len(compressionPrompt) > 8000 {
+		return false
+	}
+	if !strings.Contains(systemPrompt, "傻毛") {
+		return false
+	}
+	if !strings.Contains(systemPrompt, "不使用表情符号") {
+		return false
+	}
+	return true
+}
+
+func extractJSONObject(content string) string {
+	text := strings.TrimSpace(content)
+	start := strings.Index(text, "{")
+	end := strings.LastIndex(text, "}")
+	if start >= 0 && end > start {
+		return text[start : end+1]
+	}
+	return text
+}
+
+func lastN(messages []conversation.Message, n int) []conversation.Message {
+	if n <= 0 || len(messages) == 0 {
+		return nil
+	}
+	if len(messages) <= n {
+		return messages
+	}
+	return messages[len(messages)-n:]
+}
+
+func safeOrEmpty(v string) string {
+	if strings.TrimSpace(v) == "" {
+		return "(无)"
+	}
+	return v
 }

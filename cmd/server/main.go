@@ -64,9 +64,12 @@ func run() error {
 		MaxToolCallRounds:          cfg.MaxToolCallRounds,
 		SystemPrompt:               cfg.AgentSystemPrompt,
 		CompressionSystemPrompt:    cfg.CompressionSystemPrompt,
+		EnforceHumanRoutine:        true,
 	}, convStore, llmClient, mcpToolProvider)
 	agentSvc.SetSkillProvider(mcpStore)
 	agentSvc.SetPromptProvider(mcpStore)
+	agentSvc.SetPromptUpdater(mcpStore)
+	agentSvc.SetHabitProvider(mcpStore)
 
 	webServer, err := web.NewServer(agentSvc, convStore, logStore, mcpStore, mcpToolProvider)
 	if err != nil {

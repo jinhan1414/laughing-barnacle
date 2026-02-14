@@ -53,6 +53,13 @@ type AgentPromptConfig struct {
 	UpdatedAt               time.Time `json:"updated_at,omitempty"`
 }
 
+type AgentHabitState struct {
+	LastSleepReviewDate     string    `json:"last_sleep_review_date,omitempty"`
+	LastWakePlanDate        string    `json:"last_wake_plan_date,omitempty"`
+	LastPromptEvolutionDate string    `json:"last_prompt_evolution_date,omitempty"`
+	UpdatedAt               time.Time `json:"updated_at,omitempty"`
+}
+
 type fileConfig struct {
 	MCP struct {
 		Services []Service `json:"services"`
@@ -62,6 +69,7 @@ type fileConfig struct {
 	} `json:"skills"`
 	Agent struct {
 		Prompts AgentPromptConfig `json:"prompts"`
+		Habits  AgentHabitState   `json:"habits"`
 	} `json:"agent"`
 }
 
@@ -418,6 +426,13 @@ func (s *Store) UpsertAgentPromptConfig(cfg AgentPromptConfig) error {
 	return s.persistLocked()
 }
 
+func (s *Store) UpdateAgentPrompts(systemPrompt, compressionSystemPrompt string) error {
+	return s.UpsertAgentPromptConfig(AgentPromptConfig{
+		SystemPrompt:            strings.TrimSpace(systemPrompt),
+		CompressionSystemPrompt: strings.TrimSpace(compressionSystemPrompt),
+	})
+}
+
 func (s *Store) ResetAgentPromptConfig() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -425,6 +440,60 @@ func (s *Store) ResetAgentPromptConfig() error {
 	cfg := DefaultAgentPromptConfig()
 	cfg.UpdatedAt = time.Now()
 	s.cfg.Agent.Prompts = cfg
+	return s.persistLocked()
+}
+
+func (s *Store) GetLastSleepReviewDate() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return strings.TrimSpace(s.cfg.Agent.Habits.LastSleepReviewDate)
+}
+
+func (s *Store) GetLastWakePlanDate() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return strings.TrimSpace(s.cfg.Agent.Habits.LastWakePlanDate)
+}
+
+func (s *Store) GetLastPromptEvolutionDate() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return strings.TrimSpace(s.cfg.Agent.Habits.LastPromptEvolutionDate)
+}
+
+func (s *Store) SetLastSleepReviewDate(date string) error {
+	date = strings.TrimSpace(date)
+	if err := validateOptionalDate(date); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cfg.Agent.Habits.LastSleepReviewDate = date
+	s.cfg.Agent.Habits.UpdatedAt = time.Now()
+	return s.persistLocked()
+}
+
+func (s *Store) SetLastWakePlanDate(date string) error {
+	date = strings.TrimSpace(date)
+	if err := validateOptionalDate(date); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cfg.Agent.Habits.LastWakePlanDate = date
+	s.cfg.Agent.Habits.UpdatedAt = time.Now()
+	return s.persistLocked()
+}
+
+func (s *Store) SetLastPromptEvolutionDate(date string) error {
+	date = strings.TrimSpace(date)
+	if err := validateOptionalDate(date); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cfg.Agent.Habits.LastPromptEvolutionDate = date
+	s.cfg.Agent.Habits.UpdatedAt = time.Now()
 	return s.persistLocked()
 }
 
@@ -462,6 +531,9 @@ func (s *Store) load() error {
 	}
 	if err := validateAgentPromptConfig(cfg.Agent.Prompts); err != nil {
 		return fmt.Errorf("invalid agent prompts: %w", err)
+	}
+	if err := validateAgentHabitState(cfg.Agent.Habits); err != nil {
+		return fmt.Errorf("invalid agent habits: %w", err)
 	}
 	if strings.TrimSpace(cfg.Agent.Prompts.SystemPrompt) == "" &&
 		strings.TrimSpace(cfg.Agent.Prompts.CompressionSystemPrompt) == "" {
@@ -547,6 +619,29 @@ func validateAgentPromptConfig(cfg AgentPromptConfig) error {
 	}
 	if compressionPrompt == "" {
 		return fmt.Errorf("agent compression system prompt is required")
+	}
+	return nil
+}
+
+func validateAgentHabitState(state AgentHabitState) error {
+	if err := validateOptionalDate(strings.TrimSpace(state.LastSleepReviewDate)); err != nil {
+		return fmt.Errorf("last_sleep_review_date: %w", err)
+	}
+	if err := validateOptionalDate(strings.TrimSpace(state.LastWakePlanDate)); err != nil {
+		return fmt.Errorf("last_wake_plan_date: %w", err)
+	}
+	if err := validateOptionalDate(strings.TrimSpace(state.LastPromptEvolutionDate)); err != nil {
+		return fmt.Errorf("last_prompt_evolution_date: %w", err)
+	}
+	return nil
+}
+
+func validateOptionalDate(v string) error {
+	if strings.TrimSpace(v) == "" {
+		return nil
+	}
+	if _, err := time.Parse("2006-01-02", v); err != nil {
+		return fmt.Errorf("must be YYYY-MM-DD")
 	}
 	return nil
 }
