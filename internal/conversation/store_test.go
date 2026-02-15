@@ -25,13 +25,14 @@ func TestStoreWithFile_PersistsSummaryMessagesAndToolCalls(t *testing.T) {
 	}
 	store.Append("assistant", "18 度")
 	store.SetSummaryAndTrim("用户询问天气", 10)
+	store.AppendEvent("context_compression", "【上下文压缩】\n用户询问天气")
 
 	reloaded, err := NewStoreWithFile(path)
 	if err != nil {
 		t.Fatalf("reload store error: %v", err)
 	}
 
-	summary, messages := reloaded.Snapshot()
+	summary, messages, events := reloaded.SnapshotWithEvents()
 	if summary != "用户询问天气" {
 		t.Fatalf("unexpected summary: %q", summary)
 	}
@@ -46,6 +47,12 @@ func TestStoreWithFile_PersistsSummaryMessagesAndToolCalls(t *testing.T) {
 	}
 	if messages[1].Role != "assistant" {
 		t.Fatalf("unexpected second role: %s", messages[1].Role)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	if events[0].Type != "context_compression" {
+		t.Fatalf("unexpected event type: %q", events[0].Type)
 	}
 }
 

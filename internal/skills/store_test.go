@@ -1,12 +1,16 @@
 package skills
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -263,4 +267,152 @@ func TestSearchSkillsCatalog(t *testing.T) {
 	if items[0].URL != "https://skills.sh/vercel-labs/agent-skills/vercel-react-best-practices" {
 		t.Fatalf("unexpected skill url: %q", items[0].URL)
 	}
+}
+
+func TestInstallFromRepo_FallbackToGitHubArchive(t *testing.T) {
+	root := t.TempDir()
+	store, err := NewStore(filepath.Join(root, "skills-home"), filepath.Join(root, "skills_state.json"))
+	if err != nil {
+		t.Fatalf("NewStore error: %v", err)
+	}
+
+	archiveBody := buildTestTarGz(t, "skills-main-abcdef", map[string]string{
+		"skills/demo-skill/SKILL.md": "---\nname: \"demo-skill\"\ndescription: \"demo\"\n---\n\nbody",
+	})
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/acme/skills/tar.gz/refs/heads/main" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/gzip")
+		_, _ = w.Write(archiveBody)
+	}))
+	defer mockServer.Close()
+
+	prevGitCmd := gitCommandContext
+	gitCommandContext = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		return exec.CommandContext(ctx, "false")
+	}
+	defer func() { gitCommandContext = prevGitCmd }()
+
+	prevArchiveTemplate := githubArchiveEndpointTemplate
+	githubArchiveEndpointTemplate = mockServer.URL + "/%s/%s/tar.gz/refs/heads/%s"
+	defer func() { githubArchiveEndpointTemplate = prevArchiveTemplate }()
+
+	installed, err := store.installFromRepo(
+		context.Background(),
+		"https://github.com/acme/skills.git",
+		"demo-skill",
+		"https://skills.sh/acme/skills/demo-skill",
+	)
+	if err != nil {
+		t.Fatalf("installFromRepo with archive fallback error: %v", err)
+	}
+	if installed.ID != "demo-skill" {
+		t.Fatalf("unexpected installed id: %q", installed.ID)
+	}
+	if !installed.Enabled {
+		t.Fatalf("expected installed skill enabled")
+	}
+	skillPath := filepath.Join(root, "skills-home", "demo-skill", "SKILL.md")
+	if _, err := os.Stat(skillPath); err != nil {
+		t.Fatalf("expected installed SKILL.md at %s: %v", skillPath, err)
+	}
+}
+
+func TestParseGitHubOwnerRepo(t *testing.T) {
+	cases := []struct {
+		name      string
+		repoURL   string
+		wantOwner string
+		wantRepo  string
+		wantOK    bool
+	}{
+		{
+			name:      "https with git suffix",
+			repoURL:   "https://github.com/acme/skills.git",
+			wantOwner: "acme",
+			wantRepo:  "skills",
+			wantOK:    true,
+		},
+		{
+			name:      "https without git suffix",
+			repoURL:   "https://github.com/acme/skills",
+			wantOwner: "acme",
+			wantRepo:  "skills",
+			wantOK:    true,
+		},
+		{
+			name:    "non github host",
+			repoURL: "https://example.com/acme/skills.git",
+			wantOK:  false,
+		},
+		{
+			name:    "invalid path",
+			repoURL: "https://github.com/acme",
+			wantOK:  false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			owner, repo, ok := parseGitHubOwnerRepo(tc.repoURL)
+			if ok != tc.wantOK {
+				t.Fatalf("unexpected ok: got=%v want=%v", ok, tc.wantOK)
+			}
+			if owner != tc.wantOwner {
+				t.Fatalf("unexpected owner: got=%q want=%q", owner, tc.wantOwner)
+			}
+			if repo != tc.wantRepo {
+				t.Fatalf("unexpected repo: got=%q want=%q", repo, tc.wantRepo)
+			}
+		})
+	}
+}
+
+func buildTestTarGz(t *testing.T, topDir string, files map[string]string) []byte {
+	t.Helper()
+
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+
+	if err := tw.WriteHeader(&tar.Header{
+		Name:     strings.TrimSuffix(topDir, "/") + "/",
+		Mode:     0o755,
+		Typeflag: tar.TypeDir,
+	}); err != nil {
+		t.Fatalf("write tar root header error: %v", err)
+	}
+
+	paths := make([]string, 0, len(files))
+	for p := range files {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+
+	for _, rel := range paths {
+		content := files[rel]
+		name := strings.TrimSuffix(topDir, "/") + "/" + strings.TrimPrefix(rel, "/")
+		body := []byte(content)
+		if err := tw.WriteHeader(&tar.Header{
+			Name:     name,
+			Mode:     0o600,
+			Size:     int64(len(body)),
+			Typeflag: tar.TypeReg,
+		}); err != nil {
+			t.Fatalf("write tar file header error: %v", err)
+		}
+		if _, err := tw.Write(body); err != nil {
+			t.Fatalf("write tar file body error: %v", err)
+		}
+	}
+
+	if err := tw.Close(); err != nil {
+		t.Fatalf("close tar writer error: %v", err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatalf("close gzip writer error: %v", err)
+	}
+	return buf.Bytes()
 }

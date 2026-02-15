@@ -19,6 +19,12 @@ type ToolCall struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+type Event struct {
+	Type      string    `json:"type"`
+	Content   string    `json:"content"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 // Message is one conversation record kept in memory.
 type Message struct {
 	Role      string     `json:"role"`
@@ -33,6 +39,7 @@ type Store struct {
 	path     string
 	summary  string
 	messages []Message
+	events   []Event
 }
 
 func NewStore() *Store {
@@ -82,6 +89,34 @@ func (s *Store) Snapshot() (string, []Message) {
 	return s.summary, cloneMessages(s.messages)
 }
 
+func (s *Store) SnapshotWithEvents() (string, []Message, []Event) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.summary, cloneMessages(s.messages), cloneEvents(s.events)
+}
+
+func (s *Store) AppendEvent(eventType, content string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	eventType = strings.TrimSpace(eventType)
+	content = strings.TrimSpace(content)
+	if eventType == "" || content == "" {
+		return
+	}
+
+	s.events = append(s.events, Event{
+		Type:      eventType,
+		Content:   content,
+		CreatedAt: time.Now(),
+	})
+	if len(s.events) > 200 {
+		s.events = append([]Event(nil), s.events[len(s.events)-200:]...)
+	}
+	_ = s.persistLocked()
+}
+
 func (s *Store) SetSummaryAndTrim(summary string, keepRecent int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -126,6 +161,7 @@ func (s *Store) loadFromFile() error {
 	var payload struct {
 		Summary  string    `json:"summary"`
 		Messages []Message `json:"messages"`
+		Events   []Event   `json:"events,omitempty"`
 	}
 	if err := json.Unmarshal(data, &payload); err != nil {
 		return fmt.Errorf("decode conversation file: %w", err)
@@ -133,6 +169,7 @@ func (s *Store) loadFromFile() error {
 
 	s.summary = payload.Summary
 	s.messages = cloneMessages(payload.Messages)
+	s.events = normalizeEvents(payload.Events)
 	return s.persistLocked()
 }
 
@@ -144,9 +181,11 @@ func (s *Store) persistLocked() error {
 	payload := struct {
 		Summary  string    `json:"summary"`
 		Messages []Message `json:"messages"`
+		Events   []Event   `json:"events,omitempty"`
 	}{
 		Summary:  s.summary,
 		Messages: s.messages,
+		Events:   s.events,
 	}
 	data, err := json.MarshalIndent(payload, "", "  ")
 	if err != nil {
@@ -188,6 +227,15 @@ func cloneToolCalls(in []ToolCall) []ToolCall {
 	return out
 }
 
+func cloneEvents(in []Event) []Event {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]Event, len(in))
+	copy(out, in)
+	return out
+}
+
 func normalizeToolCalls(in []ToolCall) []ToolCall {
 	if len(in) == 0 {
 		return nil
@@ -209,6 +257,28 @@ func normalizeToolCalls(in []ToolCall) []ToolCall {
 			call.CreatedAt = time.Now()
 		}
 		out = append(out, call)
+	}
+	return out
+}
+
+func normalizeEvents(in []Event) []Event {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]Event, 0, len(in))
+	for _, evt := range in {
+		evt.Type = strings.TrimSpace(evt.Type)
+		evt.Content = strings.TrimSpace(evt.Content)
+		if evt.Type == "" || evt.Content == "" {
+			continue
+		}
+		if evt.CreatedAt.IsZero() {
+			evt.CreatedAt = time.Now()
+		}
+		out = append(out, evt)
+	}
+	if len(out) > 200 {
+		out = append([]Event(nil), out[len(out)-200:]...)
 	}
 	return out
 }
