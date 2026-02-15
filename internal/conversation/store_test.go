@@ -64,3 +64,40 @@ func TestSetLatestUserToolCalls_RequiresPendingUserMessage(t *testing.T) {
 		t.Fatalf("expected error without pending user message")
 	}
 }
+
+func TestStoreReset_ClearsAndPersistsAllState(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "conversation.json")
+	store, err := NewStoreWithFile(path)
+	if err != nil {
+		t.Fatalf("NewStoreWithFile error: %v", err)
+	}
+
+	store.Append("user", "u1")
+	store.Append("assistant", "a1")
+	store.SetSummaryAndTrim("summary", 10)
+	store.AppendEvent("context_compression", "compressed")
+
+	if err := store.Reset(); err != nil {
+		t.Fatalf("Reset error: %v", err)
+	}
+
+	summary, messages, events := store.SnapshotWithEvents()
+	if summary != "" {
+		t.Fatalf("expected empty summary after reset, got %q", summary)
+	}
+	if len(messages) != 0 {
+		t.Fatalf("expected no messages after reset, got %d", len(messages))
+	}
+	if len(events) != 0 {
+		t.Fatalf("expected no events after reset, got %d", len(events))
+	}
+
+	reloaded, err := NewStoreWithFile(path)
+	if err != nil {
+		t.Fatalf("reload store error: %v", err)
+	}
+	summary, messages, events = reloaded.SnapshotWithEvents()
+	if summary != "" || len(messages) != 0 || len(events) != 0 {
+		t.Fatalf("expected persisted empty state, got summary=%q messages=%d events=%d", summary, len(messages), len(events))
+	}
+}

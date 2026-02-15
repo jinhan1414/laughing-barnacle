@@ -154,6 +154,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/chat", s.handleChatPage)
 	mux.HandleFunc("/chat/send", s.handleChatSend)
 	mux.HandleFunc("/chat/retry", s.handleChatRetry)
+	mux.HandleFunc("/chat/reset", s.handleChatReset)
 	mux.HandleFunc("/chat/settings", s.handleSettingsShortcut)
 	mux.HandleFunc("/config", s.handleSettingsShortcut)
 	mux.HandleFunc("/logs", s.handleLogsPage)
@@ -302,6 +303,24 @@ func (s *Server) handleChatRetry(w http.ResponseWriter, r *http.Request) {
 		query.Set("error", err.Error())
 		query.Set("retry", "1")
 		http.Redirect(w, r, "/chat?"+query.Encode(), http.StatusFound)
+		return
+	}
+
+	http.Redirect(w, r, "/chat", http.StatusFound)
+}
+
+func (s *Server) handleChatReset(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	if err := s.convStore.Reset(); err != nil {
+		http.Redirect(w, r, "/chat?error="+url.QueryEscape("重置上下文失败："+err.Error()), http.StatusFound)
+		return
+	}
+	if err := s.logStore.Clear(); err != nil {
+		http.Redirect(w, r, "/chat?error="+url.QueryEscape("清空日志失败："+err.Error()), http.StatusFound)
 		return
 	}
 

@@ -133,6 +133,16 @@ func (s *Store) SetSummaryAndTrim(summary string, keepRecent int) {
 	_ = s.persistLocked()
 }
 
+func (s *Store) Reset() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.summary = ""
+	s.messages = nil
+	s.events = nil
+	return s.persistLocked()
+}
+
 func (s *Store) loadFromFile() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

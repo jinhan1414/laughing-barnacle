@@ -61,3 +61,43 @@ func TestStoreWithFileRespectsLimit(t *testing.T) {
 		t.Fatalf("unexpected entries after limit trim: %+v", entries)
 	}
 }
+
+func TestStoreClear_ClearsPersistedEntriesAndResetsID(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "llm_logs.json")
+
+	store, err := NewStoreWithFile(5, logPath)
+	if err != nil {
+		t.Fatalf("new store failed: %v", err)
+	}
+
+	store.Add(Entry{Purpose: "p1"})
+	store.Add(Entry{Purpose: "p2"})
+
+	if err := store.Clear(); err != nil {
+		t.Fatalf("Clear error: %v", err)
+	}
+	if got := len(store.List()); got != 0 {
+		t.Fatalf("expected no entries after clear, got %d", got)
+	}
+
+	store.Add(Entry{Purpose: "p3"})
+	entries := store.List()
+	if got := len(entries); got != 1 {
+		t.Fatalf("expected one entry after re-add, got %d", got)
+	}
+	if entries[0].ID != 1 {
+		t.Fatalf("expected id reset to 1, got %d", entries[0].ID)
+	}
+
+	reloaded, err := NewStoreWithFile(5, logPath)
+	if err != nil {
+		t.Fatalf("reload store failed: %v", err)
+	}
+	entries = reloaded.List()
+	if got := len(entries); got != 1 {
+		t.Fatalf("expected one persisted entry after clear+add, got %d", got)
+	}
+	if entries[0].Purpose != "p3" || entries[0].ID != 1 {
+		t.Fatalf("unexpected persisted entry after clear: %+v", entries[0])
+	}
+}

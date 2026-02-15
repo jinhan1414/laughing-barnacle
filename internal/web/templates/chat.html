@@ -13,7 +13,12 @@
       <div class="flex items-center justify-between">
         <a href="/settings?section=mcp" class="inline-flex min-h-9 items-center rounded-lg px-2 text-sm font-medium text-slate-600 active:bg-slate-200">配置</a>
         <h1 class="text-base font-semibold tracking-tight">AI Agent</h1>
-        <a href="/logs" class="inline-flex min-h-9 items-center rounded-lg px-2 text-sm font-medium text-slate-600 active:bg-slate-200">日志</a>
+        <div class="flex items-center gap-1">
+          <a href="/logs" class="inline-flex min-h-9 items-center rounded-lg px-2 text-sm font-medium text-slate-600 active:bg-slate-200">日志</a>
+          <form action="/chat/reset" method="post" onsubmit="return confirm('确认重置数字分身上下文并清空 LLM 调用日志？')">
+            <button type="submit" class="inline-flex min-h-9 items-center rounded-lg px-2 text-sm font-medium text-rose-600 active:bg-rose-100">重置</button>
+          </form>
+        </div>
       </div>
     </header>
 

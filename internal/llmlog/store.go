@@ -79,6 +79,15 @@ func (s *Store) List() []Entry {
 	return out
 }
 
+func (s *Store) Clear() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.entries = make([]Entry, 0, s.limit)
+	s.nextID.Store(0)
+	return s.persistLocked()
+}
+
 func (s *Store) loadFromFile() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
