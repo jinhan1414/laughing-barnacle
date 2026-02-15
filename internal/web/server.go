@@ -8,6 +8,7 @@ import (
 	"html/template"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -33,11 +34,17 @@ type Server struct {
 }
 
 type chatPageData struct {
-	Summary        string
-	Messages       []conversation.Message
+	Timeline       []chatTimelineItem
 	Error          string
 	RetryAvailable bool
 	Draft          string
+}
+
+type chatTimelineItem struct {
+	Kind      string
+	Content   string
+	ToolCalls []conversation.ToolCall
+	CreatedAt time.Time
 }
 
 type logsPageData struct {
@@ -163,6 +170,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/settings/llm/prompts/reset", s.handleSettingsLLMPromptsReset)
 	mux.HandleFunc("/api/mcp/services", s.handleAPIMCPServices)
 	mux.HandleFunc("/api/skills", s.handleAPISkills)
+	mux.HandleFunc("/api/skills/read", s.handleAPISkillRead)
 	mux.HandleFunc("/api/skills/catalog/search", s.handleAPISkillsCatalogSearch)
 	mux.HandleFunc("/healthz", s.handleHealthz)
 }
@@ -176,15 +184,76 @@ func (s *Server) handleSettingsShortcut(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleChatPage(w http.ResponseWriter, r *http.Request) {
-	summary, messages := s.convStore.Snapshot()
+	_, messages, events := s.convStore.SnapshotWithEvents()
 	data := chatPageData{
-		Summary:        summary,
-		Messages:       messages,
+		Timeline:       buildChatTimeline(messages, events),
 		Error:          r.URL.Query().Get("error"),
 		RetryAvailable: r.URL.Query().Get("retry") == "1",
 		Draft:          r.URL.Query().Get("draft"),
 	}
 	_ = s.tmpl.ExecuteTemplate(w, "chat.html", data)
+}
+
+func buildChatTimeline(messages []conversation.Message, events []conversation.Event) []chatTimelineItem {
+	type timelineWithSeq struct {
+		item chatTimelineItem
+		seq  int
+	}
+
+	all := make([]timelineWithSeq, 0, len(messages)+len(events))
+	seq := 0
+	for _, msg := range messages {
+		role := strings.TrimSpace(msg.Role)
+		kind := ""
+		switch role {
+		case "user":
+			kind = "user"
+		case "assistant":
+			kind = "assistant"
+		default:
+			continue
+		}
+		all = append(all, timelineWithSeq{
+			item: chatTimelineItem{
+				Kind:      kind,
+				Content:   msg.Content,
+				ToolCalls: msg.ToolCalls,
+				CreatedAt: msg.CreatedAt,
+			},
+			seq: seq,
+		})
+		seq++
+	}
+
+	for _, evt := range events {
+		if strings.TrimSpace(evt.Type) != "context_compression" {
+			continue
+		}
+		all = append(all, timelineWithSeq{
+			item: chatTimelineItem{
+				Kind:      "event",
+				Content:   evt.Content,
+				CreatedAt: evt.CreatedAt,
+			},
+			seq: seq,
+		})
+		seq++
+	}
+
+	sort.SliceStable(all, func(i, j int) bool {
+		left := all[i].item.CreatedAt
+		right := all[j].item.CreatedAt
+		if left.Equal(right) {
+			return all[i].seq < all[j].seq
+		}
+		return left.Before(right)
+	})
+
+	out := make([]chatTimelineItem, 0, len(all))
+	for _, it := range all {
+		out = append(out, it.item)
+	}
+	return out
 }
 
 func (s *Server) handleChatSend(w http.ResponseWriter, r *http.Request) {
@@ -592,6 +661,32 @@ func (s *Server) handleAPISkills(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(map[string]any{"skills": items})
+}
+
+func (s *Server) handleAPISkillRead(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	skillID := strings.TrimSpace(r.URL.Query().Get("id"))
+	if skillID == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "query parameter id is required"})
+		return
+	}
+
+	prompt, ok := s.skillStore.ReadEnabledSkillPrompt(skillID)
+	if !ok {
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "skill not found or not enabled"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"id":     skillID,
+		"prompt": strings.TrimSpace(prompt),
+	})
 }
 
 func (s *Server) handleAPISkillsCatalogSearch(w http.ResponseWriter, r *http.Request) {

@@ -38,7 +38,8 @@ type ToolProvider interface {
 }
 
 type SkillProvider interface {
-	ListEnabledSkillPrompts() []string
+	ListEnabledSkillIndex() []string
+	ReadEnabledSkillPrompt(skillID string) (string, bool)
 }
 
 type AutoSkillWriter interface {
@@ -53,7 +54,9 @@ type evolvedSkill struct {
 const (
 	maxInjectedSkillPrompts     = 6
 	maxInjectedSkillPromptRunes = 1200
-	maxSingleSkillPromptRunes   = 280
+	maxSingleSkillPromptRunes   = 600
+	minInjectedSkillScore       = 3
+	maxSkillFocusUserMessages   = 4
 	maxNightEvolvedSkills       = 3
 	maxEvolvedSkillNameRunes    = 24
 	maxEvolvedSkillPromptRunes  = 180
@@ -259,7 +262,11 @@ func (a *Agent) autonomousCompressionLoop(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		a.store.SetSummaryAndTrim(strings.TrimSpace(compressed), a.cfg.KeepRecentAfterCompression)
+		compressed = strings.TrimSpace(compressed)
+		a.store.SetSummaryAndTrim(compressed, a.cfg.KeepRecentAfterCompression)
+		if compressed != "" {
+			a.store.AppendEvent("context_compression", compressed)
+		}
 	}
 
 	return nil
@@ -319,21 +326,40 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 		Content: systemPrompt,
 	})
 	builtinToolDefs := []llm.ToolDefinition{linuxBashToolDefinition()}
-	requestMessages = append(requestMessages, llm.Message{
-		Role:    "system",
-		Content: "内置工具仅有 linux__bash（用于本机命令执行）；其他能力应通过已加载的 MCP 工具完成。",
-	})
+	toolIntro := "内置工具仅有 linux__bash（用于本机命令执行）；其他能力应通过已加载的 MCP 工具完成。"
 	if a.skills != nil {
-		allSkillPrompts := a.skills.ListEnabledSkillPrompts()
-		skillPrompts := selectSkillPromptsForTurn(allSkillPrompts, summary, messages)
-		if len(skillPrompts) > 0 {
+		allSkillIndex := a.skills.ListEnabledSkillIndex()
+		if len(allSkillIndex) > 0 {
+			selectedSkillIDs := selectSkillIDsForTurn(allSkillIndex, messages)
 			var b strings.Builder
-			b.WriteString("已启用技能（系统已按相关性和长度裁剪，按需遵循）：\n")
-			for i, prompt := range skillPrompts {
-				b.WriteString(fmt.Sprintf("%d. %s\n", i+1, strings.TrimSpace(prompt)))
+			b.WriteString(fmt.Sprintf("已启用技能索引（渐进式披露）：共 %d 条。\n", len(allSkillIndex)))
+			b.WriteString("如需技能详情，仅在必要时通过 linux__bash 执行：curl -s \"http://127.0.0.1:8080/api/skills/read?id=<skill_id>\"。\n")
+			if len(selectedSkillIDs) > 0 {
+				b.WriteString("本轮高相关候选 skill_id：")
+				b.WriteString(strings.Join(selectedSkillIDs, ", "))
+				b.WriteString("\n")
 			}
-			if len(skillPrompts) < len(allSkillPrompts) {
-				b.WriteString(fmt.Sprintf("(共 %d 条启用技能，本轮注入 %d 条以控制上下文长度)\n", len(allSkillPrompts), len(skillPrompts)))
+
+			injected := 0
+			usedRunes := 0
+			for _, raw := range allSkillIndex {
+				if injected >= maxInjectedSkillPrompts {
+					break
+				}
+				line := trimRunes(strings.TrimSpace(raw), maxSingleSkillPromptRunes)
+				if line == "" {
+					continue
+				}
+				lineLen := len([]rune(line))
+				if usedRunes+lineLen > maxInjectedSkillPromptRunes {
+					break
+				}
+				b.WriteString(fmt.Sprintf("%d. %s\n", injected+1, line))
+				injected++
+				usedRunes += lineLen
+			}
+			if injected < len(allSkillIndex) {
+				b.WriteString(fmt.Sprintf("(索引共 %d 条，本轮展示 %d 条以控制上下文长度)\n", len(allSkillIndex), injected))
 			}
 			requestMessages = append(requestMessages, llm.Message{
 				Role:    "system",
@@ -341,6 +367,10 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 			})
 		}
 	}
+	requestMessages = append(requestMessages, llm.Message{
+		Role:    "system",
+		Content: toolIntro,
+	})
 	if strings.TrimSpace(summary) != "" {
 		requestMessages = append(requestMessages, llm.Message{
 			Role:    "system",
@@ -944,33 +974,33 @@ func normalizeEvolvedSkills(raw []struct {
 	return out
 }
 
-func selectSkillPromptsForTurn(skillPrompts []string, summary string, messages []conversation.Message) []string {
-	if len(skillPrompts) == 0 {
+func selectSkillIDsForTurn(skillIndexLines []string, messages []conversation.Message) []string {
+	if len(skillIndexLines) == 0 {
 		return nil
 	}
 
-	focus := buildSkillFocus(summary, messages)
-	type scoredPrompt struct {
-		Prompt string
-		Score  int
-		Index  int
+	focus := buildSkillFocus(messages)
+	type scoredSkill struct {
+		ID    string
+		Score int
+		Index int
 	}
 
-	seen := make(map[string]struct{}, len(skillPrompts))
-	scored := make([]scoredPrompt, 0, len(skillPrompts))
-	for i, raw := range skillPrompts {
-		prompt := trimRunes(strings.TrimSpace(raw), maxSingleSkillPromptRunes)
-		if prompt == "" {
+	seen := make(map[string]struct{}, len(skillIndexLines))
+	scored := make([]scoredSkill, 0, len(skillIndexLines))
+	for i, raw := range skillIndexLines {
+		skillID, line := parseSkillIndexLine(raw)
+		if skillID == "" || line == "" {
 			continue
 		}
-		if _, exists := seen[prompt]; exists {
+		if _, exists := seen[skillID]; exists {
 			continue
 		}
-		seen[prompt] = struct{}{}
-		scored = append(scored, scoredPrompt{
-			Prompt: prompt,
-			Score:  scoreSkillPrompt(prompt, focus),
-			Index:  i,
+		seen[skillID] = struct{}{}
+		scored = append(scored, scoredSkill{
+			ID:    skillID,
+			Score: scoreSkillPrompt(line, focus),
+			Index: i,
 		})
 	}
 	if len(scored) == 0 {
@@ -985,46 +1015,58 @@ func selectSkillPromptsForTurn(skillPrompts []string, summary string, messages [
 	})
 
 	selected := make([]string, 0, min(maxInjectedSkillPrompts, len(scored)))
-	usedRunes := 0
 	for _, item := range scored {
 		if len(selected) >= maxInjectedSkillPrompts {
 			break
 		}
-		promptLen := len([]rune(item.Prompt))
-		if promptLen > maxInjectedSkillPromptRunes {
-			continue
+		if item.Score < minInjectedSkillScore {
+			break
 		}
-		if usedRunes+promptLen > maxInjectedSkillPromptRunes {
-			continue
-		}
-		selected = append(selected, item.Prompt)
-		usedRunes += promptLen
+		selected = append(selected, item.ID)
 	}
-	if len(selected) > 0 {
-		return selected
-	}
-
-	fallback := trimRunes(scored[0].Prompt, maxInjectedSkillPromptRunes)
-	if fallback == "" {
-		return nil
-	}
-	return []string{fallback}
+	return selected
 }
 
-func buildSkillFocus(summary string, messages []conversation.Message) string {
-	var b strings.Builder
-	if v := strings.TrimSpace(summary); v != "" {
-		b.WriteString(v)
-		b.WriteString("\n")
+func parseSkillIndexLine(raw string) (skillID string, line string) {
+	line = trimRunes(strings.TrimSpace(raw), maxSingleSkillPromptRunes)
+	if line == "" {
+		return "", ""
 	}
-	for _, msg := range lastN(messages, 8) {
-		if msg.Role != "user" && msg.Role != "assistant" {
+	for _, part := range strings.Split(line, "|") {
+		part = strings.TrimSpace(part)
+		if strings.HasPrefix(part, "skill_id=") {
+			skillID = strings.TrimSpace(strings.TrimPrefix(part, "skill_id="))
+			break
+		}
+	}
+	return skillID, line
+}
+
+func buildSkillFocus(messages []conversation.Message) string {
+	if len(messages) == 0 {
+		return ""
+	}
+
+	// Only use recent user turns to avoid stale summary/assistant text
+	// continuously pulling irrelevant operational skills into each request.
+	userFocus := make([]string, 0, maxSkillFocusUserMessages)
+	for i := len(messages) - 1; i >= 0 && len(userFocus) < maxSkillFocusUserMessages; i-- {
+		msg := messages[i]
+		if msg.Role != "user" {
 			continue
 		}
 		if v := strings.TrimSpace(msg.Content); v != "" {
-			b.WriteString(v)
-			b.WriteString("\n")
+			userFocus = append(userFocus, v)
 		}
+	}
+	if len(userFocus) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	for i := len(userFocus) - 1; i >= 0; i-- {
+		b.WriteString(userFocus[i])
+		b.WriteString("\n")
 	}
 	return strings.ToLower(b.String())
 }

@@ -346,7 +346,7 @@ func TestHandleUserMessage_WithToolCalls(t *testing.T) {
 	}
 }
 
-func TestHandleUserMessage_IncludesEnabledSkillPrompts(t *testing.T) {
+func TestHandleUserMessage_IncludesSkillIndexForProgressiveDisclosure(t *testing.T) {
 	store := conversation.NewStore()
 	fakeLLM := &mockLLM{responses: map[string][]string{
 		"chat_reply": {"ok"},
@@ -365,7 +365,12 @@ func TestHandleUserMessage_IncludesEnabledSkillPrompts(t *testing.T) {
 		EnforceHumanRoutine:        true,
 	}, store, fakeLLM, nil)
 	agentSvc.SetSkillProvider(&mockSkills{
-		prompts: []string{"先检索再回答，并提供引用链接。"},
+		indexLines: []string{
+			"skill_id=research-flow | name=检索闭环 | description=先检索再回答 | brief=检索后再回答并附来源 | path=skill://research-flow/SKILL.md",
+		},
+		promptByID: map[string]string{
+			"research-flow": "这是完整技能正文，不应在首轮直接注入。",
+		},
 	})
 
 	reply, err := agentSvc.HandleUserMessage(context.Background(), "hello")
@@ -383,15 +388,24 @@ func TestHandleUserMessage_IncludesEnabledSkillPrompts(t *testing.T) {
 	if len(msgs) < 3 {
 		t.Fatalf("expected at least 3 messages, got %d", len(msgs))
 	}
-	foundSkillPrompt := false
+	content := ""
 	for _, msg := range msgs {
-		if msg.Role == "system" && strings.Contains(msg.Content, "先检索再回答") {
-			foundSkillPrompt = true
+		if msg.Role == "system" && strings.Contains(msg.Content, "已启用技能索引（渐进式披露）") {
+			content = msg.Content
 			break
 		}
 	}
-	if !foundSkillPrompt {
-		t.Fatalf("skill prompt not injected")
+	if strings.TrimSpace(content) == "" {
+		t.Fatalf("skill index not injected")
+	}
+	if !strings.Contains(content, "/api/skills/read?id=<skill_id>") {
+		t.Fatalf("expected bash curl read hint, got %q", content)
+	}
+	if strings.Contains(content, "本轮高相关候选") {
+		t.Fatalf("unexpected related-skill hint for unrelated query, got %q", content)
+	}
+	if strings.Contains(content, "完整技能正文") {
+		t.Fatalf("should not inject full skill content directly, got %q", content)
 	}
 }
 
@@ -552,7 +566,7 @@ func TestHandleUserMessage_SkillPromptInjectionIsCapped(t *testing.T) {
 
 	content := ""
 	for _, msg := range msgs {
-		if msg.Role == "system" && strings.Contains(msg.Content, "已启用技能") {
+		if msg.Role == "system" && strings.Contains(msg.Content, "已启用技能索引（渐进式披露）") {
 			content = msg.Content
 			break
 		}
@@ -561,13 +575,13 @@ func TestHandleUserMessage_SkillPromptInjectionIsCapped(t *testing.T) {
 		t.Fatalf("expected injected skill message")
 	}
 	if strings.Contains(content, longPrompt) {
-		t.Fatalf("expected long prompt to be trimmed out from injected skills")
+		t.Fatalf("expected long prompt to be trimmed out from injected skill index")
 	}
 	if strings.Count(content, "\n") > maxInjectedSkillPrompts+4 {
 		t.Fatalf("expected injected skill list to be capped, got: %q", content)
 	}
-	if !strings.Contains(content, "控制上下文长度") {
-		t.Fatalf("expected truncation note, got %q", content)
+	if !strings.Contains(content, "索引共") {
+		t.Fatalf("expected index truncation note, got %q", content)
 	}
 }
 
