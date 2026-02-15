@@ -4,6 +4,7 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -173,6 +174,11 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/skills", s.handleAPISkills)
 	mux.HandleFunc("/api/skills/read", s.handleAPISkillRead)
 	mux.HandleFunc("/api/skills/catalog/search", s.handleAPISkillsCatalogSearch)
+	mux.HandleFunc("/api/context/branches", s.handleAPIContextBranches)
+	mux.HandleFunc("/api/context/branch/switch", s.handleAPIContextBranchSwitch)
+	mux.HandleFunc("/api/context/branch/merge", s.handleAPIContextBranchMerge)
+	mux.HandleFunc("/api/context/archive/index", s.handleAPIContextArchiveIndex)
+	mux.HandleFunc("/api/context/archive/section", s.handleAPIContextArchiveSection)
 	mux.HandleFunc("/healthz", s.handleHealthz)
 }
 
@@ -745,6 +751,133 @@ func (s *Server) handleAPISkillsCatalogSearch(w http.ResponseWriter, r *http.Req
 		"query":  query,
 		"skills": items,
 	})
+}
+
+func (s *Server) handleAPIContextBranches(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	current := strings.TrimSpace(s.convStore.CurrentBranch())
+	branches := s.convStore.ListBranches()
+	if len(branches) == 0 && current != "" {
+		branches = []string{current}
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"current_branch": current,
+		"branches":       branches,
+	})
+}
+
+func (s *Server) handleAPIContextBranchSwitch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "请求参数解析失败"})
+		return
+	}
+	branch := strings.TrimSpace(r.FormValue("branch"))
+	if branch == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "form field branch is required"})
+		return
+	}
+	if err := s.convStore.SwitchBranch(branch); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"ok":             true,
+		"current_branch": s.convStore.CurrentBranch(),
+		"branches":       s.convStore.ListBranches(),
+	})
+}
+
+func (s *Server) handleAPIContextBranchMerge(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "请求参数解析失败"})
+		return
+	}
+	sourceBranch := strings.TrimSpace(r.FormValue("source_branch"))
+	if sourceBranch == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "form field source_branch is required"})
+		return
+	}
+	if err := s.convStore.MergeBranch(sourceBranch); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"ok":             true,
+		"current_branch": s.convStore.CurrentBranch(),
+		"branches":       s.convStore.ListBranches(),
+		"merged_from":    sourceBranch,
+	})
+}
+
+func (s *Server) handleAPIContextArchiveIndex(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	archiveID := strings.TrimSpace(r.URL.Query().Get("archive_id"))
+	if archiveID == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "query parameter archive_id is required"})
+		return
+	}
+	index, err := s.convStore.ReadArchiveIndex(archiveID)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, conversation.ErrArchiveNotFound) {
+			status = http.StatusNotFound
+		}
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(index)
+}
+
+func (s *Server) handleAPIContextArchiveSection(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	archiveID := strings.TrimSpace(r.URL.Query().Get("archive_id"))
+	sectionID := strings.TrimSpace(r.URL.Query().Get("section_id"))
+	if archiveID == "" || sectionID == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "query parameter archive_id and section_id are required"})
+		return
+	}
+	section, err := s.convStore.ReadArchiveSection(archiveID, sectionID)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, conversation.ErrArchiveNotFound) || errors.Is(err, conversation.ErrArchiveSectionNotFound) {
+			status = http.StatusNotFound
+		}
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(section)
 }
 
 func (s *Server) redirectSettings(w http.ResponseWriter, r *http.Request, section, success, failure string) {

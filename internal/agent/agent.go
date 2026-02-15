@@ -67,7 +67,11 @@ const (
 	maxBashStderrRunes          = 2000
 )
 
-var skillTokenPattern = regexp.MustCompile(`[\p{Han}]{2,8}|[a-zA-Z][a-zA-Z0-9_-]{2,}`)
+var (
+	skillTokenPattern         = regexp.MustCompile(`[\p{Han}]{2,8}|[a-zA-Z][a-zA-Z0-9_-]{2,}`)
+	comparableStripPattern    = regexp.MustCompile(`[[:space:][:punct:]，。！？；：、“”‘’（）【】《》·]+`)
+	numberedListPrefixPattern = regexp.MustCompile(`^\d+[.)、]\s*`)
+)
 
 type PromptProvider interface {
 	GetSystemPrompt() string
@@ -174,6 +178,24 @@ func (a *Agent) HandleUserMessage(ctx context.Context, userInput string) (string
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
+	branchNotice := ""
+	postMergeSource := ""
+	activeBranch := strings.TrimSpace(a.store.CurrentBranch())
+	if activeBranch != "" {
+		summary, messages := a.store.Snapshot()
+		action := a.decideContextBranchAction(ctx, text, "", activeBranch, summary, messages)
+		switch action.Kind {
+		case contextBranchActionStart:
+			if err := a.store.SwitchBranch(action.TargetBranch); err != nil {
+				return "", err
+			}
+			activeBranch = action.TargetBranch
+			branchNotice = fmt.Sprintf("【上下文分支】已自动切换到 `%s`。", action.TargetBranch)
+		case contextBranchActionFinish:
+			postMergeSource = action.SourceBranch
+		}
+	}
+
 	a.store.Append("user", text)
 	now := a.nowFn()
 	if a.cfg.EnforceHumanRoutine && shouldEnforceSleepReply(text, now) {
@@ -202,7 +224,32 @@ func (a *Agent) HandleUserMessage(ctx context.Context, userInput string) (string
 	if morningPlan != "" {
 		reply = strings.TrimSpace("【晨间规划】\n" + morningPlan + "\n\n" + reply)
 	}
+	if strings.TrimSpace(branchNotice) != "" {
+		reply = strings.TrimSpace(branchNotice + "\n\n" + reply)
+	}
 	a.store.Append("assistant", reply)
+
+	if strings.TrimSpace(postMergeSource) == "" && strings.HasPrefix(strings.TrimSpace(activeBranch), "task/") {
+		summary, messages := a.store.Snapshot()
+		action := a.decideContextBranchAction(ctx, text, reply, activeBranch, summary, messages)
+		if action.Kind == contextBranchActionFinish {
+			postMergeSource = action.SourceBranch
+		}
+	}
+
+	if strings.TrimSpace(postMergeSource) != "" {
+		mergeNotice := ""
+		if err := a.store.SwitchBranch("main"); err != nil {
+			mergeNotice = "【上下文分支】自动切回 `main` 失败：" + err.Error()
+		} else if err := a.store.MergeBranch(postMergeSource); err != nil {
+			mergeNotice = "【上下文分支】自动合并失败：" + err.Error()
+		} else {
+			mergeNotice = fmt.Sprintf("【上下文分支】已自动将 `%s` 合并到 `main`。", postMergeSource)
+		}
+		if strings.TrimSpace(mergeNotice) != "" {
+			a.store.Append("assistant", mergeNotice)
+		}
+	}
 	return reply, nil
 }
 
@@ -263,6 +310,8 @@ func (a *Agent) autonomousCompressionLoop(ctx context.Context) error {
 			return err
 		}
 		compressed = strings.TrimSpace(compressed)
+		systemPrompt, _ := a.resolvePromptsLocked()
+		compressed = pruneSummaryOverlap(compressed, systemPrompt)
 		a.store.SetSummaryAndTrim(compressed, a.cfg.KeepRecentAfterCompression)
 		if compressed != "" {
 			a.store.AppendEvent("context_compression", compressed)
@@ -287,19 +336,20 @@ func (a *Agent) shouldCompress(summary string, messages []conversation.Message) 
 }
 
 func (a *Agent) compressContext(ctx context.Context, summary string, messages []conversation.Message) (string, error) {
-	_, compressionSystemPrompt := a.resolvePromptsLocked()
+	systemPrompt, compressionSystemPrompt := a.resolvePromptsLocked()
+	summary = pruneSummaryOverlap(summary, systemPrompt, compressionSystemPrompt)
 
 	prompt := strings.Builder{}
-	prompt.WriteString("当前历史摘要：\n")
+	prompt.WriteString("当前历史摘要（仅作合并参考，不要原样复述）：\n")
 	if strings.TrimSpace(summary) == "" {
 		prompt.WriteString("(无)\n")
 	} else {
 		prompt.WriteString(summary)
 		prompt.WriteString("\n")
 	}
-	prompt.WriteString("\n最近对话：\n")
-	prompt.WriteString(renderConversation(messages))
-	prompt.WriteString("\n\n请输出新的合并摘要，包含：事实、约束、待办、用户偏好。")
+	prompt.WriteString("\n最近对话（仅 user/assistant）：\n")
+	prompt.WriteString(renderConversationForCompression(messages))
+	prompt.WriteString("\n\n请仅基于以上对话内容与已有摘要合并，输出新的摘要（事实、约束、待办、用户偏好），不要写入任何 system 提示词文本。")
 
 	resp, err := a.llm.Chat(ctx, llm.ChatRequest{
 		Purpose: "compress_context",
@@ -327,6 +377,7 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 	})
 	builtinToolDefs := []llm.ToolDefinition{linuxBashToolDefinition()}
 	toolIntro := "内置工具仅有 linux__bash（用于本机命令执行）；其他能力应通过已加载的 MCP 工具完成。"
+	skillIndexPrompt := ""
 	if a.skills != nil {
 		allSkillIndex := a.skills.ListEnabledSkillIndex()
 		if len(allSkillIndex) > 0 {
@@ -361,9 +412,10 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 			if injected < len(allSkillIndex) {
 				b.WriteString(fmt.Sprintf("(索引共 %d 条，本轮展示 %d 条以控制上下文长度)\n", len(allSkillIndex), injected))
 			}
+			skillIndexPrompt = strings.TrimSpace(b.String())
 			requestMessages = append(requestMessages, llm.Message{
 				Role:    "system",
-				Content: strings.TrimSpace(b.String()),
+				Content: skillIndexPrompt,
 			})
 		}
 	}
@@ -371,6 +423,7 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 		Role:    "system",
 		Content: toolIntro,
 	})
+	summary = pruneSummaryOverlap(summary, systemPrompt, toolIntro, skillIndexPrompt)
 	if strings.TrimSpace(summary) != "" {
 		requestMessages = append(requestMessages, llm.Message{
 			Role:    "system",
@@ -483,6 +536,27 @@ func renderConversation(messages []conversation.Message) string {
 	var b strings.Builder
 	for i, msg := range messages {
 		b.WriteString(fmt.Sprintf("%d. [%s] %s\n", i+1, msg.Role, msg.Content))
+	}
+	return b.String()
+}
+
+func renderConversationForCompression(messages []conversation.Message) string {
+	var b strings.Builder
+	idx := 1
+	for _, msg := range messages {
+		role := strings.TrimSpace(strings.ToLower(msg.Role))
+		if role != "user" && role != "assistant" {
+			continue
+		}
+		content := strings.TrimSpace(msg.Content)
+		if content == "" {
+			continue
+		}
+		b.WriteString(fmt.Sprintf("%d. [%s] %s\n", idx, role, content))
+		idx++
+	}
+	if idx == 1 {
+		return "(无)"
 	}
 	return b.String()
 }
@@ -1109,6 +1183,157 @@ func scoreSkillPrompt(prompt, focus string) int {
 	return score
 }
 
+func pruneSummaryOverlap(summary string, references ...string) string {
+	summary = strings.TrimSpace(summary)
+	if summary == "" {
+		return ""
+	}
+
+	refSegments := buildReferenceSegments(references...)
+	if len(refSegments) == 0 {
+		return summary
+	}
+
+	lines := strings.Split(summary, "\n")
+	filtered := make([]string, 0, len(lines))
+	for _, raw := range lines {
+		line := strings.TrimRight(raw, " \t")
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			filtered = append(filtered, "")
+			continue
+		}
+		if isRedundantSummaryLine(trimmed, refSegments) {
+			continue
+		}
+		filtered = append(filtered, line)
+	}
+
+	collapsed := make([]string, 0, len(filtered))
+	prevBlank := true
+	for _, line := range filtered {
+		if strings.TrimSpace(line) == "" {
+			if prevBlank {
+				continue
+			}
+			collapsed = append(collapsed, "")
+			prevBlank = true
+			continue
+		}
+		collapsed = append(collapsed, line)
+		prevBlank = false
+	}
+	return strings.TrimSpace(strings.Join(collapsed, "\n"))
+}
+
+func buildReferenceSegments(references ...string) []string {
+	seen := make(map[string]struct{}, 64)
+	out := make([]string, 0, 64)
+	add := func(raw string) {
+		normalized := normalizeComparableText(raw)
+		if len([]rune(normalized)) < 6 {
+			return
+		}
+		if _, exists := seen[normalized]; exists {
+			return
+		}
+		seen[normalized] = struct{}{}
+		out = append(out, normalized)
+	}
+
+	for _, text := range references {
+		text = strings.TrimSpace(text)
+		if text == "" {
+			continue
+		}
+		add(text)
+		for _, line := range strings.Split(text, "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			add(line)
+			if value, ok := extractComparableValue(line); ok {
+				add(value)
+			}
+		}
+	}
+	return out
+}
+
+func isRedundantSummaryLine(line string, refSegments []string) bool {
+	lineNorm := normalizeComparableText(line)
+	if lineNorm == "" {
+		return false
+	}
+
+	if isIdentityHeadingLine(lineNorm) {
+		return true
+	}
+
+	candidates := []string{lineNorm}
+	if value, ok := extractComparableValue(line); ok {
+		if valueNorm := normalizeComparableText(value); len([]rune(valueNorm)) >= 6 && valueNorm != lineNorm {
+			candidates = append(candidates, valueNorm)
+		}
+	}
+
+	for _, candidate := range candidates {
+		if len([]rune(candidate)) < 6 {
+			continue
+		}
+		for _, ref := range refSegments {
+			if candidate == ref || strings.Contains(ref, candidate) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func isIdentityHeadingLine(normalized string) bool {
+	switch normalized {
+	case "人格与沟通偏好", "核心身份与风格", "身份与风格", "沟通偏好", "人格设定":
+		return true
+	default:
+		return false
+	}
+}
+
+func extractComparableValue(line string) (string, bool) {
+	cleaned := strings.TrimSpace(line)
+	cleaned = strings.TrimLeft(cleaned, "-*• \t")
+	cleaned = numberedListPrefixPattern.ReplaceAllString(cleaned, "")
+	parts := strings.SplitN(cleaned, "：", 2)
+	if len(parts) != 2 {
+		parts = strings.SplitN(cleaned, ":", 2)
+		if len(parts) != 2 {
+			return "", false
+		}
+	}
+
+	label := strings.TrimSpace(parts[0])
+	value := strings.TrimSpace(parts[1])
+	if label == "" || value == "" {
+		return "", false
+	}
+	if len([]rune(label)) > 12 {
+		return "", false
+	}
+	return value, true
+}
+
+func normalizeComparableText(text string) string {
+	text = strings.TrimSpace(strings.ToLower(text))
+	if text == "" {
+		return ""
+	}
+	text = strings.TrimLeft(text, "-*• \t")
+	text = numberedListPrefixPattern.ReplaceAllString(text, "")
+	text = comparableStripPattern.ReplaceAllString(text, "")
+	return strings.TrimSpace(text)
+}
+
 func trimRunes(input string, max int) string {
 	input = strings.TrimSpace(input)
 	if max <= 0 || input == "" {
@@ -1147,4 +1372,257 @@ func safeOrEmpty(v string) string {
 		return "(无)"
 	}
 	return v
+}
+
+type contextBranchActionType int
+
+const (
+	contextBranchActionNone contextBranchActionType = iota
+	contextBranchActionStart
+	contextBranchActionFinish
+)
+
+type contextBranchAction struct {
+	Kind         contextBranchActionType
+	TargetBranch string
+	SourceBranch string
+}
+
+func (a *Agent) decideContextBranchAction(
+	ctx context.Context,
+	userInput, assistantReply, currentBranch, summary string,
+	messages []conversation.Message,
+) contextBranchAction {
+	fallback := detectContextBranchActionFallback(userInput, assistantReply, currentBranch, a.nowFn())
+	if strings.TrimSpace(userInput) == "" || strings.TrimSpace(currentBranch) == "" {
+		return contextBranchAction{Kind: contextBranchActionNone}
+	}
+
+	decisionPrompt := buildContextBranchDecisionPrompt(userInput, assistantReply, currentBranch, summary, messages)
+	resp, err := a.llm.Chat(ctx, llm.ChatRequest{
+		Purpose: "context_branch_decision",
+		Model:   a.cfg.Model,
+		Messages: []llm.Message{
+			{
+				Role: "system",
+				Content: "你是上下文分支决策器。仅输出 JSON，不要 markdown。字段：action, confidence, branch_name, reason。" +
+					"action 仅可为 start_task_branch / finish_task_branch / stay。confidence 取值 0-1。",
+			},
+			{Role: "user", Content: decisionPrompt},
+		},
+		Temperature: 0,
+	})
+	if err != nil {
+		return fallback
+	}
+
+	var decision struct {
+		Action     string  `json:"action"`
+		Confidence float64 `json:"confidence"`
+		BranchName string  `json:"branch_name"`
+	}
+	if err := json.Unmarshal([]byte(extractJSONObject(resp.Content)), &decision); err != nil {
+		return fallback
+	}
+
+	action := strings.ToLower(strings.TrimSpace(decision.Action))
+	confidence := decision.Confidence
+	if confidence < 0 || confidence > 1 {
+		confidence = 0
+	}
+
+	switch action {
+	case "start_task_branch":
+		if strings.TrimSpace(currentBranch) != "main" || confidence < 0.55 {
+			return contextBranchAction{Kind: contextBranchActionNone}
+		}
+		branch := normalizeTaskBranchName(decision.BranchName, a.nowFn())
+		return contextBranchAction{
+			Kind:         contextBranchActionStart,
+			TargetBranch: branch,
+		}
+	case "finish_task_branch":
+		if !strings.HasPrefix(strings.TrimSpace(currentBranch), "task/") || confidence < 0.60 {
+			return contextBranchAction{Kind: contextBranchActionNone}
+		}
+		return contextBranchAction{
+			Kind:         contextBranchActionFinish,
+			SourceBranch: strings.TrimSpace(currentBranch),
+		}
+	default:
+		return contextBranchAction{Kind: contextBranchActionNone}
+	}
+}
+
+func detectContextBranchActionFallback(userInput, assistantReply, currentBranch string, now time.Time) contextBranchAction {
+	text := strings.ToLower(strings.TrimSpace(userInput))
+	assistantReply = strings.ToLower(strings.TrimSpace(assistantReply))
+	currentBranch = strings.TrimSpace(currentBranch)
+	if text == "" || currentBranch == "" {
+		return contextBranchAction{Kind: contextBranchActionNone}
+	}
+
+	if currentBranch == "main" && shouldAutoStartTaskBranch(text) {
+		return contextBranchAction{
+			Kind:         contextBranchActionStart,
+			TargetBranch: buildAutoTaskBranchName(now),
+		}
+	}
+	if strings.HasPrefix(currentBranch, "task/") && shouldAutoFinishTaskBranch(text, assistantReply) {
+		return contextBranchAction{
+			Kind:         contextBranchActionFinish,
+			SourceBranch: currentBranch,
+		}
+	}
+
+	return contextBranchAction{Kind: contextBranchActionNone}
+}
+
+func buildContextBranchDecisionPrompt(userInput, assistantReply, currentBranch, summary string, messages []conversation.Message) string {
+	summary = trimRunes(strings.TrimSpace(summary), 1200)
+	if summary == "" {
+		summary = "(无)"
+	}
+	recent := renderConversation(lastN(messages, 8))
+	recent = trimRunes(strings.TrimSpace(recent), 2400)
+	if recent == "" {
+		recent = "(无)"
+	}
+	return strings.TrimSpace(
+		"请判断当前用户输入是否需要切换上下文分支。\n" +
+			"规则：\n" +
+			"1) 仅当用户进入新的开发任务时，action=start_task_branch（通常当前分支为 main）。\n" +
+			"2) 仅当当前 task 分支任务明确完成、应回主线时，action=finish_task_branch。\n" +
+			"3) 其余情况 action=stay。\n" +
+			"4) branch_name 仅在 start_task_branch 时填写，格式建议 task/<slug>。\n\n" +
+			"当前分支：\n" + strings.TrimSpace(currentBranch) + "\n\n" +
+			"历史摘要：\n" + summary + "\n\n" +
+			"最近对话：\n" + recent + "\n\n" +
+			"本轮用户输入：\n" + strings.TrimSpace(userInput) + "\n\n" +
+			"本轮助手回复（若为空表示尚未生成）：\n" + safeOrEmpty(strings.TrimSpace(assistantReply)),
+	)
+}
+
+func shouldAutoStartTaskBranch(text string) bool {
+	if strings.TrimSpace(text) == "" {
+		return false
+	}
+
+	ignoreHints := []string{
+		"你好", "谢谢", "收到", "在吗", "早上好", "晚安",
+		"你是谁", "几点", "天气", "架构上", "运行在哪",
+	}
+	for _, hint := range ignoreHints {
+		if strings.Contains(text, hint) && len([]rune(text)) <= 18 {
+			return false
+		}
+	}
+
+	requestHints := []string{
+		"帮我", "请", "需要", "要", "处理", "解决", "推进", "落地", "安排",
+	}
+	taskHints := []string{
+		"任务", "需求", "功能", "接口", "模块", "服务", "数据库", "脚本",
+		"开发", "实现", "修复", "优化", "重构", "排查", "调试", "部署", "上线", "测试",
+		"feature", "bug", "issue", "refactor", "optimize", "implement", "debug", "deploy",
+	}
+	hasRequest := false
+	for _, hint := range requestHints {
+		if strings.Contains(text, hint) {
+			hasRequest = true
+			break
+		}
+	}
+	if !hasRequest {
+		hasRequest = len([]rune(text)) >= 14
+	}
+	if !hasRequest {
+		return false
+	}
+
+	for _, hint := range taskHints {
+		if strings.Contains(text, hint) {
+			return true
+		}
+	}
+	return false
+}
+
+func shouldAutoFinishTaskBranch(userText, assistantReply string) bool {
+	if shouldAutoFinishFromUserInput(userText) {
+		return true
+	}
+	return shouldAutoFinishFromAssistantReply(assistantReply)
+}
+
+func shouldAutoFinishFromUserInput(text string) bool {
+	finishHints := []string{
+		"任务完成", "完成任务", "结束任务", "收尾完成",
+		"合并回主线", "合并到主线", "merge 回 main", "merge到main", "merge to main",
+	}
+	for _, hint := range finishHints {
+		if strings.Contains(text, hint) {
+			return true
+		}
+	}
+	return false
+}
+
+func shouldAutoFinishFromAssistantReply(reply string) bool {
+	reply = strings.ToLower(strings.TrimSpace(reply))
+	if reply == "" {
+		return false
+	}
+	doneHints := []string{
+		"已完成", "处理完成", "修复完成", "实现完成", "已修复", "已实现", "全部完成",
+		"完成如下", "完成情况", "done", "completed",
+	}
+	pendingHints := []string{
+		"还需要", "下一步", "待确认", "请确认", "可选", "建议", "待办", "如果你确认",
+	}
+	hasDone := false
+	for _, hint := range doneHints {
+		if strings.Contains(reply, hint) {
+			hasDone = true
+			break
+		}
+	}
+	if !hasDone {
+		return false
+	}
+	for _, hint := range pendingHints {
+		if strings.Contains(reply, hint) {
+			return false
+		}
+	}
+	return true
+}
+
+func buildAutoTaskBranchName(now time.Time) string {
+	return "task/auto-" + now.Format("20060102-150405")
+}
+
+func normalizeTaskBranchName(raw string, now time.Time) string {
+	branch := strings.ToLower(strings.TrimSpace(raw))
+	branch = strings.TrimPrefix(branch, "task/")
+	branch = strings.ReplaceAll(branch, " ", "-")
+	var b strings.Builder
+	lastDash := false
+	for _, r := range branch {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' || r == '-' || r == '.' || r == '/' {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			b.WriteRune('-')
+			lastDash = true
+		}
+	}
+	branch = strings.Trim(b.String(), "-./")
+	branch = strings.ReplaceAll(branch, "//", "/")
+	if branch == "" {
+		return buildAutoTaskBranchName(now)
+	}
+	return "task/" + branch
 }

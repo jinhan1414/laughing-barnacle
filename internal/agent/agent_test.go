@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -61,10 +62,6 @@ type mockSkills struct {
 	indexLines []string
 	promptByID map[string]string
 	upserts    []evolvedSkill
-}
-
-func (m *mockSkills) ListEnabledSkillPrompts() []string {
-	return m.prompts
 }
 
 func (m *mockSkills) ListEnabledSkillIndex() []string {
@@ -185,7 +182,7 @@ func TestHandleUserMessage_WithAutoCompression(t *testing.T) {
 	agentSvc := New(Config{
 		Model:                      "test-model",
 		MaxRecentMessages:          10,
-		CompressionTriggerMessages: 3,
+		CompressionTriggerMessages: 2,
 		CompressionTriggerChars:    0,
 		KeepRecentAfterCompression: 1,
 		MaxCompressionLoopsPerTurn: 2,
@@ -227,6 +224,188 @@ func TestHandleUserMessage_WithAutoCompression(t *testing.T) {
 	}
 }
 
+func TestHandleUserMessage_AutoSwitchesToTaskBranchForLongTaskStart(t *testing.T) {
+	requireGitForAgent(t)
+	convPath := filepath.Join(t.TempDir(), "conversation.json")
+	store, err := conversation.NewStoreWithFile(convPath)
+	if err != nil {
+		t.Fatalf("NewStoreWithFile error: %v", err)
+	}
+
+	fakeLLM := &mockLLM{responses: map[string][]string{
+		"context_branch_decision": {
+			`{"action":"start_task_branch","confidence":0.93,"branch_name":"task/payment-refactor"}`,
+			`{"action":"stay","confidence":0.90}`,
+		},
+		"chat_reply": {"执行计划已整理"},
+	}}
+
+	agentSvc := New(Config{
+		Model:                      "test-model",
+		MaxRecentMessages:          10,
+		CompressionTriggerMessages: 99,
+		CompressionTriggerChars:    99999,
+		KeepRecentAfterCompression: 1,
+		MaxCompressionLoopsPerTurn: 1,
+		MaxToolCallRounds:          2,
+		SystemPrompt:               "system",
+		CompressionSystemPrompt:    "compressor",
+	}, store, fakeLLM, nil)
+	agentSvc.nowFn = func() time.Time {
+		return time.Date(2026, 2, 15, 16, 0, 0, 0, time.Local)
+	}
+
+	reply, err := agentSvc.HandleUserMessage(context.Background(), "开始长任务：支付链路重构，本周推进")
+	if err != nil {
+		t.Fatalf("HandleUserMessage error: %v", err)
+	}
+	if !strings.Contains(reply, "已自动切换到 `task/payment-refactor`") {
+		t.Fatalf("expected auto-switch notice in reply, got %q", reply)
+	}
+	if current := store.CurrentBranch(); current != "task/payment-refactor" {
+		t.Fatalf("expected current branch switched to task branch, got %q", current)
+	}
+	if len(fakeLLM.calls) == 0 || fakeLLM.calls[0].Purpose != "context_branch_decision" {
+		t.Fatalf("expected first call purpose=context_branch_decision, got %+v", fakeLLM.calls)
+	}
+}
+
+func TestHandleUserMessage_AutoSwitchesWithoutExplicitLongTaskPhrase(t *testing.T) {
+	requireGitForAgent(t)
+	convPath := filepath.Join(t.TempDir(), "conversation.json")
+	store, err := conversation.NewStoreWithFile(convPath)
+	if err != nil {
+		t.Fatalf("NewStoreWithFile error: %v", err)
+	}
+
+	fakeLLM := &mockLLM{responses: map[string][]string{
+		"context_branch_decision": {
+			`{"action":"start_task_branch","confidence":0.88,"branch_name":"task/login-timeout-fix"}`,
+			`{"action":"stay","confidence":0.81}`,
+		},
+		"chat_reply": {"已给出修复方案"},
+	}}
+	agentSvc := New(Config{
+		Model:                      "test-model",
+		MaxRecentMessages:          10,
+		CompressionTriggerMessages: 99,
+		CompressionTriggerChars:    99999,
+		KeepRecentAfterCompression: 1,
+		MaxCompressionLoopsPerTurn: 1,
+		MaxToolCallRounds:          2,
+		SystemPrompt:               "system",
+		CompressionSystemPrompt:    "compressor",
+	}, store, fakeLLM, nil)
+	agentSvc.nowFn = func() time.Time {
+		return time.Date(2026, 2, 15, 16, 5, 0, 0, time.Local)
+	}
+
+	reply, err := agentSvc.HandleUserMessage(context.Background(), "帮我修复登录接口超时问题，并补一组回归测试")
+	if err != nil {
+		t.Fatalf("HandleUserMessage error: %v", err)
+	}
+	if !strings.Contains(reply, "已自动切换到 `task/login-timeout-fix`") {
+		t.Fatalf("expected auto-switch notice in reply, got %q", reply)
+	}
+	if current := store.CurrentBranch(); current != "task/login-timeout-fix" {
+		t.Fatalf("expected current branch switched to task branch, got %q", current)
+	}
+}
+
+func TestHandleUserMessage_AutoMergesTaskBranchOnCompletion(t *testing.T) {
+	requireGitForAgent(t)
+	convPath := filepath.Join(t.TempDir(), "conversation.json")
+	store, err := conversation.NewStoreWithFile(convPath)
+	if err != nil {
+		t.Fatalf("NewStoreWithFile error: %v", err)
+	}
+	if err := store.SwitchBranch("task/pay-refactor"); err != nil {
+		t.Fatalf("SwitchBranch error: %v", err)
+	}
+
+	fakeLLM := &mockLLM{responses: map[string][]string{
+		"context_branch_decision": {
+			`{"action":"finish_task_branch","confidence":0.96}`,
+		},
+		"chat_reply": {"已完成收尾与验收"},
+	}}
+	agentSvc := New(Config{
+		Model:                      "test-model",
+		MaxRecentMessages:          10,
+		CompressionTriggerMessages: 99,
+		CompressionTriggerChars:    99999,
+		KeepRecentAfterCompression: 1,
+		MaxCompressionLoopsPerTurn: 1,
+		MaxToolCallRounds:          2,
+		SystemPrompt:               "system",
+		CompressionSystemPrompt:    "compressor",
+	}, store, fakeLLM, nil)
+
+	reply, err := agentSvc.HandleUserMessage(context.Background(), "任务完成，合并回主线")
+	if err != nil {
+		t.Fatalf("HandleUserMessage error: %v", err)
+	}
+	if reply != "已完成收尾与验收" {
+		t.Fatalf("unexpected reply: %q", reply)
+	}
+	if current := store.CurrentBranch(); current != "main" {
+		t.Fatalf("expected branch switched back to main after auto merge, got %q", current)
+	}
+	_, messages, _ := store.SnapshotWithEvents()
+	foundMergeNotice := false
+	for _, msg := range messages {
+		if msg.Role == "assistant" && strings.Contains(msg.Content, "已自动将 `task/pay-refactor` 合并到 `main`") {
+			foundMergeNotice = true
+			break
+		}
+	}
+	if !foundMergeNotice {
+		t.Fatalf("expected assistant merge notice in main branch messages")
+	}
+}
+
+func TestHandleUserMessage_AutoMergesFromAssistantCompletionSignal(t *testing.T) {
+	requireGitForAgent(t)
+	convPath := filepath.Join(t.TempDir(), "conversation.json")
+	store, err := conversation.NewStoreWithFile(convPath)
+	if err != nil {
+		t.Fatalf("NewStoreWithFile error: %v", err)
+	}
+	if err := store.SwitchBranch("task/auto-close"); err != nil {
+		t.Fatalf("SwitchBranch error: %v", err)
+	}
+
+	fakeLLM := &mockLLM{responses: map[string][]string{
+		"context_branch_decision": {
+			`{"action":"stay","confidence":0.84}`,
+			`{"action":"finish_task_branch","confidence":0.91}`,
+		},
+		"chat_reply": {"已完成修复并通过验证。"},
+	}}
+	agentSvc := New(Config{
+		Model:                      "test-model",
+		MaxRecentMessages:          10,
+		CompressionTriggerMessages: 99,
+		CompressionTriggerChars:    99999,
+		KeepRecentAfterCompression: 1,
+		MaxCompressionLoopsPerTurn: 1,
+		MaxToolCallRounds:          2,
+		SystemPrompt:               "system",
+		CompressionSystemPrompt:    "compressor",
+	}, store, fakeLLM, nil)
+
+	reply, err := agentSvc.HandleUserMessage(context.Background(), "继续把收尾结果同步一下")
+	if err != nil {
+		t.Fatalf("HandleUserMessage error: %v", err)
+	}
+	if reply != "已完成修复并通过验证。" {
+		t.Fatalf("unexpected reply: %q", reply)
+	}
+	if current := store.CurrentBranch(); current != "main" {
+		t.Fatalf("expected branch switched back to main after assistant completion signal, got %q", current)
+	}
+}
+
 func TestHandleUserMessage_WithoutCompression(t *testing.T) {
 	store := conversation.NewStore()
 	fakeLLM := &mockLLM{responses: map[string][]string{
@@ -255,6 +434,10 @@ func TestHandleUserMessage_WithoutCompression(t *testing.T) {
 	if len(fakeLLM.calls) != 1 || fakeLLM.calls[0].Purpose != "chat_reply" {
 		t.Fatalf("unexpected calls: %+v", fakeLLM.calls)
 	}
+}
+
+func requireGitForAgent(t *testing.T) {
+	t.Helper()
 }
 
 func TestHandleUserMessage_WithToolCalls(t *testing.T) {
@@ -406,6 +589,14 @@ func TestHandleUserMessage_IncludesSkillIndexForProgressiveDisclosure(t *testing
 	}
 	if strings.Contains(content, "完整技能正文") {
 		t.Fatalf("should not inject full skill content directly, got %q", content)
+	}
+	for _, msg := range msgs {
+		if msg.Role != "system" {
+			continue
+		}
+		if strings.Contains(msg.Content, "/api/context/archive/index") || strings.Contains(msg.Content, "内置技能 archive_recall") {
+			t.Fatalf("archive recall should not be hardcoded in system prompt, got %q", msg.Content)
+		}
 	}
 }
 
@@ -635,7 +826,7 @@ func TestHandleUserMessage_UsesPromptProviderCompressionPrompt(t *testing.T) {
 	agentSvc := New(Config{
 		Model:                      "test-model",
 		MaxRecentMessages:          10,
-		CompressionTriggerMessages: 3,
+		CompressionTriggerMessages: 2,
 		CompressionTriggerChars:    0,
 		KeepRecentAfterCompression: 1,
 		MaxCompressionLoopsPerTurn: 2,
@@ -659,6 +850,202 @@ func TestHandleUserMessage_UsesPromptProviderCompressionPrompt(t *testing.T) {
 	}
 	if got := fakeLLM.calls[0].Messages[0].Content; got != "override-compressor" {
 		t.Fatalf("expected provider compression prompt, got %q", got)
+	}
+}
+
+func TestCompressContext_OnlyIncludesUserAssistantDialogue(t *testing.T) {
+	store := conversation.NewStore()
+	store.Append("system", "system noise should not be compressed")
+	store.Append("assistant", "old answer")
+
+	fakeLLM := &mockLLM{responses: map[string][]string{
+		"compress_context": {"summary-v1"},
+		"chat_reply":       {"ok"},
+	}}
+
+	agentSvc := New(Config{
+		Model:                      "test-model",
+		MaxRecentMessages:          10,
+		CompressionTriggerMessages: 2,
+		CompressionTriggerChars:    0,
+		KeepRecentAfterCompression: 1,
+		MaxCompressionLoopsPerTurn: 2,
+		MaxToolCallRounds:          2,
+		SystemPrompt:               "system",
+		CompressionSystemPrompt:    "compressor",
+	}, store, fakeLLM, nil)
+
+	if _, err := agentSvc.HandleUserMessage(context.Background(), "new input"); err != nil {
+		t.Fatalf("HandleUserMessage error: %v", err)
+	}
+	if len(fakeLLM.calls) < 1 || fakeLLM.calls[0].Purpose != "compress_context" {
+		t.Fatalf("expected first llm call to be compress_context")
+	}
+
+	compressUserPrompt := fakeLLM.calls[0].Messages[1].Content
+	if strings.Contains(compressUserPrompt, "[system]") {
+		t.Fatalf("compress input should not include system role dialogue, got %q", compressUserPrompt)
+	}
+	if !strings.Contains(compressUserPrompt, "[assistant] old answer") {
+		t.Fatalf("compress input should include assistant dialogue, got %q", compressUserPrompt)
+	}
+	if !strings.Contains(compressUserPrompt, "[user] new input") {
+		t.Fatalf("compress input should include user dialogue, got %q", compressUserPrompt)
+	}
+}
+
+func TestCompressContext_PrunesSummaryOverlapBeforeCompression(t *testing.T) {
+	store := conversation.NewStore()
+	store.SetSummaryAndTrim(strings.TrimSpace(`
+人格与沟通偏好
+- 身份：女性，8 年全栈开发经验
+- 偏好：输出包含验收标准
+`), 50)
+	store.Append("assistant", "old answer")
+
+	fakeLLM := &mockLLM{responses: map[string][]string{
+		"compress_context": {"summary-v1"},
+		"chat_reply":       {"ok"},
+	}}
+
+	agentSvc := New(Config{
+		Model:                      "test-model",
+		MaxRecentMessages:          10,
+		CompressionTriggerMessages: 2,
+		CompressionTriggerChars:    0,
+		KeepRecentAfterCompression: 1,
+		MaxCompressionLoopsPerTurn: 2,
+		MaxToolCallRounds:          2,
+		SystemPrompt:               "你是用户的 AI 数字分身，女性，8 年全栈开发经验，不使用表情符号。",
+		CompressionSystemPrompt:    "你是压缩器。",
+	}, store, fakeLLM, nil)
+
+	if _, err := agentSvc.HandleUserMessage(context.Background(), "new input"); err != nil {
+		t.Fatalf("HandleUserMessage error: %v", err)
+	}
+	if len(fakeLLM.calls) < 1 || fakeLLM.calls[0].Purpose != "compress_context" {
+		t.Fatalf("expected first llm call to be compress_context")
+	}
+
+	compressUserPrompt := fakeLLM.calls[0].Messages[1].Content
+	if strings.Contains(compressUserPrompt, "女性，8 年全栈开发经验") {
+		t.Fatalf("compress input summary should prune duplicated identity, got %q", compressUserPrompt)
+	}
+	if strings.Contains(compressUserPrompt, "人格与沟通偏好") {
+		t.Fatalf("compress input summary should prune identity heading, got %q", compressUserPrompt)
+	}
+	if !strings.Contains(compressUserPrompt, "输出包含验收标准") {
+		t.Fatalf("compress input should keep user-specific preference, got %q", compressUserPrompt)
+	}
+}
+
+func TestHandleUserMessage_PrunesSummaryOverlapFromSystemPrompt(t *testing.T) {
+	store := conversation.NewStore()
+	store.SetSummaryAndTrim(strings.TrimSpace(`
+人格与沟通偏好
+- 身份：女性，8 年全栈开发经验
+- 偏好：回答时给出具体日期
+
+工作进展
+- 项目：支付重构
+`), 50)
+
+	fakeLLM := &mockLLM{responses: map[string][]string{
+		"chat_reply": {"ok"},
+	}}
+
+	agentSvc := New(Config{
+		Model:                      "test-model",
+		MaxRecentMessages:          10,
+		CompressionTriggerMessages: 99,
+		CompressionTriggerChars:    99999,
+		KeepRecentAfterCompression: 1,
+		MaxCompressionLoopsPerTurn: 1,
+		MaxToolCallRounds:          2,
+		SystemPrompt:               "你是用户的 AI 数字分身，名字叫傻毛，女性，8 年全栈开发经验。不使用表情符号。",
+		CompressionSystemPrompt:    "compressor",
+	}, store, fakeLLM, nil)
+
+	reply, err := agentSvc.HandleUserMessage(context.Background(), "今天安排")
+	if err != nil {
+		t.Fatalf("HandleUserMessage error: %v", err)
+	}
+	if reply != "ok" {
+		t.Fatalf("unexpected reply: %s", reply)
+	}
+
+	if len(fakeLLM.calls) != 1 {
+		t.Fatalf("expected one llm call, got %d", len(fakeLLM.calls))
+	}
+	summaryPayload := ""
+	for _, msg := range fakeLLM.calls[0].Messages {
+		if msg.Role == "system" && strings.HasPrefix(msg.Content, "历史摘要（由系统自动压缩）：") {
+			summaryPayload = msg.Content
+			break
+		}
+	}
+	if strings.TrimSpace(summaryPayload) == "" {
+		t.Fatalf("expected summary system message")
+	}
+	if strings.Contains(summaryPayload, "女性，8 年全栈开发经验") {
+		t.Fatalf("expected duplicated identity line to be pruned, got %q", summaryPayload)
+	}
+	if strings.Contains(summaryPayload, "人格与沟通偏好") {
+		t.Fatalf("expected identity heading to be pruned, got %q", summaryPayload)
+	}
+	if !strings.Contains(summaryPayload, "回答时给出具体日期") {
+		t.Fatalf("expected user-specific preference to remain, got %q", summaryPayload)
+	}
+	if !strings.Contains(summaryPayload, "支付重构") {
+		t.Fatalf("expected work-progress fact to remain, got %q", summaryPayload)
+	}
+}
+
+func TestHandleUserMessage_AutoCompressionPrunesPromptDuplicatesInStoredSummary(t *testing.T) {
+	store := conversation.NewStore()
+	store.Append("user", "old question")
+	store.Append("assistant", "old answer")
+
+	fakeLLM := &mockLLM{responses: map[string][]string{
+		"compress_context": {strings.TrimSpace(`
+人格与沟通偏好
+- 身份：女性，8 年全栈开发经验
+- 偏好：输出包含明确验收标准
+
+待办清单
+- [P0] 今天补齐回归测试
+`)},
+		"chat_reply": {"ok"},
+	}}
+
+	agentSvc := New(Config{
+		Model:                      "test-model",
+		MaxRecentMessages:          10,
+		CompressionTriggerMessages: 3,
+		CompressionTriggerChars:    0,
+		KeepRecentAfterCompression: 1,
+		MaxCompressionLoopsPerTurn: 2,
+		MaxToolCallRounds:          2,
+		SystemPrompt:               "你是用户的 AI 数字分身，女性，8 年全栈开发经验，不使用表情符号。",
+		CompressionSystemPrompt:    "compressor",
+	}, store, fakeLLM, nil)
+
+	if _, err := agentSvc.HandleUserMessage(context.Background(), "new input"); err != nil {
+		t.Fatalf("HandleUserMessage error: %v", err)
+	}
+
+	summary, _ := store.Snapshot()
+	if strings.Contains(summary, "女性，8 年全栈开发经验") {
+		t.Fatalf("expected duplicated identity line to be pruned from summary, got %q", summary)
+	}
+	if strings.Contains(summary, "人格与沟通偏好") {
+		t.Fatalf("expected identity heading to be pruned from summary, got %q", summary)
+	}
+	if !strings.Contains(summary, "输出包含明确验收标准") {
+		t.Fatalf("expected user-specific preference kept in summary, got %q", summary)
+	}
+	if !strings.Contains(summary, "今天补齐回归测试") {
+		t.Fatalf("expected todo kept in summary, got %q", summary)
 	}
 }
 

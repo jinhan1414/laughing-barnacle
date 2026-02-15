@@ -15,6 +15,33 @@ import (
 	"testing"
 )
 
+func TestBuiltinSkillsConformSkillSpec(t *testing.T) {
+	for _, builtin := range builtinSkills {
+		id := strings.TrimSpace(builtin.ID)
+		if id == "" {
+			t.Fatalf("builtin skill id should not be empty")
+		}
+		if got := sanitizeIdentifier(id); got != id {
+			t.Fatalf("builtin skill id should be lowercase/hyphen form: id=%q sanitized=%q", id, got)
+		}
+
+		md := renderSkillMarkdown(builtin)
+		if !strings.HasPrefix(md, "---\n") {
+			t.Fatalf("builtin skill %q should use SKILL.md frontmatter", id)
+		}
+		name, description, body := parseSkillMarkdown(md)
+		if strings.TrimSpace(name) == "" {
+			t.Fatalf("builtin skill %q name missing", id)
+		}
+		if strings.TrimSpace(description) == "" {
+			t.Fatalf("builtin skill %q description missing", id)
+		}
+		if strings.TrimSpace(body) == "" {
+			t.Fatalf("builtin skill %q body missing", id)
+		}
+	}
+}
+
 func TestStoreUpsertAndReload(t *testing.T) {
 	root := t.TempDir()
 	store, err := NewStore(filepath.Join(root, "skills"), filepath.Join(root, "skills_state.json"))
@@ -37,7 +64,7 @@ func TestStoreUpsertAndReload(t *testing.T) {
 	}
 
 	skills := reloaded.ListSkills()
-	if len(skills) < 3 {
+	if len(skills) < 4 {
 		t.Fatalf("expected builtin + custom skills, got %d", len(skills))
 	}
 	var custom Skill
@@ -81,7 +108,7 @@ func TestStoreFolderDiscovery_DefaultEnabled(t *testing.T) {
 	}
 
 	skills := store.ListSkills()
-	if len(skills) < 3 {
+	if len(skills) < 4 {
 		t.Fatalf("expected builtin + discovered skills, got %d", len(skills))
 	}
 	foundDemo := false
@@ -169,7 +196,7 @@ func TestStoreHasBuiltinConfigSkills(t *testing.T) {
 	}
 
 	all := store.ListSkills()
-	if len(all) < 2 {
+	if len(all) < 3 {
 		t.Fatalf("expected builtin skills to exist, got %d", len(all))
 	}
 
@@ -217,6 +244,26 @@ func TestStoreHasBuiltinConfigSkills(t *testing.T) {
 	}
 	if !strings.Contains(skillsSkill.Prompt, "未确认不得执行安装或删除") {
 		t.Fatalf("builtin skills skill should require user confirmation, got: %q", skillsSkill.Prompt)
+	}
+
+	archiveSkill, ok := findByID("context-archive-recall")
+	if !ok {
+		t.Fatalf("builtin skill context-archive-recall missing")
+	}
+	if !archiveSkill.Enabled {
+		t.Fatalf("builtin archive recall skill should be enabled by default")
+	}
+	if archiveSkill.Source != "builtin" {
+		t.Fatalf("builtin archive recall skill source mismatch: %q", archiveSkill.Source)
+	}
+	if !strings.Contains(archiveSkill.Prompt, "/api/context/archive/index") {
+		t.Fatalf("builtin archive recall skill should include archive index endpoint, got: %q", archiveSkill.Prompt)
+	}
+	if !strings.Contains(archiveSkill.Prompt, "/api/context/archive/section") {
+		t.Fatalf("builtin archive recall skill should include archive section endpoint, got: %q", archiveSkill.Prompt)
+	}
+	if !strings.Contains(archiveSkill.Prompt, "禁止一次性拉取全部归档正文") {
+		t.Fatalf("builtin archive recall skill should enforce minimal retrieval, got: %q", archiveSkill.Prompt)
 	}
 }
 

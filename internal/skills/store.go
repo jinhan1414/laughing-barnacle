@@ -67,6 +67,20 @@ var builtinSkills = []Skill{
 		Enabled: true,
 		Source:  builtinSkillSource,
 	},
+	{
+		ID:          "context-archive-recall",
+		Name:        "上下文归档召回",
+		Description: "当历史摘要信息不足，需要回看被压缩原文片段时使用",
+		Prompt: strings.TrimSpace(
+			"仅在当前摘要无法支撑回答时触发，且必须按需最小化读取。\n" +
+				"步骤 1：先通过 linux__bash 执行 curl -s \"http://127.0.0.1:8080/api/context/archive/index?archive_id=<archive_id>\" 读取归档索引（标题与分节）。\n" +
+				"步骤 2：根据问题只选择必要 section_id，再执行 curl -s \"http://127.0.0.1:8080/api/context/archive/section?archive_id=<archive_id>&section_id=<section_id>\" 拉取具体分节。\n" +
+				"禁止一次性拉取全部归档正文；禁止把整段历史原文回填进提示词。\n" +
+				"拉取后只提炼与当前问题直接相关的事实、约束和时间点，再继续回答。",
+		),
+		Enabled: true,
+		Source:  builtinSkillSource,
+	},
 }
 
 type Skill struct {
@@ -132,22 +146,6 @@ func (s *Store) ListSkills() []Skill {
 		return nil
 	}
 	return cloneSkills(skills)
-}
-
-func (s *Store) ListEnabledSkillPrompts() []string {
-	skills := s.ListSkills()
-	out := make([]string, 0, len(skills))
-	for _, skill := range skills {
-		if !skill.Enabled {
-			continue
-		}
-		prompt := strings.TrimSpace(skill.Prompt)
-		if prompt == "" {
-			continue
-		}
-		out = append(out, prompt)
-	}
-	return out
 }
 
 func (s *Store) ListEnabledSkillIndex() []string {
