@@ -68,6 +68,59 @@ var builtinSkills = []Skill{
 		Source:  builtinSkillSource,
 	},
 	{
+		ID:          "night-reflection-evolution",
+		Name:        "夜间复盘与进化执行",
+		Description: "定时执行夜间复盘，输出复盘结论并给出提示词与能力进化建议",
+		Prompt: strings.TrimSpace(
+			"你是数字分身夜间复盘与进化执行技能。\n" +
+				"输入会提供：当前系统提示词、当前压缩提示词、历史摘要、最近对话。\n" +
+				"请完成：\n" +
+				"1) 输出今日复盘 reflection：生活/工作/学习三段，每段 1-2 行。\n" +
+				"2) 输出升级后的 system_prompt 与 compression_system_prompt。\n" +
+				"3) 提炼 0-3 条可复用技能，写入 skills 数组。\n" +
+				"约束：必须保持名字“傻毛”、女性、8 年全栈开发经验、不使用表情符号、务实稳定。\n" +
+				"输出严格 JSON 字段：reflection, system_prompt, compression_system_prompt, skills。\n" +
+				"skills 每项字段：name, prompt；name 2-20 字，prompt 单行且不超过 120 字。\n" +
+				"禁止输出 markdown 代码块，禁止输出额外字段。",
+		),
+		Enabled: true,
+		Source:  builtinSkillSource,
+	},
+	{
+		ID:          "morning-planning",
+		Name:        "晨间规划执行",
+		Description: "定时执行晨间任务回顾与今日 Top3 规划",
+		Prompt: strings.TrimSpace(
+			"你是数字分身晨间规划执行技能。\n" +
+				"输入会提供：历史摘要、最近对话。\n" +
+				"输出严格 JSON：{\"plan\":\"...\"}。\n" +
+				"plan 必须包含三部分：\n" +
+				"1) 任务进度回顾（昨天完成/未完成）；\n" +
+				"2) 今日 Top 3 任务（按优先级）；\n" +
+				"3) 学习与能力提升 1 条。\n" +
+				"输出中文纯文本，不要 markdown 代码块，不要额外字段。",
+		),
+		Enabled: true,
+		Source:  builtinSkillSource,
+	},
+	{
+		ID:          "schedule-config-maintainer",
+		Name:        "定时任务配置维护",
+		Description: "当用户要求查看/修改 Cron 定时任务时使用",
+		Prompt: strings.TrimSpace(
+			"先查现状：用 linux__bash 执行 curl -s http://127.0.0.1:8080/api/schedules。\n" +
+				"任何写操作前必须先输出“变更计划”（任务 id、action、cron、启停状态），并等待用户明确确认（例如：确认修改 morning-planning 为 0 9 * * *）。\n" +
+				"新增/更新：POST /settings/schedules/save(id,name,description,action,cron_expr,enabled=on)。\n" +
+				"启停：POST /settings/schedules/toggle(id,enabled)。\n" +
+				"立即执行：POST /settings/schedules/run(id)。\n" +
+				"action 默认使用 skill:<skill_id>（例如 skill:morning-planning）。\n" +
+				"Cron 规则使用 5 段：分 时 日 月 周（例如 30 8 * * *）。\n" +
+				"每次改后再次查询 /api/schedules 并汇报 diff 与最终生效配置。规则：先查后改，未确认不得写入。",
+		),
+		Enabled: true,
+		Source:  builtinSkillSource,
+	},
+	{
 		ID:          "context-archive-recall",
 		Name:        "上下文归档召回",
 		Description: "当历史摘要信息不足，需要回看被压缩原文片段时使用",

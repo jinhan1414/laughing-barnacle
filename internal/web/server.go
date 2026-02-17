@@ -18,6 +18,8 @@ import (
 	"laughing-barnacle/internal/conversation"
 	"laughing-barnacle/internal/llmlog"
 	"laughing-barnacle/internal/mcp"
+	"laughing-barnacle/internal/routine"
+	"laughing-barnacle/internal/scheduler"
 	"laughing-barnacle/internal/skills"
 )
 
@@ -31,7 +33,13 @@ type Server struct {
 	mcpStore   *mcp.Store
 	mcpTools   *mcp.ToolProvider
 	skillStore *skills.Store
+	scheduler  ScheduleReloader
 	tmpl       *template.Template
+}
+
+type ScheduleReloader interface {
+	Reload() error
+	RunNow(taskID string) error
 }
 
 type chatPageData struct {
@@ -85,6 +93,7 @@ type settingsPageData struct {
 	Sections      []settingsSection
 	Services      []mcpServiceView
 	Skills        []skillView
+	Schedules     []scheduledTaskView
 	AgentPrompts  agentPromptsView
 	Success       string
 	Error         string
@@ -104,6 +113,20 @@ type agentPromptsView struct {
 	SystemPrompt            string
 	CompressionSystemPrompt string
 	UpdatedAt               string
+}
+
+type scheduledTaskView struct {
+	ID          string
+	Name        string
+	Description string
+	Action      string
+	ActionLabel string
+	CronExpr    string
+	Enabled     bool
+	UpdatedAt   string
+	LastRunAt   string
+	LastStatus  string
+	LastMessage string
 }
 
 type apiMCPService struct {
@@ -126,6 +149,19 @@ type apiSkill struct {
 	UpdatedAt   time.Time `json:"updated_at,omitempty"`
 }
 
+type apiScheduledTask struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description,omitempty"`
+	Action      string    `json:"action"`
+	CronExpr    string    `json:"cron_expr"`
+	Enabled     bool      `json:"enabled"`
+	LastRunAt   time.Time `json:"last_run_at,omitempty"`
+	LastStatus  string    `json:"last_status,omitempty"`
+	LastMessage string    `json:"last_message,omitempty"`
+	UpdatedAt   time.Time `json:"updated_at,omitempty"`
+}
+
 func NewServer(
 	agent *agent.Agent,
 	convStore *conversation.Store,
@@ -133,6 +169,7 @@ func NewServer(
 	mcpStore *mcp.Store,
 	mcpTools *mcp.ToolProvider,
 	skillStore *skills.Store,
+	scheduler ScheduleReloader,
 ) (*Server, error) {
 	tmpl, err := template.ParseFS(embeddedTemplates, "templates/*.html")
 	if err != nil {
@@ -146,6 +183,7 @@ func NewServer(
 		mcpStore:   mcpStore,
 		mcpTools:   mcpTools,
 		skillStore: skillStore,
+		scheduler:  scheduler,
 		tmpl:       tmpl,
 	}, nil
 }
@@ -168,12 +206,16 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/settings/skills/save", s.handleSettingsSkillSave)
 	mux.HandleFunc("/settings/skills/delete", s.handleSettingsSkillDelete)
 	mux.HandleFunc("/settings/skills/toggle", s.handleSettingsSkillToggle)
+	mux.HandleFunc("/settings/schedules/save", s.handleSettingsScheduleSave)
+	mux.HandleFunc("/settings/schedules/toggle", s.handleSettingsScheduleToggle)
+	mux.HandleFunc("/settings/schedules/run", s.handleSettingsScheduleRun)
 	mux.HandleFunc("/settings/llm/prompts/save", s.handleSettingsLLMPromptsSave)
 	mux.HandleFunc("/settings/llm/prompts/reset", s.handleSettingsLLMPromptsReset)
 	mux.HandleFunc("/api/mcp/services", s.handleAPIMCPServices)
 	mux.HandleFunc("/api/skills", s.handleAPISkills)
 	mux.HandleFunc("/api/skills/read", s.handleAPISkillRead)
 	mux.HandleFunc("/api/skills/catalog/search", s.handleAPISkillsCatalogSearch)
+	mux.HandleFunc("/api/schedules", s.handleAPISchedules)
 	mux.HandleFunc("/api/context/archive/index", s.handleAPIContextArchiveIndex)
 	mux.HandleFunc("/api/context/archive/section", s.handleAPIContextArchiveSection)
 	mux.HandleFunc("/healthz", s.handleHealthz)
@@ -340,7 +382,7 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 	if section == "" {
 		section = "mcp"
 	}
-	if section != "mcp" && section != "llm" && section != "security" && section != "skills" {
+	if section != "mcp" && section != "llm" && section != "security" && section != "skills" && section != "schedules" {
 		section = "mcp"
 	}
 
@@ -348,6 +390,7 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 		ActiveSection: section,
 		Sections: []settingsSection{
 			{Key: "mcp", Title: "MCP 服务", Description: "管理 Agent 可用的 MCP 工具服务"},
+			{Key: "schedules", Title: "定时任务", Description: "统一管理系统 Cron 定时任务"},
 			{Key: "llm", Title: "提示词策略", Description: "配置 Agent 系统提示词与压缩提示词"},
 			{Key: "security", Title: "安全策略", Description: "预留：权限与审计配置"},
 			{Key: "skills", Title: "Skill 技能", Description: "配置 Agent 的可复用技能指令"},
@@ -418,6 +461,29 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 		}
 		if !cfg.UpdatedAt.IsZero() {
 			data.AgentPrompts.UpdatedAt = cfg.UpdatedAt.Format("2006-01-02 15:04:05")
+		}
+	} else if section == "schedules" {
+		allTasks := s.mcpStore.ListScheduledTasks()
+		data.Schedules = make([]scheduledTaskView, 0, len(allTasks))
+		for _, task := range allTasks {
+			view := scheduledTaskView{
+				ID:          task.ID,
+				Name:        task.Name,
+				Description: task.Description,
+				Action:      task.Action,
+				ActionLabel: displayScheduleAction(task.Action),
+				CronExpr:    task.CronExpr,
+				Enabled:     task.Enabled,
+				LastStatus:  strings.TrimSpace(task.LastStatus),
+				LastMessage: strings.TrimSpace(task.LastMessage),
+			}
+			if !task.UpdatedAt.IsZero() {
+				view.UpdatedAt = task.UpdatedAt.Format("2006-01-02 15:04:05")
+			}
+			if !task.LastRunAt.IsZero() {
+				view.LastRunAt = task.LastRunAt.Format("2006-01-02 15:04:05")
+			}
+			data.Schedules = append(data.Schedules, view)
 		}
 	}
 
@@ -608,6 +674,113 @@ func (s *Server) handleSettingsSkillToggle(w http.ResponseWriter, r *http.Reques
 	s.redirectSettings(w, r, "skills", fmt.Sprintf("Skill %s 已禁用", id), "")
 }
 
+func (s *Server) handleSettingsScheduleSave(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		s.redirectSettings(w, r, "schedules", "", "请求参数解析失败")
+		return
+	}
+
+	task := scheduler.Task{
+		ID:          strings.TrimSpace(r.FormValue("id")),
+		Name:        strings.TrimSpace(r.FormValue("name")),
+		Description: strings.TrimSpace(r.FormValue("description")),
+		Action:      strings.TrimSpace(r.FormValue("action")),
+		CronExpr:    strings.TrimSpace(r.FormValue("cron_expr")),
+		Enabled:     r.FormValue("enabled") == "on",
+	}
+	if err := s.mcpStore.UpsertScheduledTask(task); err != nil {
+		s.redirectSettings(w, r, "schedules", "", err.Error())
+		return
+	}
+	if s.scheduler != nil {
+		if err := s.scheduler.Reload(); err != nil {
+			s.redirectSettings(w, r, "schedules", "", "调度器重载失败："+err.Error())
+			return
+		}
+	}
+	s.redirectSettings(w, r, "schedules", "定时任务已保存", "")
+}
+
+func (s *Server) handleSettingsScheduleToggle(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		s.redirectSettings(w, r, "schedules", "", "请求参数解析失败")
+		return
+	}
+	id := strings.TrimSpace(r.FormValue("id"))
+	enable := r.FormValue("enabled") == "true"
+	if err := s.mcpStore.SetScheduledTaskEnabled(id, enable); err != nil {
+		s.redirectSettings(w, r, "schedules", "", err.Error())
+		return
+	}
+	if s.scheduler != nil {
+		if err := s.scheduler.Reload(); err != nil {
+			s.redirectSettings(w, r, "schedules", "", "调度器重载失败："+err.Error())
+			return
+		}
+	}
+	if enable {
+		s.redirectSettings(w, r, "schedules", fmt.Sprintf("定时任务 %s 已启用", id), "")
+		return
+	}
+	s.redirectSettings(w, r, "schedules", fmt.Sprintf("定时任务 %s 已禁用", id), "")
+}
+
+func (s *Server) handleSettingsScheduleRun(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		s.redirectSettings(w, r, "schedules", "", "请求参数解析失败")
+		return
+	}
+	taskID := strings.TrimSpace(r.FormValue("id"))
+	if taskID == "" {
+		s.redirectSettings(w, r, "schedules", "", "任务 id 不能为空")
+		return
+	}
+	task, ok := findScheduledTaskByID(s.mcpStore.ListScheduledTasks(), taskID)
+	if !ok {
+		s.redirectSettings(w, r, "schedules", "", fmt.Sprintf("定时任务 %s 不存在", taskID))
+		return
+	}
+	if s.scheduler != nil {
+		if err := s.scheduler.RunNow(taskID); err != nil {
+			s.redirectSettings(w, r, "schedules", "", "立即执行失败："+err.Error())
+			return
+		}
+		s.redirectSettings(w, r, "schedules", fmt.Sprintf("定时任务 %s 已立即执行", taskID), "")
+		return
+	}
+	if s.agent == nil {
+		s.redirectSettings(w, r, "schedules", "", "agent 未初始化")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
+	defer cancel()
+
+	runAt := time.Now().Truncate(time.Second)
+	if err := s.agent.RunScheduledTask(ctx, task.Action); err != nil {
+		_ = s.mcpStore.MarkScheduledTaskRun(task.ID, runAt, "error", err.Error())
+		s.redirectSettings(w, r, "schedules", "", "立即执行失败："+err.Error())
+		return
+	}
+	if err := s.mcpStore.MarkScheduledTaskRun(task.ID, runAt, "success", "manual_run"); err != nil {
+		s.redirectSettings(w, r, "schedules", "", "状态写回失败："+err.Error())
+		return
+	}
+	s.redirectSettings(w, r, "schedules", fmt.Sprintf("定时任务 %s 已立即执行", taskID), "")
+}
+
 func (s *Server) handleSettingsLLMPromptsSave(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -750,6 +923,33 @@ func (s *Server) handleAPISkillsCatalogSearch(w http.ResponseWriter, r *http.Req
 	})
 }
 
+func (s *Server) handleAPISchedules(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	tasks := s.mcpStore.ListScheduledTasks()
+	items := make([]apiScheduledTask, 0, len(tasks))
+	for _, task := range tasks {
+		items = append(items, apiScheduledTask{
+			ID:          task.ID,
+			Name:        task.Name,
+			Description: task.Description,
+			Action:      task.Action,
+			CronExpr:    task.CronExpr,
+			Enabled:     task.Enabled,
+			LastRunAt:   task.LastRunAt,
+			LastStatus:  task.LastStatus,
+			LastMessage: task.LastMessage,
+			UpdatedAt:   task.UpdatedAt,
+		})
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"schedules": items,
+	})
+}
+
 func (s *Server) handleAPIContextArchiveIndex(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -829,6 +1029,34 @@ func displayTransport(raw string) string {
 		return "stdio"
 	default:
 		return "streamableHttp"
+	}
+}
+
+func findScheduledTaskByID(tasks []scheduler.Task, id string) (scheduler.Task, bool) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return scheduler.Task{}, false
+	}
+	for _, task := range tasks {
+		if strings.TrimSpace(task.ID) == id {
+			return task, true
+		}
+	}
+	return scheduler.Task{}, false
+}
+
+func displayScheduleAction(action string) string {
+	action = routine.NormalizeAction(strings.TrimSpace(action))
+	switch action {
+	case routine.ActionNightReflectionEvolution:
+		return "夜间复盘与进化"
+	case routine.ActionMorningPlanning:
+		return "晨间规划"
+	default:
+		if skillID, ok := routine.SkillIDFromAction(action); ok {
+			return "Skill 执行：" + skillID
+		}
+		return action
 	}
 }
 

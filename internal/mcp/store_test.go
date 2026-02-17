@@ -5,6 +5,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"laughing-barnacle/internal/routine"
+	"laughing-barnacle/internal/scheduler"
 )
 
 func TestStoreUpsertAndReload(t *testing.T) {
@@ -569,6 +573,140 @@ func TestStoreAgentHabitState_InvalidDateRejected(t *testing.T) {
 
 	if err := store.SetLastSleepReviewDate("2026/02/14"); err == nil {
 		t.Fatalf("expected invalid date to be rejected")
+	}
+}
+
+func TestStoreDefaultScheduledTasks_PersistedAndValid(t *testing.T) {
+	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	store, err := NewStore(settingsPath)
+	if err != nil {
+		t.Fatalf("NewStore error: %v", err)
+	}
+
+	tasks := store.ListScheduledTasks()
+	if len(tasks) < 2 {
+		t.Fatalf("expected default scheduled tasks, got %d", len(tasks))
+	}
+
+	foundMorning := false
+	foundNight := false
+	for _, task := range tasks {
+		switch task.Action {
+		case routine.ActionMorningPlanning:
+			foundMorning = true
+		case routine.ActionNightReflectionEvolution:
+			foundNight = true
+		}
+		if strings.TrimSpace(task.CronExpr) == "" {
+			t.Fatalf("expected cron expression for task %+v", task)
+		}
+	}
+	if !foundMorning || !foundNight {
+		t.Fatalf("expected both morning and night default tasks, got %+v", tasks)
+	}
+
+	reloaded, err := NewStore(settingsPath)
+	if err != nil {
+		t.Fatalf("reload store error: %v", err)
+	}
+	if len(reloaded.ListScheduledTasks()) < 2 {
+		t.Fatalf("expected scheduled tasks persisted")
+	}
+}
+
+func TestStoreUpsertScheduledTaskAndMarkRun(t *testing.T) {
+	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	store, err := NewStore(settingsPath)
+	if err != nil {
+		t.Fatalf("NewStore error: %v", err)
+	}
+
+	if err := store.UpsertScheduledTask(scheduler.Task{
+		ID:          "morning-planning",
+		Name:        "晨间规划",
+		Description: "更新后的晨间任务",
+		Action:      routine.ActionMorningPlanning,
+		CronExpr:    "0 9 * * *",
+		Enabled:     true,
+	}); err != nil {
+		t.Fatalf("UpsertScheduledTask error: %v", err)
+	}
+
+	runAt := time.Date(2026, 2, 17, 9, 0, 0, 0, time.Local)
+	if err := store.MarkScheduledTaskRun("morning-planning", runAt, "success", ""); err != nil {
+		t.Fatalf("MarkScheduledTaskRun error: %v", err)
+	}
+
+	tasks := store.ListScheduledTasks()
+	found := false
+	for _, task := range tasks {
+		if task.ID != "morning-planning" {
+			continue
+		}
+		found = true
+		if task.CronExpr != "0 9 * * *" {
+			t.Fatalf("unexpected cron expr: %q", task.CronExpr)
+		}
+		if task.LastRunAt.IsZero() || !task.LastRunAt.Equal(runAt) {
+			t.Fatalf("unexpected last run at: %v", task.LastRunAt)
+		}
+		if task.LastStatus != "success" {
+			t.Fatalf("unexpected last status: %q", task.LastStatus)
+		}
+	}
+	if !found {
+		t.Fatalf("expected updated morning task")
+	}
+}
+
+func TestStoreUpsertScheduledTask_InvalidCronRejected(t *testing.T) {
+	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	store, err := NewStore(settingsPath)
+	if err != nil {
+		t.Fatalf("NewStore error: %v", err)
+	}
+
+	err = store.UpsertScheduledTask(scheduler.Task{
+		Name:     "bad task",
+		Action:   routine.ActionMorningPlanning,
+		CronExpr: "invalid-cron",
+		Enabled:  true,
+	})
+	if err == nil {
+		t.Fatalf("expected invalid cron to be rejected")
+	}
+}
+
+func TestStoreUpsertScheduledTask_LegacyActionNormalized(t *testing.T) {
+	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	store, err := NewStore(settingsPath)
+	if err != nil {
+		t.Fatalf("NewStore error: %v", err)
+	}
+
+	if err := store.UpsertScheduledTask(scheduler.Task{
+		ID:       "legacy-action-task",
+		Name:     "legacy action",
+		Action:   routine.LegacyActionMorningPlanning,
+		CronExpr: "5 9 * * *",
+		Enabled:  true,
+	}); err != nil {
+		t.Fatalf("UpsertScheduledTask error: %v", err)
+	}
+
+	task, found := scheduler.Task{}, false
+	for _, item := range store.ListScheduledTasks() {
+		if item.ID == "legacy-action-task" {
+			task = item
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected legacy-action-task persisted")
+	}
+	if task.Action != routine.ActionMorningPlanning {
+		t.Fatalf("expected legacy action normalized, got %q", task.Action)
 	}
 }
 

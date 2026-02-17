@@ -11,6 +11,7 @@ import (
 
 	"laughing-barnacle/internal/conversation"
 	"laughing-barnacle/internal/llm"
+	"laughing-barnacle/internal/routine"
 )
 
 type mockLLM struct {
@@ -862,7 +863,7 @@ func TestHandleUserMessage_AutoCompressionPrunesPromptDuplicatesInStoredSummary(
 	}
 }
 
-func TestHandleUserMessage_SleepWindowNonUrgentBypassesLLM(t *testing.T) {
+func TestHandleUserMessage_SleepWindowNonUrgentStillCallsLLM(t *testing.T) {
 	store := conversation.NewStore()
 	fakeLLM := &mockLLM{responses: map[string][]string{
 		"chat_reply": {"ok"},
@@ -888,11 +889,14 @@ func TestHandleUserMessage_SleepWindowNonUrgentBypassesLLM(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HandleUserMessage error: %v", err)
 	}
-	if !strings.Contains(reply, "休息时段") {
-		t.Fatalf("expected sleep-window reply, got %q", reply)
+	if reply != "ok" {
+		t.Fatalf("unexpected reply: %q", reply)
 	}
-	if len(fakeLLM.calls) != 0 {
-		t.Fatalf("expected no llm calls in sleep-window non-urgent path, got %d", len(fakeLLM.calls))
+	if len(fakeLLM.calls) != 1 {
+		t.Fatalf("expected one llm call in sleep-window non-urgent path, got %d", len(fakeLLM.calls))
+	}
+	if fakeLLM.calls[0].Purpose != "chat_reply" {
+		t.Fatalf("expected chat reply call, got %s", fakeLLM.calls[0].Purpose)
 	}
 	_, messages := store.Snapshot()
 	if len(messages) != 2 || messages[1].Role != "assistant" {
@@ -934,10 +938,10 @@ func TestHandleUserMessage_SleepWindowUrgentStillCallsLLM(t *testing.T) {
 	}
 }
 
-func TestHandleUserMessage_SleepWindowRunsReflectionAndPromptEvolution(t *testing.T) {
+func TestHandleUserMessage_SleepWindowDoesNotRunReflectionOrEvolution(t *testing.T) {
 	store := conversation.NewStore()
 	fakeLLM := &mockLLM{responses: map[string][]string{
-		"night_reflection_evolution": {`{"reflection":"生活：按时休息。工作：推进核心任务。学习：补齐短板。","system_prompt":"你是用户的 AI 数字分身，名字叫“傻毛”，女性，8 年全栈开发经验。你始终不使用表情符号，回答务实、可执行、可复盘，并持续优化工作和学习策略。","compression_system_prompt":"你是“傻毛”数字分身的上下文压缩器，保留人格、事实、任务进度、学习进展与待办，输出简洁纯文本。","skills":[{"name":"故障复盘模板","prompt":"先写事实时间线，再写根因、影响、修复与预防项。"},{"name":"学习闭环","prompt":"每天结束前记录一个短板与一个可执行练习。"}]}`},
+		"chat_reply": {"正常回复"},
 	}}
 
 	agentSvc := New(Config{
@@ -960,37 +964,41 @@ func TestHandleUserMessage_SleepWindowRunsReflectionAndPromptEvolution(t *testin
 	skills := &mockSkills{}
 	agentSvc.SetPromptUpdater(updater)
 	agentSvc.SetHabitProvider(habits)
+	agentSvc.SetSkillProvider(&mockSkills{
+		promptByID: map[string]string{
+			routine.ScheduledSkillNightReflectionEvolution: "---\nname: \"夜间复盘\"\ndescription: \"night\"\n---\n\n执行夜间复盘",
+		},
+	})
 	agentSvc.SetSkillProvider(skills)
 
 	reply, err := agentSvc.HandleUserMessage(context.Background(), "帮我明天继续优化服务")
 	if err != nil {
 		t.Fatalf("HandleUserMessage error: %v", err)
 	}
-	if !strings.Contains(reply, "夜间复盘") {
-		t.Fatalf("expected reflection section in sleep reply, got %q", reply)
+	if reply != "正常回复" {
+		t.Fatalf("unexpected reply: %q", reply)
 	}
-	if updater.calls != 1 {
-		t.Fatalf("expected one prompt evolution update, got %d", updater.calls)
+	if len(fakeLLM.calls) != 1 || fakeLLM.calls[0].Purpose != "chat_reply" {
+		t.Fatalf("expected only chat reply call, got %+v", fakeLLM.calls)
 	}
-	if habits.lastSleepReviewDate != "2026-02-14" {
-		t.Fatalf("expected sleep review date recorded, got %q", habits.lastSleepReviewDate)
+	if updater.calls != 0 {
+		t.Fatalf("expected no prompt evolution update, got %d", updater.calls)
 	}
-	if habits.lastPromptEvolutionDate != "2026-02-14" {
-		t.Fatalf("expected prompt evolution date recorded, got %q", habits.lastPromptEvolutionDate)
+	if habits.lastSleepReviewDate != "" {
+		t.Fatalf("expected no sleep review date update, got %q", habits.lastSleepReviewDate)
 	}
-	if len(skills.upserts) != 2 {
-		t.Fatalf("expected 2 evolved skills, got %d", len(skills.upserts))
+	if habits.lastPromptEvolutionDate != "" {
+		t.Fatalf("expected no prompt evolution date update, got %q", habits.lastPromptEvolutionDate)
 	}
-	if skills.upserts[0].Name != "故障复盘模板" {
-		t.Fatalf("unexpected first evolved skill: %+v", skills.upserts[0])
+	if len(skills.upserts) != 0 {
+		t.Fatalf("expected no evolved skills, got %d", len(skills.upserts))
 	}
 }
 
-func TestHandleUserMessage_MorningPlanningPrependsReplyAndTracksDate(t *testing.T) {
+func TestHandleUserMessage_DoesNotPrependMorningPlanning(t *testing.T) {
 	store := conversation.NewStore()
 	fakeLLM := &mockLLM{responses: map[string][]string{
-		"morning_planning": {"回顾：昨天完成 2 项，1 项待推进。\n今日 Top3：A/B/C。\n能力提升：复盘一个线上问题。"},
-		"chat_reply":       {"好的，我先从任务 A 开始。"},
+		"chat_reply": {"好的，我先从任务 A 开始。"},
 	}}
 
 	agentSvc := New(Config{
@@ -1010,22 +1018,27 @@ func TestHandleUserMessage_MorningPlanningPrependsReplyAndTracksDate(t *testing.
 	}
 	habits := &mockHabits{}
 	agentSvc.SetHabitProvider(habits)
+	agentSvc.SetSkillProvider(&mockSkills{
+		promptByID: map[string]string{
+			routine.ScheduledSkillMorningPlanning: "---\nname: \"晨间规划\"\ndescription: \"morning\"\n---\n\n执行晨间规划",
+		},
+	})
 
 	reply, err := agentSvc.HandleUserMessage(context.Background(), "今天我应该先做什么")
 	if err != nil {
 		t.Fatalf("HandleUserMessage error: %v", err)
 	}
-	if !strings.Contains(reply, "晨间规划") {
-		t.Fatalf("expected morning planning prefix in reply, got %q", reply)
+	if reply != "好的，我先从任务 A 开始。" {
+		t.Fatalf("unexpected reply: %q", reply)
 	}
-	if habits.lastWakePlanDate != "2026-02-14" {
-		t.Fatalf("expected wake plan date recorded, got %q", habits.lastWakePlanDate)
+	if habits.lastWakePlanDate != "" {
+		t.Fatalf("expected no wake plan date update in message path, got %q", habits.lastWakePlanDate)
 	}
-	if len(fakeLLM.calls) != 2 {
-		t.Fatalf("expected two llm calls (planning + reply), got %d", len(fakeLLM.calls))
+	if len(fakeLLM.calls) != 1 {
+		t.Fatalf("expected one llm call (chat only), got %d", len(fakeLLM.calls))
 	}
-	if fakeLLM.calls[0].Purpose != "morning_planning" {
-		t.Fatalf("expected first call is morning planning, got %s", fakeLLM.calls[0].Purpose)
+	if fakeLLM.calls[0].Purpose != "chat_reply" {
+		t.Fatalf("expected chat reply call, got %s", fakeLLM.calls[0].Purpose)
 	}
 }
 
@@ -1054,6 +1067,11 @@ func TestRunScheduledHumanRoutine_NightReviewAppendsOncePerDay(t *testing.T) {
 	habits := &mockHabits{}
 	agentSvc.SetPromptUpdater(updater)
 	agentSvc.SetHabitProvider(habits)
+	agentSvc.SetSkillProvider(&mockSkills{
+		promptByID: map[string]string{
+			routine.ScheduledSkillNightReflectionEvolution: "---\nname: \"夜间复盘\"\ndescription: \"night\"\n---\n\n执行夜间复盘",
+		},
+	})
 
 	if err := agentSvc.RunScheduledHumanRoutine(context.Background()); err != nil {
 		t.Fatalf("RunScheduledHumanRoutine error: %v", err)
@@ -1101,6 +1119,11 @@ func TestRunScheduledHumanRoutine_MorningPlanAppendsOncePerDay(t *testing.T) {
 	}
 	habits := &mockHabits{}
 	agentSvc.SetHabitProvider(habits)
+	agentSvc.SetSkillProvider(&mockSkills{
+		promptByID: map[string]string{
+			routine.ScheduledSkillMorningPlanning: "---\nname: \"晨间规划\"\ndescription: \"morning\"\n---\n\n执行晨间规划",
+		},
+	})
 
 	if err := agentSvc.RunScheduledHumanRoutine(context.Background()); err != nil {
 		t.Fatalf("RunScheduledHumanRoutine error: %v", err)
@@ -1175,10 +1198,12 @@ func TestRetryLastUserMessage_ReusesPendingUserMessage(t *testing.T) {
 	}
 }
 
-func TestRetryLastUserMessage_SleepWindowNonUrgentBypassesLLM(t *testing.T) {
+func TestRetryLastUserMessage_SleepWindowNonUrgentStillCallsLLM(t *testing.T) {
 	store := conversation.NewStore()
 	store.Append("user", "帮我规划一下明天任务")
-	fakeLLM := &mockLLM{}
+	fakeLLM := &mockLLM{responses: map[string][]string{
+		"chat_reply": {"retry-ok"},
+	}}
 
 	agentSvc := New(Config{
 		Model:                      "test-model",
@@ -1200,11 +1225,14 @@ func TestRetryLastUserMessage_SleepWindowNonUrgentBypassesLLM(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RetryLastUserMessage error: %v", err)
 	}
-	if !strings.Contains(reply, "休息时段") {
-		t.Fatalf("expected sleep-window reply, got %q", reply)
+	if reply != "retry-ok" {
+		t.Fatalf("unexpected retry reply: %q", reply)
 	}
-	if len(fakeLLM.calls) != 0 {
-		t.Fatalf("expected no llm calls, got %d", len(fakeLLM.calls))
+	if len(fakeLLM.calls) != 1 {
+		t.Fatalf("expected one llm call, got %d", len(fakeLLM.calls))
+	}
+	if fakeLLM.calls[0].Purpose != "chat_reply" {
+		t.Fatalf("expected chat reply call, got %s", fakeLLM.calls[0].Purpose)
 	}
 }
 

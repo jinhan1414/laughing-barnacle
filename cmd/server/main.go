@@ -16,6 +16,7 @@ import (
 	"laughing-barnacle/internal/llm/cerber"
 	"laughing-barnacle/internal/llmlog"
 	"laughing-barnacle/internal/mcp"
+	"laughing-barnacle/internal/scheduler"
 	"laughing-barnacle/internal/skills"
 	"laughing-barnacle/internal/web"
 )
@@ -76,7 +77,12 @@ func run() error {
 	agentSvc.SetPromptUpdater(mcpStore)
 	agentSvc.SetHabitProvider(mcpStore)
 
-	webServer, err := web.NewServer(agentSvc, convStore, logStore, mcpStore, mcpToolProvider, skillStore)
+	cronScheduler := scheduler.NewEngine(mcpStore, agentSvc, log.Default())
+	if err := cronScheduler.Start(); err != nil {
+		return err
+	}
+	defer cronScheduler.Stop()
+	webServer, err := web.NewServer(agentSvc, convStore, logStore, mcpStore, mcpToolProvider, skillStore, cronScheduler)
 	if err != nil {
 		return err
 	}
@@ -97,28 +103,9 @@ func run() error {
 		}
 	}()
 
-	routineCtx, routineCancel := context.WithCancel(context.Background())
-	defer routineCancel()
-	go func() {
-		_ = agentSvc.RunScheduledHumanRoutine(routineCtx)
-		ticker := time.NewTicker(time.Minute)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-routineCtx.Done():
-				return
-			case <-ticker.C:
-				if err := agentSvc.RunScheduledHumanRoutine(routineCtx); err != nil {
-					log.Printf("human routine tick error: %v", err)
-				}
-			}
-		}
-	}()
-
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	<-sigCh
-	routineCancel()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

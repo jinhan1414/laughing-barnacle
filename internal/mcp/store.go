@@ -3,6 +3,7 @@ package mcp
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/robfig/cron/v3"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -14,6 +15,8 @@ import (
 	"time"
 
 	"laughing-barnacle/internal/agentprompt"
+	"laughing-barnacle/internal/routine"
+	"laughing-barnacle/internal/scheduler"
 )
 
 var serviceIDPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
@@ -26,6 +29,9 @@ const (
 	maxAutoSkillsRetained          = 24
 	maxAutoSkillNameRunes          = 24
 	maxAutoSkillPromptRunes        = 180
+	defaultNightCronExpr           = "30 0 * * *"
+	defaultMorningPlanCronExpr     = "30 8 * * *"
+	maxTaskRunMessageRunes         = 240
 )
 
 type Service struct {
@@ -77,8 +83,9 @@ type fileConfig struct {
 		Items []Skill `json:"items"`
 	} `json:"skills"`
 	Agent struct {
-		Prompts AgentPromptConfig `json:"prompts"`
-		Habits  AgentHabitState   `json:"habits"`
+		Prompts   AgentPromptConfig `json:"prompts"`
+		Habits    AgentHabitState   `json:"habits"`
+		Schedules []scheduler.Task  `json:"schedules"`
 	} `json:"agent"`
 }
 
@@ -92,6 +99,27 @@ func DefaultAgentPromptConfig() AgentPromptConfig {
 	return AgentPromptConfig{
 		SystemPrompt:            strings.TrimSpace(agentprompt.DefaultSystemPrompt),
 		CompressionSystemPrompt: strings.TrimSpace(agentprompt.DefaultCompressionSystemPrompt),
+	}
+}
+
+func defaultScheduledTasks() []scheduler.Task {
+	return []scheduler.Task{
+		{
+			ID:          "night-reflection-evolution",
+			Name:        "夜间复盘与进化",
+			Description: "每天夜间执行一次复盘并尝试自我进化提示词。",
+			Action:      routine.ActionNightReflectionEvolution,
+			CronExpr:    defaultNightCronExpr,
+			Enabled:     true,
+		},
+		{
+			ID:          "morning-planning",
+			Name:        "晨间规划",
+			Description: "每天早晨执行一次任务回顾与今日 Top3 规划。",
+			Action:      routine.ActionMorningPlanning,
+			CronExpr:    defaultMorningPlanCronExpr,
+			Enabled:     true,
+		},
 	}
 }
 
@@ -300,6 +328,114 @@ func (s *Store) IsServiceToolEnabled(serviceID, toolName string) bool {
 		}
 	}
 	return false
+}
+
+func (s *Store) ListScheduledTasks() []scheduler.Task {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return cloneScheduledTasks(s.cfg.Agent.Schedules)
+}
+
+func (s *Store) UpsertScheduledTask(task scheduler.Task) error {
+	task.ID = strings.TrimSpace(task.ID)
+	task.Name = strings.TrimSpace(task.Name)
+	task.Description = strings.TrimSpace(task.Description)
+	task.Action = strings.TrimSpace(task.Action)
+	task.CronExpr = strings.TrimSpace(task.CronExpr)
+	task.LastStatus = strings.TrimSpace(task.LastStatus)
+	task.LastMessage = trimSkillText(task.LastMessage, maxTaskRunMessageRunes)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if task.ID == "" {
+		task.ID = s.findScheduledTaskIDForUpdateLocked(task)
+	}
+	if task.ID == "" {
+		task.ID = generateUniqueTaskID(s.cfg.Agent.Schedules, task.Name, task.Action)
+	}
+	if task.Name == "" {
+		task.Name = task.ID
+	}
+	if task.Description == "" {
+		task.Description = trimSkillText(task.Name, 120)
+	}
+	if err := validateScheduledTask(task); err != nil {
+		return err
+	}
+
+	now := time.Now()
+	task.UpdatedAt = now
+
+	updated := false
+	for i := range s.cfg.Agent.Schedules {
+		if s.cfg.Agent.Schedules[i].ID == task.ID {
+			task.LastRunAt = s.cfg.Agent.Schedules[i].LastRunAt
+			task.LastStatus = strings.TrimSpace(s.cfg.Agent.Schedules[i].LastStatus)
+			task.LastMessage = strings.TrimSpace(s.cfg.Agent.Schedules[i].LastMessage)
+			s.cfg.Agent.Schedules[i] = task
+			updated = true
+			break
+		}
+	}
+	if !updated {
+		s.cfg.Agent.Schedules = append(s.cfg.Agent.Schedules, task)
+	}
+
+	s.cfg.Agent.Schedules = normalizeScheduledTasks(s.cfg.Agent.Schedules)
+	return s.persistLocked()
+}
+
+func (s *Store) SetScheduledTaskEnabled(id string, enabled bool) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return fmt.Errorf("scheduled task id is required")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for i := range s.cfg.Agent.Schedules {
+		if s.cfg.Agent.Schedules[i].ID != id {
+			continue
+		}
+		s.cfg.Agent.Schedules[i].Enabled = enabled
+		s.cfg.Agent.Schedules[i].UpdatedAt = time.Now()
+		s.cfg.Agent.Schedules = normalizeScheduledTasks(s.cfg.Agent.Schedules)
+		return s.persistLocked()
+	}
+	return fmt.Errorf("scheduled task %q not found", id)
+}
+
+func (s *Store) MarkScheduledTaskRun(id string, runAt time.Time, status string, message string) error {
+	id = strings.TrimSpace(id)
+	status = strings.TrimSpace(status)
+	message = trimSkillText(message, maxTaskRunMessageRunes)
+	if id == "" {
+		return fmt.Errorf("scheduled task id is required")
+	}
+	if runAt.IsZero() {
+		return fmt.Errorf("scheduled task run time is required")
+	}
+	if status == "" {
+		status = "success"
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for i := range s.cfg.Agent.Schedules {
+		if s.cfg.Agent.Schedules[i].ID != id {
+			continue
+		}
+		s.cfg.Agent.Schedules[i].LastRunAt = runAt
+		s.cfg.Agent.Schedules[i].LastStatus = status
+		s.cfg.Agent.Schedules[i].LastMessage = message
+		s.cfg.Agent.Schedules[i].UpdatedAt = time.Now()
+		s.cfg.Agent.Schedules = normalizeScheduledTasks(s.cfg.Agent.Schedules)
+		return s.persistLocked()
+	}
+	return fmt.Errorf("scheduled task %q not found", id)
 }
 
 func (s *Store) ListSkills() []Skill {
@@ -641,6 +777,7 @@ func (s *Store) load() error {
 		if os.IsNotExist(err) {
 			s.cfg = fileConfig{}
 			s.cfg.Agent.Prompts = DefaultAgentPromptConfig()
+			s.cfg.Agent.Schedules = normalizeScheduledTasks(defaultScheduledTasks())
 			return s.persistLocked()
 		}
 		return fmt.Errorf("read settings file: %w", err)
@@ -684,6 +821,14 @@ func (s *Store) load() error {
 	if strings.TrimSpace(cfg.Agent.Prompts.SystemPrompt) == "" &&
 		strings.TrimSpace(cfg.Agent.Prompts.CompressionSystemPrompt) == "" {
 		cfg.Agent.Prompts = DefaultAgentPromptConfig()
+		needsPersist = true
+	}
+	normalizedSchedules, changed, err := normalizeAndMergeScheduledTasks(cfg.Agent.Schedules)
+	if err != nil {
+		return fmt.Errorf("invalid scheduled tasks: %w", err)
+	}
+	cfg.Agent.Schedules = normalizedSchedules
+	if changed {
 		needsPersist = true
 	}
 
@@ -763,6 +908,34 @@ func validateSkill(skill Skill) error {
 	return nil
 }
 
+func validateScheduledTask(task scheduler.Task) error {
+	task.ID = strings.TrimSpace(task.ID)
+	task.Name = strings.TrimSpace(task.Name)
+	task.Action = routine.NormalizeAction(strings.TrimSpace(task.Action))
+	task.CronExpr = strings.TrimSpace(task.CronExpr)
+
+	if task.ID == "" {
+		return fmt.Errorf("task id is required")
+	}
+	if !serviceIDPattern.MatchString(task.ID) {
+		return fmt.Errorf("task id must match [a-zA-Z0-9_-]+")
+	}
+	if task.Name == "" {
+		return fmt.Errorf("task name is required")
+	}
+	if !routine.IsSupportedAction(task.Action) {
+		return fmt.Errorf("unsupported task action: %s", strings.TrimSpace(task.Action))
+	}
+	if task.CronExpr == "" {
+		return fmt.Errorf("task cron expression is required")
+	}
+	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+	if _, err := parser.Parse(task.CronExpr); err != nil {
+		return fmt.Errorf("invalid cron expression: %w", err)
+	}
+	return nil
+}
+
 func validateAgentPromptConfig(cfg AgentPromptConfig) error {
 	systemPrompt := strings.TrimSpace(cfg.SystemPrompt)
 	compressionPrompt := strings.TrimSpace(cfg.CompressionSystemPrompt)
@@ -815,6 +988,14 @@ func generateUniqueSkillID(existing []Skill, name, prompt string) string {
 		used[skill.ID] = struct{}{}
 	}
 	return generateUniqueID(used, []string{name, prompt}, "skill")
+}
+
+func generateUniqueTaskID(existing []scheduler.Task, name, action string) string {
+	used := make(map[string]struct{}, len(existing))
+	for _, task := range existing {
+		used[task.ID] = struct{}{}
+	}
+	return generateUniqueID(used, []string{name, action}, "task")
 }
 
 func generateUniqueID(used map[string]struct{}, candidates []string, fallback string) string {
@@ -939,6 +1120,24 @@ func (s *Store) findSkillIDForUpdateLocked(skill Skill) string {
 	return matchedID
 }
 
+func (s *Store) findScheduledTaskIDForUpdateLocked(task scheduler.Task) string {
+	action := strings.TrimSpace(task.Action)
+	if action == "" {
+		return ""
+	}
+	matchedID := ""
+	for _, existing := range s.cfg.Agent.Schedules {
+		if strings.TrimSpace(existing.Action) != action {
+			continue
+		}
+		if matchedID != "" {
+			return ""
+		}
+		matchedID = existing.ID
+	}
+	return matchedID
+}
+
 func (s *Store) findAutoSkillIDByNameLocked(name string) string {
 	name = strings.TrimSpace(name)
 	if name == "" {
@@ -1045,6 +1244,126 @@ func filterSkills(skills []Skill, keep func(Skill) bool) []Skill {
 
 func isAutoSkillID(id string) bool {
 	return strings.HasPrefix(strings.TrimSpace(id), autoSkillIDPrefix)
+}
+
+func normalizeAndMergeScheduledTasks(tasks []scheduler.Task) ([]scheduler.Task, bool, error) {
+	merged := normalizeScheduledTasks(tasks)
+	changed := !scheduledTasksEqual(merged, tasks)
+
+	byID := make(map[string]scheduler.Task, len(merged))
+	for _, task := range merged {
+		byID[task.ID] = task
+	}
+	for _, def := range defaultScheduledTasks() {
+		task, ok := byID[def.ID]
+		if !ok {
+			merged = append(merged, def)
+			changed = true
+			continue
+		}
+		before := task
+		if strings.TrimSpace(task.Name) == "" {
+			task.Name = def.Name
+		}
+		if strings.TrimSpace(task.Description) == "" {
+			task.Description = def.Description
+		}
+		if strings.TrimSpace(task.Action) == "" {
+			task.Action = def.Action
+		}
+		if strings.TrimSpace(task.CronExpr) == "" {
+			task.CronExpr = def.CronExpr
+		}
+		if !scheduledTaskEqual(task, before) {
+			changed = true
+		}
+		byID[def.ID] = task
+	}
+
+	final := make([]scheduler.Task, 0, len(byID))
+	seen := map[string]struct{}{}
+	for _, task := range merged {
+		task = byID[task.ID]
+		if _, ok := seen[task.ID]; ok {
+			continue
+		}
+		if err := validateScheduledTask(task); err != nil {
+			return nil, false, err
+		}
+		final = append(final, task)
+		seen[task.ID] = struct{}{}
+	}
+	final = normalizeScheduledTasks(final)
+	return final, changed || !scheduledTasksEqual(final, tasks), nil
+}
+
+func normalizeScheduledTasks(tasks []scheduler.Task) []scheduler.Task {
+	if len(tasks) == 0 {
+		return nil
+	}
+
+	out := make([]scheduler.Task, 0, len(tasks))
+	for _, task := range tasks {
+		task.ID = strings.TrimSpace(task.ID)
+		task.Name = strings.TrimSpace(task.Name)
+		task.Description = trimSkillText(strings.TrimSpace(strings.ReplaceAll(task.Description, "\n", " ")), 160)
+		task.Action = routine.NormalizeAction(strings.TrimSpace(task.Action))
+		task.CronExpr = strings.TrimSpace(task.CronExpr)
+		task.LastStatus = strings.TrimSpace(task.LastStatus)
+		task.LastMessage = trimSkillText(task.LastMessage, maxTaskRunMessageRunes)
+		if task.ID == "" {
+			continue
+		}
+		if task.Name == "" {
+			task.Name = task.ID
+		}
+		if task.Description == "" {
+			task.Description = trimSkillText(task.Name, 160)
+		}
+		out = append(out, task)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].ID < out[j].ID
+	})
+	return out
+}
+
+func cloneScheduledTasks(in []scheduler.Task) []scheduler.Task {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]scheduler.Task, len(in))
+	copy(out, in)
+	return out
+}
+
+func scheduledTasksEqual(a, b []scheduler.Task) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if !scheduledTaskEqual(a[i], b[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func scheduledTaskEqual(a, b scheduler.Task) bool {
+	return strings.TrimSpace(a.ID) == strings.TrimSpace(b.ID) &&
+		strings.TrimSpace(a.Name) == strings.TrimSpace(b.Name) &&
+		strings.TrimSpace(a.Description) == strings.TrimSpace(b.Description) &&
+		strings.TrimSpace(a.Action) == strings.TrimSpace(b.Action) &&
+		strings.TrimSpace(a.CronExpr) == strings.TrimSpace(b.CronExpr) &&
+		a.Enabled == b.Enabled &&
+		a.LastRunAt.Equal(b.LastRunAt) &&
+		strings.TrimSpace(a.LastStatus) == strings.TrimSpace(b.LastStatus) &&
+		strings.TrimSpace(a.LastMessage) == strings.TrimSpace(b.LastMessage) &&
+		a.UpdatedAt.Equal(b.UpdatedAt)
 }
 
 func trimSkillText(v string, max int) string {

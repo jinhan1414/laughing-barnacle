@@ -10,12 +10,14 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"laughing-barnacle/internal/conversation"
 	"laughing-barnacle/internal/llm"
+	"laughing-barnacle/internal/routine"
 )
 
 type Config struct {
@@ -60,6 +62,7 @@ const (
 	maxNightEvolvedSkills       = 3
 	maxEvolvedSkillNameRunes    = 24
 	maxEvolvedSkillPromptRunes  = 180
+	maxScheduledRecentMessages  = 20
 	builtinLinuxBashToolName    = "linux__bash"
 	defaultBashTimeoutSeconds   = 20
 	maxBashTimeoutSeconds       = 180
@@ -145,26 +148,56 @@ func (a *Agent) GetEffectivePrompts() (systemPrompt string, compressionSystemPro
 }
 
 func (a *Agent) RunScheduledHumanRoutine(ctx context.Context) error {
+	now := a.nowFn()
+	if isSleepWindow(now) {
+		return a.RunScheduledTask(ctx, routine.ActionNightReflectionEvolution)
+	}
+	return a.RunScheduledTask(ctx, routine.ActionMorningPlanning)
+}
+
+func (a *Agent) RunScheduledTask(ctx context.Context, action string) error {
+	action = routine.NormalizeAction(strings.TrimSpace(action))
+
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	if !a.cfg.EnforceHumanRoutine || a.habits == nil {
+	if !a.cfg.EnforceHumanRoutine {
 		return nil
 	}
 
 	now := a.nowFn()
-	if isSleepWindow(now) {
-		reflection := strings.TrimSpace(a.runNightReflectionAndEvolution(ctx, now))
-		if reflection != "" {
-			a.store.Append("assistant", "【夜间复盘（自动）】\n"+reflection)
-		}
-		return nil
+	skillID, ok := routine.SkillIDFromAction(action)
+	if !ok {
+		return fmt.Errorf("unknown scheduled action: %s", action)
 	}
 
-	plan := strings.TrimSpace(a.runMorningPlanning(ctx, now))
-	if plan != "" {
-		a.store.Append("assistant", "【晨间规划（自动）】\n"+plan)
+	var (
+		title   string
+		content string
+		err     error
+	)
+	switch {
+	case routine.IsNightReflectionSkillID(skillID):
+		title = "夜间复盘（自动）"
+		content, err = a.runNightReflectionAndEvolution(ctx, now, skillID)
+	case routine.IsMorningPlanningSkillID(skillID):
+		title = "晨间规划（自动）"
+		content, err = a.runMorningPlanning(ctx, now, skillID)
+	default:
+		title, content, err = a.runGenericScheduledSkill(ctx, now, skillID)
 	}
+	if err != nil {
+		return err
+	}
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return nil
+	}
+	if strings.TrimSpace(title) == "" {
+		a.store.Append("assistant", content)
+		return nil
+	}
+	a.store.Append("assistant", "【"+strings.TrimSpace(title)+"】\n"+content)
 	return nil
 }
 
@@ -179,17 +212,6 @@ func (a *Agent) HandleUserMessage(ctx context.Context, userInput string) (string
 	defer a.mu.Unlock()
 
 	a.store.Append("user", text)
-	now := a.nowFn()
-	if a.cfg.EnforceHumanRoutine && shouldEnforceSleepReply(text, now) {
-		reflection := strings.TrimSpace(a.runNightReflectionAndEvolution(ctx, now))
-		reply := sleepWindowReply()
-		if reflection != "" {
-			reply = "【夜间复盘】\n" + reflection + "\n\n" + reply
-		}
-		a.store.Append("assistant", reply)
-		return reply, nil
-	}
-	morningPlan := strings.TrimSpace(a.runMorningPlanning(ctx, now))
 
 	if err := a.autonomousCompressionLoop(ctx); err != nil {
 		return "", err
@@ -203,9 +225,6 @@ func (a *Agent) HandleUserMessage(ctx context.Context, userInput string) (string
 	}
 
 	reply = strings.TrimSpace(reply)
-	if morningPlan != "" {
-		reply = strings.TrimSpace("【晨间规划】\n" + morningPlan + "\n\n" + reply)
-	}
 	a.store.Append("assistant", reply)
 	return reply, nil
 }
@@ -219,18 +238,6 @@ func (a *Agent) RetryLastUserMessage(ctx context.Context) (string, error) {
 	if len(messages) == 0 || messages[len(messages)-1].Role != "user" {
 		return "", fmt.Errorf("no pending user message to retry")
 	}
-	pendingUserMessage := messages[len(messages)-1].Content
-	now := a.nowFn()
-	if a.cfg.EnforceHumanRoutine && shouldEnforceSleepReply(pendingUserMessage, now) {
-		reflection := strings.TrimSpace(a.runNightReflectionAndEvolution(ctx, now))
-		reply := sleepWindowReply()
-		if reflection != "" {
-			reply = "【夜间复盘】\n" + reflection + "\n\n" + reply
-		}
-		a.store.Append("assistant", reply)
-		return reply, nil
-	}
-	morningPlan := strings.TrimSpace(a.runMorningPlanning(ctx, now))
 
 	if err := a.autonomousCompressionLoop(ctx); err != nil {
 		return "", err
@@ -248,9 +255,6 @@ func (a *Agent) RetryLastUserMessage(ctx context.Context) (string, error) {
 	}
 
 	reply = strings.TrimSpace(reply)
-	if morningPlan != "" {
-		reply = strings.TrimSpace("【晨间规划】\n" + morningPlan + "\n\n" + reply)
-	}
 	a.store.Append("assistant", reply)
 	return reply, nil
 }
@@ -559,13 +563,6 @@ func (a *Agent) resolvePromptsLocked() (systemPrompt string, compressionSystemPr
 	return systemPrompt, compressionSystemPrompt
 }
 
-func shouldEnforceSleepReply(userInput string, now time.Time) bool {
-	if !isSleepWindow(now) {
-		return false
-	}
-	return !isUrgentMessage(userInput)
-}
-
 func isSleepWindow(now time.Time) bool {
 	minutes := now.Hour()*60 + now.Minute()
 	sleepStartMinutes := 30
@@ -573,42 +570,25 @@ func isSleepWindow(now time.Time) bool {
 	return minutes >= sleepStartMinutes && minutes < sleepEndMinutes
 }
 
-func isUrgentMessage(userInput string) bool {
-	text := strings.ToLower(strings.TrimSpace(userInput))
-	if text == "" {
-		return false
-	}
-	keywords := []string{
-		"紧急", "加急", "立刻", "马上", "尽快", "urgent", "asap", "emergency",
-		"线上故障", "故障", "宕机", "事故", "生产事故", "p0", "sev0", "sev1",
-		"安全漏洞", "入侵", "数据泄露", "deadline", "ddl", "硬截止",
-	}
-	for _, kw := range keywords {
-		if strings.Contains(text, kw) {
-			return true
-		}
-	}
-	return false
-}
-
-func sleepWindowReply() string {
-	return "当前是我的休息时段（00:30-08:30）。我已记录你的请求；若不是紧急事项，我会在醒来后优先处理。如有硬截止，请补充时间与优先级。"
-}
-
-func (a *Agent) runNightReflectionAndEvolution(ctx context.Context, now time.Time) string {
+func (a *Agent) runNightReflectionAndEvolution(ctx context.Context, now time.Time, skillID string) (string, error) {
 	if a.habits == nil {
-		return ""
+		return "", nil
 	}
 	today := now.Format("2006-01-02")
 	if strings.TrimSpace(a.habits.GetLastSleepReviewDate()) == today {
-		return ""
+		return "", nil
+	}
+
+	_, skillPrompt, ok := a.readScheduledSkill(skillID)
+	if !ok {
+		return "", fmt.Errorf("scheduled skill %q not found or not enabled", skillID)
 	}
 
 	summary, messages := a.store.Snapshot()
-	reflection, systemPrompt, compressionPrompt, evolvedSkills, err := a.generateNightReflectionPayload(ctx, summary, messages)
+	reflection, systemPrompt, compressionPrompt, evolvedSkills, err := a.generateNightReflectionPayload(ctx, skillPrompt, summary, messages)
 	if err != nil {
 		_ = a.habits.SetLastSleepReviewDate(today)
-		return "生活：已进入休息阶段并记录今日状态。\n工作：关键任务与风险已归档，明天继续推进。\n学习：延续每日学习节奏，明天聚焦一个短板。"
+		return "生活：已进入休息阶段并记录今日状态。\n工作：关键任务与风险已归档，明天继续推进。\n学习：延续每日学习节奏，明天聚焦一个短板。", nil
 	}
 
 	if strings.TrimSpace(systemPrompt) != "" &&
@@ -628,55 +608,75 @@ func (a *Agent) runNightReflectionAndEvolution(ctx context.Context, now time.Tim
 	if evolvedCount > 0 {
 		reflection = strings.TrimSpace(reflection + fmt.Sprintf("\n能力进化：已沉淀/更新 %d 条可复用 Skill。", evolvedCount))
 	}
-	return reflection
+	return reflection, nil
 }
 
-func (a *Agent) runMorningPlanning(ctx context.Context, now time.Time) string {
-	if !a.cfg.EnforceHumanRoutine || isSleepWindow(now) || a.habits == nil {
-		return ""
+func (a *Agent) runMorningPlanning(ctx context.Context, now time.Time, skillID string) (string, error) {
+	if isSleepWindow(now) || a.habits == nil {
+		return "", nil
 	}
 	today := now.Format("2006-01-02")
 	if strings.TrimSpace(a.habits.GetLastWakePlanDate()) == today {
-		return ""
+		return "", nil
+	}
+
+	_, skillPrompt, ok := a.readScheduledSkill(skillID)
+	if !ok {
+		return "", fmt.Errorf("scheduled skill %q not found or not enabled", skillID)
 	}
 
 	summary, messages := a.store.Snapshot()
-	plan, err := a.generateMorningPlan(ctx, summary, messages)
+	plan, err := a.generateMorningPlan(ctx, skillPrompt, summary, messages)
 	if err != nil {
 		_ = a.habits.SetLastWakePlanDate(today)
-		return "任务回顾：请先确认昨日未完成事项并标注阻塞原因。\n今日 Top 3：1) 最关键交付 2) 次关键推进 3) 学习巩固。\n能力提升：今天复盘一个问题并沉淀为可复用方法。"
+		return "任务回顾：请先确认昨日未完成事项并标注阻塞原因。\n今日 Top 3：1) 最关键交付 2) 次关键推进 3) 学习巩固。\n能力提升：今天复盘一个问题并沉淀为可复用方法。", nil
 	}
 	plan = strings.TrimSpace(plan)
 	if plan == "" {
 		_ = a.habits.SetLastWakePlanDate(today)
-		return "任务回顾：昨日进度已记录，请先对未完成项做风险评估。\n今日 Top 3：按优先级推进核心交付、风险治理、学习巩固。\n能力提升：今天完成一次针对性复盘。"
+		return "任务回顾：昨日进度已记录，请先对未完成项做风险评估。\n今日 Top 3：按优先级推进核心交付、风险治理、学习巩固。\n能力提升：今天完成一次针对性复盘。", nil
 	}
 	_ = a.habits.SetLastWakePlanDate(today)
-	return plan
+	return plan, nil
 }
 
-func (a *Agent) generateNightReflectionPayload(ctx context.Context, summary string, messages []conversation.Message) (reflection, systemPrompt, compressionPrompt string, skills []evolvedSkill, err error) {
+func (a *Agent) runGenericScheduledSkill(ctx context.Context, _ time.Time, skillID string) (title string, content string, err error) {
+	skillName, skillPrompt, ok := a.readScheduledSkill(skillID)
+	if !ok {
+		return "", "", fmt.Errorf("scheduled skill %q not found or not enabled", skillID)
+	}
+	summary, messages := a.store.Snapshot()
+	content, err = a.generateGenericScheduledOutput(ctx, skillID, skillPrompt, summary, messages)
+	if err != nil {
+		return "", "", err
+	}
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return "", "", nil
+	}
+	if strings.TrimSpace(skillName) == "" {
+		skillName = skillID
+	}
+	return "定时任务（自动）" + skillName, content, nil
+}
+
+func (a *Agent) generateNightReflectionPayload(ctx context.Context, skillPrompt, summary string, messages []conversation.Message) (reflection, systemPrompt, compressionPrompt string, skills []evolvedSkill, err error) {
 	currentSystemPrompt, currentCompressionPrompt := a.resolvePromptsLocked()
 
 	msgs := []llm.Message{
 		{
 			Role:    "system",
-			Content: "你是数字分身夜间复盘与进化引擎。请仅输出 JSON，不要输出 markdown 代码块。",
+			Content: "你是数字分身定时任务执行器。必须严格遵循技能说明，若技能要求 JSON 则仅输出 JSON。",
 		},
 		{
 			Role: "user",
 			Content: strings.TrimSpace(
-				"请基于以下信息执行两件事：\n" +
-					"1) 生成夜间复盘（生活/工作/学习三段，各 1-2 行）\n" +
-					"2) 生成升级后的系统提示词与压缩提示词\n" +
-					"3) 提炼 0-3 条可复用能力 Skill（用于后续自动注入，不要冗长）\n\n" +
-					"约束：必须保持名字“傻毛”、女性、8年全栈开发经验、不使用表情符号。\n" +
-					"输出 JSON 字段：reflection, system_prompt, compression_system_prompt, skills。\n" +
-					"skills 为数组；每项字段：name, prompt。name 2-20字，prompt 1 行且不超过 120 字。\n\n" +
+				"技能说明（来自 SKILL.md 正文）：\n" + strings.TrimSpace(skillPrompt) + "\n\n" +
 					"当前系统提示词：\n" + currentSystemPrompt + "\n\n" +
 					"当前压缩提示词：\n" + currentCompressionPrompt + "\n\n" +
 					"历史摘要：\n" + safeOrEmpty(summary) + "\n\n" +
-					"最近对话：\n" + renderConversation(lastN(messages, 20)),
+					"最近对话：\n" + renderConversation(lastN(messages, maxScheduledRecentMessages)) + "\n\n" +
+					"请仅按技能说明完成任务并输出。",
 			),
 		},
 	}
@@ -709,24 +709,25 @@ func (a *Agent) generateNightReflectionPayload(ctx context.Context, summary stri
 	return strings.TrimSpace(out.Reflection), strings.TrimSpace(out.SystemPrompt), strings.TrimSpace(out.CompressionSystemPrompt), skills, nil
 }
 
-func (a *Agent) generateMorningPlan(ctx context.Context, summary string, messages []conversation.Message) (string, error) {
+func (a *Agent) generateMorningPlan(ctx context.Context, skillPrompt, summary string, messages []conversation.Message) (string, error) {
+	currentSystemPrompt, currentCompressionPrompt := a.resolvePromptsLocked()
 	resp, err := a.llm.Chat(ctx, llm.ChatRequest{
 		Purpose: "morning_planning",
 		Model:   a.cfg.Model,
 		Messages: []llm.Message{
 			{
 				Role:    "system",
-				Content: "你是数字分身晨间计划器。输出简洁中文纯文本，不要代码块。",
+				Content: "你是数字分身定时任务执行器。必须严格遵循技能说明，若技能要求 JSON 则仅输出 JSON。",
 			},
 			{
 				Role: "user",
 				Content: strings.TrimSpace(
-					"请基于以下信息输出今日计划，必须包含：\n" +
-						"1) 任务进度回顾（昨天完成/未完成）\n" +
-						"2) 今日 Top 3 任务（按优先级）\n" +
-						"3) 学习与能力提升 1 条\n\n" +
+					"技能说明（来自 SKILL.md 正文）：\n" + strings.TrimSpace(skillPrompt) + "\n\n" +
+						"当前系统提示词：\n" + currentSystemPrompt + "\n\n" +
+						"当前压缩提示词：\n" + currentCompressionPrompt + "\n\n" +
 						"历史摘要：\n" + safeOrEmpty(summary) + "\n\n" +
-						"最近对话：\n" + renderConversation(lastN(messages, 20)),
+						"最近对话：\n" + renderConversation(lastN(messages, maxScheduledRecentMessages)) + "\n\n" +
+						"请仅按技能说明完成任务并输出。",
 				),
 			},
 		},
@@ -735,7 +736,164 @@ func (a *Agent) generateMorningPlan(ctx context.Context, summary string, message
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(resp.Content), nil
+	out := strings.TrimSpace(resp.Content)
+	if out == "" {
+		return "", nil
+	}
+
+	type payload struct {
+		Plan string `json:"plan"`
+	}
+	var parsed payload
+	if err := json.Unmarshal([]byte(extractJSONObject(out)), &parsed); err == nil {
+		if plan := strings.TrimSpace(parsed.Plan); plan != "" {
+			return plan, nil
+		}
+	}
+	return out, nil
+}
+
+func (a *Agent) generateGenericScheduledOutput(ctx context.Context, skillID, skillPrompt, summary string, messages []conversation.Message) (string, error) {
+	currentSystemPrompt, currentCompressionPrompt := a.resolvePromptsLocked()
+	resp, err := a.llm.Chat(ctx, llm.ChatRequest{
+		Purpose: scheduledSkillPurpose(skillID),
+		Model:   a.cfg.Model,
+		Messages: []llm.Message{
+			{
+				Role:    "system",
+				Content: "你是数字分身定时任务执行器。必须严格遵循技能说明，若技能要求 JSON 则仅输出 JSON。",
+			},
+			{
+				Role: "user",
+				Content: strings.TrimSpace(
+					"技能说明（来自 SKILL.md 正文）：\n" + strings.TrimSpace(skillPrompt) + "\n\n" +
+						"当前系统提示词：\n" + currentSystemPrompt + "\n\n" +
+						"当前压缩提示词：\n" + currentCompressionPrompt + "\n\n" +
+						"历史摘要：\n" + safeOrEmpty(summary) + "\n\n" +
+						"最近对话：\n" + renderConversation(lastN(messages, maxScheduledRecentMessages)) + "\n\n" +
+						"请仅按技能说明完成任务并输出。",
+				),
+			},
+		},
+		Temperature: 0.2,
+	})
+	if err != nil {
+		return "", err
+	}
+
+	out := strings.TrimSpace(resp.Content)
+	if out == "" {
+		return "", nil
+	}
+
+	type payload struct {
+		Content string `json:"content"`
+		Result  string `json:"result"`
+		Text    string `json:"text"`
+	}
+	var parsed payload
+	if err := json.Unmarshal([]byte(extractJSONObject(out)), &parsed); err == nil {
+		if v := strings.TrimSpace(parsed.Content); v != "" {
+			return v, nil
+		}
+		if v := strings.TrimSpace(parsed.Result); v != "" {
+			return v, nil
+		}
+		if v := strings.TrimSpace(parsed.Text); v != "" {
+			return v, nil
+		}
+	}
+	return out, nil
+}
+
+func (a *Agent) readScheduledSkill(skillID string) (name string, prompt string, ok bool) {
+	if a.skills == nil {
+		return "", "", false
+	}
+	skillID = strings.TrimSpace(skillID)
+	if skillID == "" {
+		return "", "", false
+	}
+
+	markdown, ok := a.skills.ReadEnabledSkillPrompt(skillID)
+	if !ok {
+		return "", "", false
+	}
+	name, prompt = parseSkillMarkdownForExecution(markdown)
+	prompt = strings.TrimSpace(prompt)
+	if prompt == "" {
+		return "", "", false
+	}
+	if strings.TrimSpace(name) == "" {
+		name = skillID
+	}
+	return strings.TrimSpace(name), prompt, true
+}
+
+func parseSkillMarkdownForExecution(markdown string) (name string, prompt string) {
+	text := strings.TrimSpace(strings.ReplaceAll(markdown, "\r\n", "\n"))
+	if text == "" {
+		return "", ""
+	}
+	if !strings.HasPrefix(text, "---\n") {
+		return "", text
+	}
+
+	rest := strings.TrimPrefix(text, "---\n")
+	idx := strings.Index(rest, "\n---\n")
+	if idx < 0 {
+		return "", text
+	}
+	header := rest[:idx]
+	body := strings.TrimSpace(rest[idx+5:])
+
+	for _, line := range strings.Split(header, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.ToLower(strings.TrimSpace(parts[0]))
+		value := strings.TrimSpace(parts[1])
+		if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
+			if unquoted, err := strconv.Unquote(value); err == nil {
+				value = unquoted
+			}
+		}
+		if key == "name" {
+			name = value
+		}
+	}
+	if strings.TrimSpace(body) == "" {
+		body = text
+	}
+	return strings.TrimSpace(name), strings.TrimSpace(body)
+}
+
+func scheduledSkillPurpose(skillID string) string {
+	skillID = strings.TrimSpace(skillID)
+	if skillID == "" {
+		return "scheduled_skill"
+	}
+	var b strings.Builder
+	for _, r := range skillID {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' {
+			b.WriteRune(r)
+			continue
+		}
+		if r == '-' {
+			b.WriteRune('_')
+			continue
+		}
+	}
+	suffix := strings.TrimSpace(b.String())
+	if suffix == "" {
+		return "scheduled_skill"
+	}
+	return "scheduled_skill_" + suffix
 }
 
 func isValidEvolvedPrompt(systemPrompt, compressionPrompt string) bool {

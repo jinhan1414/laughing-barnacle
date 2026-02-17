@@ -42,6 +42,28 @@ func TestBuiltinSkillsConformSkillSpec(t *testing.T) {
 	}
 }
 
+func TestBuiltinScheduledExecutionSkillsPresent(t *testing.T) {
+	foundNight := false
+	foundMorning := false
+	for _, builtin := range builtinSkills {
+		switch strings.TrimSpace(builtin.ID) {
+		case "night-reflection-evolution":
+			foundNight = true
+			if !strings.Contains(strings.ToLower(builtin.Prompt), "json") {
+				t.Fatalf("night scheduled skill should require json output")
+			}
+		case "morning-planning":
+			foundMorning = true
+			if !strings.Contains(strings.ToLower(builtin.Prompt), "json") {
+				t.Fatalf("morning scheduled skill should require json output")
+			}
+		}
+	}
+	if !foundNight || !foundMorning {
+		t.Fatalf("expected builtin scheduled execution skills, found night=%v morning=%v", foundNight, foundMorning)
+	}
+}
+
 func TestStoreUpsertAndReload(t *testing.T) {
 	root := t.TempDir()
 	store, err := NewStore(filepath.Join(root, "skills"), filepath.Join(root, "skills_state.json"))
@@ -244,6 +266,29 @@ func TestStoreHasBuiltinConfigSkills(t *testing.T) {
 	}
 	if !strings.Contains(skillsSkill.Prompt, "未确认不得执行安装或删除") {
 		t.Fatalf("builtin skills skill should require user confirmation, got: %q", skillsSkill.Prompt)
+	}
+
+	scheduleSkill, ok := findByID("schedule-config-maintainer")
+	if !ok {
+		t.Fatalf("builtin skill schedule-config-maintainer missing")
+	}
+	if !scheduleSkill.Enabled {
+		t.Fatalf("builtin schedule skill should be enabled by default")
+	}
+	if scheduleSkill.Source != "builtin" {
+		t.Fatalf("builtin schedule skill source mismatch: %q", scheduleSkill.Source)
+	}
+	if !strings.Contains(scheduleSkill.Prompt, "/api/schedules") {
+		t.Fatalf("builtin schedule skill prompt mismatch: %q", scheduleSkill.Prompt)
+	}
+	if !strings.Contains(scheduleSkill.Prompt, "/settings/schedules/save") {
+		t.Fatalf("builtin schedule skill should include save endpoint, got: %q", scheduleSkill.Prompt)
+	}
+	if !strings.Contains(scheduleSkill.Prompt, "/settings/schedules/run") {
+		t.Fatalf("builtin schedule skill should include run endpoint, got: %q", scheduleSkill.Prompt)
+	}
+	if !strings.Contains(scheduleSkill.Prompt, "未确认不得写入") {
+		t.Fatalf("builtin schedule skill should require user confirmation, got: %q", scheduleSkill.Prompt)
 	}
 
 	archiveSkill, ok := findByID("context-archive-recall")
