@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -538,6 +539,10 @@ func TestStoreAgentHabitState_Persisted(t *testing.T) {
 	if err := store.SetLastPromptEvolutionDate("2026-02-14"); err != nil {
 		t.Fatalf("SetLastPromptEvolutionDate error: %v", err)
 	}
+	greetAt := time.Date(2026, 2, 14, 8, 30, 0, 0, time.FixedZone("CST", 8*3600))
+	if err := store.SetLastChatGreetingState("2026-02-14", greetAt, "早上好，欢迎回来。"); err != nil {
+		t.Fatalf("SetLastChatGreetingState error: %v", err)
+	}
 
 	if got := store.GetLastSleepReviewDate(); got != "2026-02-14" {
 		t.Fatalf("unexpected sleep review date: %q", got)
@@ -547,6 +552,16 @@ func TestStoreAgentHabitState_Persisted(t *testing.T) {
 	}
 	if got := store.GetLastPromptEvolutionDate(); got != "2026-02-14" {
 		t.Fatalf("unexpected prompt evolution date: %q", got)
+	}
+	if got := store.GetLastChatGreetingDate(); got != "2026-02-14" {
+		t.Fatalf("unexpected chat greeting date: %q", got)
+	}
+	gotGreetAt := store.GetLastChatGreetingAt()
+	if gotGreetAt.IsZero() || !gotGreetAt.Equal(greetAt.UTC()) {
+		t.Fatalf("unexpected chat greeting time: %v", gotGreetAt)
+	}
+	if got := store.GetLastChatGreetingContent(); got != "早上好，欢迎回来。" {
+		t.Fatalf("unexpected chat greeting content: %q", got)
 	}
 
 	reloaded, err := NewStore(settingsPath)
@@ -562,6 +577,16 @@ func TestStoreAgentHabitState_Persisted(t *testing.T) {
 	if got := reloaded.GetLastPromptEvolutionDate(); got != "2026-02-14" {
 		t.Fatalf("unexpected reloaded prompt evolution date: %q", got)
 	}
+	if got := reloaded.GetLastChatGreetingDate(); got != "2026-02-14" {
+		t.Fatalf("unexpected reloaded chat greeting date: %q", got)
+	}
+	gotReloadedAt := reloaded.GetLastChatGreetingAt()
+	if gotReloadedAt.IsZero() || !gotReloadedAt.Equal(greetAt.UTC()) {
+		t.Fatalf("unexpected reloaded chat greeting time: %v", gotReloadedAt)
+	}
+	if got := reloaded.GetLastChatGreetingContent(); got != "早上好，欢迎回来。" {
+		t.Fatalf("unexpected reloaded chat greeting content: %q", got)
+	}
 }
 
 func TestStoreAgentHabitState_InvalidDateRejected(t *testing.T) {
@@ -573,6 +598,31 @@ func TestStoreAgentHabitState_InvalidDateRejected(t *testing.T) {
 
 	if err := store.SetLastSleepReviewDate("2026/02/14"); err == nil {
 		t.Fatalf("expected invalid date to be rejected")
+	}
+	if err := store.SetLastChatGreetingState("2026/02/14", time.Now(), "x"); err == nil {
+		t.Fatalf("expected invalid chat greeting date to be rejected")
+	}
+	if err := store.SetLastChatGreetingState("2026-02-14", time.Time{}, "ok"); err != nil {
+		t.Fatalf("expected empty time to be accepted, got %v", err)
+	}
+}
+
+func TestStoreLoad_InvalidGreetingTimestampRejected(t *testing.T) {
+	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	raw := `{
+  "agent": {
+    "habits": {
+      "last_chat_greeting_date": "2026-02-14",
+      "last_chat_greeting_at": "2026/02/14 08:30:00"
+    }
+  }
+}`
+	if err := os.WriteFile(settingsPath, []byte(raw), 0o600); err != nil {
+		t.Fatalf("write settings file error: %v", err)
+	}
+
+	if _, err := NewStore(settingsPath); err == nil || !strings.Contains(err.Error(), "last_chat_greeting_at") {
+		t.Fatalf("expected invalid timestamp error, got %v", err)
 	}
 }
 

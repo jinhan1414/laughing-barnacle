@@ -32,6 +32,7 @@ const (
 	defaultNightCronExpr           = "30 0 * * *"
 	defaultMorningPlanCronExpr     = "30 8 * * *"
 	maxTaskRunMessageRunes         = 240
+	maxChatGreetingContentRunes    = 240
 )
 
 type Service struct {
@@ -72,6 +73,9 @@ type AgentHabitState struct {
 	LastSleepReviewDate     string    `json:"last_sleep_review_date,omitempty"`
 	LastWakePlanDate        string    `json:"last_wake_plan_date,omitempty"`
 	LastPromptEvolutionDate string    `json:"last_prompt_evolution_date,omitempty"`
+	LastChatGreetingDate    string    `json:"last_chat_greeting_date,omitempty"`
+	LastChatGreetingAt      string    `json:"last_chat_greeting_at,omitempty"`
+	LastChatGreetingContent string    `json:"last_chat_greeting_content,omitempty"`
 	UpdatedAt               time.Time `json:"updated_at,omitempty"`
 }
 
@@ -732,6 +736,33 @@ func (s *Store) GetLastPromptEvolutionDate() string {
 	return strings.TrimSpace(s.cfg.Agent.Habits.LastPromptEvolutionDate)
 }
 
+func (s *Store) GetLastChatGreetingDate() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return strings.TrimSpace(s.cfg.Agent.Habits.LastChatGreetingDate)
+}
+
+func (s *Store) GetLastChatGreetingAt() time.Time {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	raw := strings.TrimSpace(s.cfg.Agent.Habits.LastChatGreetingAt)
+	if raw == "" {
+		return time.Time{}
+	}
+	parsed, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return time.Time{}
+	}
+	return parsed
+}
+
+func (s *Store) GetLastChatGreetingContent() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return strings.TrimSpace(s.cfg.Agent.Habits.LastChatGreetingContent)
+}
+
 func (s *Store) SetLastSleepReviewDate(date string) error {
 	date = strings.TrimSpace(date)
 	if err := validateOptionalDate(date); err != nil {
@@ -764,6 +795,35 @@ func (s *Store) SetLastPromptEvolutionDate(date string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.cfg.Agent.Habits.LastPromptEvolutionDate = date
+	s.cfg.Agent.Habits.UpdatedAt = time.Now()
+	return s.persistLocked()
+}
+
+func (s *Store) SetLastChatGreetingState(date string, at time.Time, content string) error {
+	date = strings.TrimSpace(date)
+	if err := validateOptionalDate(date); err != nil {
+		return err
+	}
+	content = trimSkillText(content, maxChatGreetingContentRunes)
+
+	atText := ""
+	if !at.IsZero() {
+		at = at.UTC()
+		atText = at.Format(time.RFC3339)
+	}
+	if err := validateOptionalTimestamp(atText); err != nil {
+		return err
+	}
+	if date == "" && !at.IsZero() {
+		date = at.In(time.Local).Format("2006-01-02")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.cfg.Agent.Habits.LastChatGreetingDate = date
+	s.cfg.Agent.Habits.LastChatGreetingAt = atText
+	s.cfg.Agent.Habits.LastChatGreetingContent = content
 	s.cfg.Agent.Habits.UpdatedAt = time.Now()
 	return s.persistLocked()
 }
@@ -961,6 +1021,12 @@ func validateAgentHabitState(state AgentHabitState) error {
 	if err := validateOptionalDate(strings.TrimSpace(state.LastPromptEvolutionDate)); err != nil {
 		return fmt.Errorf("last_prompt_evolution_date: %w", err)
 	}
+	if err := validateOptionalDate(strings.TrimSpace(state.LastChatGreetingDate)); err != nil {
+		return fmt.Errorf("last_chat_greeting_date: %w", err)
+	}
+	if err := validateOptionalTimestamp(strings.TrimSpace(state.LastChatGreetingAt)); err != nil {
+		return fmt.Errorf("last_chat_greeting_at: %w", err)
+	}
 	return nil
 }
 
@@ -970,6 +1036,16 @@ func validateOptionalDate(v string) error {
 	}
 	if _, err := time.Parse("2006-01-02", v); err != nil {
 		return fmt.Errorf("must be YYYY-MM-DD")
+	}
+	return nil
+}
+
+func validateOptionalTimestamp(v string) error {
+	if strings.TrimSpace(v) == "" {
+		return nil
+	}
+	if _, err := time.Parse(time.RFC3339, v); err != nil {
+		return fmt.Errorf("must be RFC3339")
 	}
 	return nil
 }

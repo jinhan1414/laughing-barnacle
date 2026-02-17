@@ -42,6 +42,10 @@ type ScheduleReloader interface {
 	RunNow(taskID string) error
 }
 
+type scheduleRunningChecker interface {
+	HasRunningTask() bool
+}
+
 type chatPageData struct {
 	Timeline       []chatTimelineItem
 	Error          string
@@ -162,6 +166,14 @@ type apiScheduledTask struct {
 	UpdatedAt   time.Time `json:"updated_at,omitempty"`
 }
 
+type chatGreetResponse struct {
+	Created bool   `json:"created"`
+	Content string `json:"content,omitempty"`
+	Reason  string `json:"reason,omitempty"`
+}
+
+const chatGreetingCooldown = 30 * time.Minute
+
 func NewServer(
 	agent *agent.Agent,
 	convStore *conversation.Store,
@@ -191,6 +203,7 @@ func NewServer(
 func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/", s.handleRoot)
 	mux.HandleFunc("/chat", s.handleChatPage)
+	mux.HandleFunc("/chat/greet", s.handleChatGreet)
 	mux.HandleFunc("/chat/send", s.handleChatSend)
 	mux.HandleFunc("/chat/retry", s.handleChatRetry)
 	mux.HandleFunc("/chat/reset", s.handleChatReset)
@@ -238,6 +251,61 @@ func (s *Server) handleChatPage(w http.ResponseWriter, r *http.Request) {
 		Draft:          r.URL.Query().Get("draft"),
 	}
 	_ = s.tmpl.ExecuteTemplate(w, "chat.html", data)
+}
+
+func (s *Server) handleChatGreet(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if s.agent == nil || s.convStore == nil || s.mcpStore == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		return
+	}
+	if s.hasRunningScheduledTask() {
+		writeChatGreetJSON(w, chatGreetResponse{Created: false, Reason: "task_running"})
+		return
+	}
+
+	now := time.Now()
+	today := now.Format("2006-01-02")
+	lastDate := s.mcpStore.GetLastChatGreetingDate()
+	lastAt := s.mcpStore.GetLastChatGreetingAt()
+	isFirstToday := strings.TrimSpace(lastDate) != today
+
+	if !isFirstToday {
+		if lastAt.IsZero() {
+			writeChatGreetJSON(w, chatGreetResponse{Created: false, Reason: "already_greeted_today"})
+			return
+		}
+		if now.Before(lastAt) || now.Sub(lastAt) < chatGreetingCooldown {
+			writeChatGreetJSON(w, chatGreetResponse{Created: false, Reason: "cooldown"})
+			return
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
+	defer cancel()
+
+	greeting, err := s.agent.GenerateChatGreeting(ctx, agent.ChatGreetingInput{
+		Now:                 now,
+		IsFirstToday:        isFirstToday,
+		LastGreetingAt:      lastAt,
+		LastGreetingContent: s.mcpStore.GetLastChatGreetingContent(),
+		RecentTaskStatuses:  buildRecentTaskStatusLines(s.mcpStore.ListScheduledTasks(), 3),
+	})
+	greeting = strings.TrimSpace(greeting)
+	if err != nil || greeting == "" {
+		greeting = fallbackChatGreeting(now)
+	}
+
+	s.convStore.Append("assistant", greeting)
+	_ = s.mcpStore.SetLastChatGreetingState(today, now, greeting)
+
+	writeChatGreetJSON(w, chatGreetResponse{
+		Created: true,
+		Content: greeting,
+	})
 }
 
 func buildChatTimeline(messages []conversation.Message, events []conversation.Event) []chatTimelineItem {
@@ -1019,6 +1087,89 @@ func (s *Server) redirectSettings(w http.ResponseWriter, r *http.Request, sectio
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("ok"))
+}
+
+func writeChatGreetJSON(w http.ResponseWriter, payload chatGreetResponse) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(payload)
+}
+
+func (s *Server) hasRunningScheduledTask() bool {
+	if s.scheduler == nil {
+		return false
+	}
+	checker, ok := s.scheduler.(scheduleRunningChecker)
+	if !ok {
+		return false
+	}
+	return checker.HasRunningTask()
+}
+
+func buildRecentTaskStatusLines(tasks []scheduler.Task, limit int) []string {
+	if limit <= 0 || len(tasks) == 0 {
+		return nil
+	}
+	type taskRun struct {
+		id      string
+		status  string
+		message string
+		runAt   time.Time
+	}
+	runs := make([]taskRun, 0, len(tasks))
+	for _, task := range tasks {
+		if task.LastRunAt.IsZero() {
+			continue
+		}
+		runs = append(runs, taskRun{
+			id:      strings.TrimSpace(task.ID),
+			status:  strings.TrimSpace(task.LastStatus),
+			message: strings.TrimSpace(task.LastMessage),
+			runAt:   task.LastRunAt,
+		})
+	}
+	if len(runs) == 0 {
+		return nil
+	}
+	sort.SliceStable(runs, func(i, j int) bool {
+		if runs[i].runAt.Equal(runs[j].runAt) {
+			return runs[i].id < runs[j].id
+		}
+		return runs[i].runAt.After(runs[j].runAt)
+	})
+	if len(runs) > limit {
+		runs = runs[:limit]
+	}
+
+	out := make([]string, 0, len(runs))
+	for _, run := range runs {
+		line := strings.TrimSpace(run.id)
+		if line == "" {
+			line = "(unknown_task)"
+		}
+		if run.status != "" {
+			line += " | " + run.status
+		}
+		line += " | " + run.runAt.Format("2006-01-02 15:04:05")
+		if run.message != "" {
+			line += " | " + run.message
+		}
+		out = append(out, line)
+	}
+	return out
+}
+
+func fallbackChatGreeting(now time.Time) string {
+	hour := now.Hour()
+	switch {
+	case hour < 6:
+		return "夜里好，欢迎回来。我在这，随时可以继续。"
+	case hour < 12:
+		return "早上好，欢迎回来。我在这，随时可以继续。"
+	case hour < 18:
+		return "下午好，欢迎回来。我在这，随时可以继续。"
+	default:
+		return "晚上好，欢迎回来。我在这，随时可以继续。"
+	}
 }
 
 func displayTransport(raw string) string {

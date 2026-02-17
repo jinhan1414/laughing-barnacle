@@ -155,8 +155,44 @@
       var submitSpinner = document.getElementById("chat-submit-spinner");
       var processing = document.getElementById("chat-processing");
       var submitting = false;
+      var userInteracted = false;
+
+      function appendAssistantMessage(content) {
+        var text = (content || "").trim();
+        if (!text) {
+          return;
+        }
+
+        var article = document.createElement("article");
+        article.className = "mb-2.5 flex items-end gap-2";
+
+        var avatar = document.createElement("div");
+        avatar.className = "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-slate-700 text-xs font-semibold text-white";
+        avatar.textContent = "AI";
+
+        var bubble = document.createElement("div");
+        bubble.className = "max-w-[78%] rounded-2xl rounded-bl-md border border-slate-200 bg-white px-3 py-2 text-[15px] leading-6 text-slate-900 shadow-[0_1px_1px_rgba(0,0,0,0.08)]";
+
+        var contentNode = document.createElement("div");
+        contentNode.className = "js-chat-content whitespace-pre-wrap break-words";
+        contentNode.textContent = text;
+        bubble.appendChild(contentNode);
+
+        article.appendChild(avatar);
+        article.appendChild(bubble);
+        container.appendChild(article);
+        container.scrollTop = container.scrollHeight;
+      }
 
       if (form && input && submitBtn) {
+        if ((input.value || "").trim()) {
+          userInteracted = true;
+        }
+        input.addEventListener("input", function () {
+          if ((input.value || "").trim()) {
+            userInteracted = true;
+          }
+        });
         form.addEventListener("submit", function () {
           if (submitting) {
             return;
@@ -166,6 +202,7 @@
             return;
           }
 
+          userInteracted = true;
           submitting = true;
           form.setAttribute("aria-busy", "true");
           submitBtn.disabled = true;
@@ -183,6 +220,36 @@
           }
         });
       }
+
+      window.setTimeout(function () {
+        if (!window.fetch) {
+          return;
+        }
+        if (submitting || userInteracted) {
+          return;
+        }
+        fetch("/chat/greet", {
+          method: "POST",
+          headers: {
+            "Accept": "application/json"
+          }
+        })
+          .then(function (resp) {
+            if (!resp.ok) {
+              return null;
+            }
+            return resp.json();
+          })
+          .then(function (payload) {
+            if (!payload || !payload.created || !payload.content) {
+              return;
+            }
+            appendAssistantMessage(payload.content);
+          })
+          .catch(function () {
+            // No-op: greeting is best-effort.
+          });
+      }, 900);
     })();
   </script>
 </body>

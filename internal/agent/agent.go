@@ -68,6 +68,8 @@ const (
 	maxBashTimeoutSeconds       = 180
 	maxBashStdoutRunes          = 4000
 	maxBashStderrRunes          = 2000
+	maxGreetingRecentMessages   = 8
+	maxGreetingTaskStatuses     = 5
 )
 
 var (
@@ -92,6 +94,14 @@ type HabitProvider interface {
 	SetLastSleepReviewDate(date string) error
 	SetLastWakePlanDate(date string) error
 	SetLastPromptEvolutionDate(date string) error
+}
+
+type ChatGreetingInput struct {
+	Now                 time.Time
+	IsFirstToday        bool
+	LastGreetingAt      time.Time
+	LastGreetingContent string
+	RecentTaskStatuses  []string
 }
 
 type Agent struct {
@@ -257,6 +267,79 @@ func (a *Agent) RetryLastUserMessage(ctx context.Context) (string, error) {
 	reply = strings.TrimSpace(reply)
 	a.store.Append("assistant", reply)
 	return reply, nil
+}
+
+func (a *Agent) GenerateChatGreeting(ctx context.Context, input ChatGreetingInput) (string, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	now := input.Now
+	if now.IsZero() {
+		now = a.nowFn()
+	}
+
+	summary, messages := a.store.Snapshot()
+	recentConversation := strings.TrimSpace(renderConversation(lastN(messages, maxGreetingRecentMessages)))
+	if recentConversation == "" {
+		recentConversation = "(无)"
+	}
+
+	taskLines := make([]string, 0, min(len(input.RecentTaskStatuses), maxGreetingTaskStatuses))
+	for _, raw := range input.RecentTaskStatuses {
+		line := strings.TrimSpace(raw)
+		if line == "" {
+			continue
+		}
+		taskLines = append(taskLines, trimRunes(line, 180))
+		if len(taskLines) >= maxGreetingTaskStatuses {
+			break
+		}
+	}
+	recentTaskStatuses := "(无)"
+	if len(taskLines) > 0 {
+		recentTaskStatuses = "- " + strings.Join(taskLines, "\n- ")
+	}
+
+	lastGreetingAt := "(无)"
+	if !input.LastGreetingAt.IsZero() {
+		lastGreetingAt = input.LastGreetingAt.Local().Format("2006-01-02 15:04:05")
+	}
+	turnType := "当日再次进入聊天页（系统已确认当前没有任务执行中）"
+	if input.IsFirstToday {
+		turnType = "当日首次进入聊天页"
+	}
+
+	resp, err := a.llm.Chat(ctx, llm.ChatRequest{
+		Purpose: "chat_greeting",
+		Model:   a.cfg.Model,
+		Messages: []llm.Message{
+			{
+				Role: "system",
+				Content: "你是产品内的数字分身。你现在只负责生成“用户打开聊天页时的主动问候”。" +
+					"必须输出简短中文 1-2 句，不超过 60 字，不使用 markdown，不要虚构已完成或正在执行的任务。",
+			},
+			{
+				Role: "user",
+				Content: strings.TrimSpace(
+					"请基于以下上下文生成问候：\n" +
+						"- 当前时间：" + now.Format("2006-01-02 15:04:05") + "\n" +
+						"- 进入类型：" + turnType + "\n" +
+						"- 当前是否有任务执行中：否\n" +
+						"- 上次主动问候时间：" + lastGreetingAt + "\n" +
+						"- 上次主动问候内容（避免重复）：" + safeOrEmpty(trimRunes(input.LastGreetingContent, 120)) + "\n" +
+						"- 历史摘要：" + safeOrEmpty(summary) + "\n" +
+						"- 最近任务状态：\n" + recentTaskStatuses + "\n" +
+						"- 最近对话：\n" + recentConversation + "\n\n" +
+						"请直接输出问候正文。",
+				),
+			},
+		},
+		Temperature: 0.3,
+	})
+	if err != nil {
+		return "", fmt.Errorf("generate chat greeting failed: %w", err)
+	}
+	return strings.TrimSpace(resp.Content), nil
 }
 
 func (a *Agent) autonomousCompressionLoop(ctx context.Context) error {

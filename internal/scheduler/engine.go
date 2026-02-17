@@ -161,6 +161,15 @@ func (e *Engine) RunNow(taskID string) error {
 	return err
 }
 
+func (e *Engine) HasRunningTask() bool {
+	if e == nil {
+		return false
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return len(e.running) > 0
+}
+
 func (e *Engine) executeTask(task Task, source string) (time.Time, error) {
 	task.ID = strings.TrimSpace(task.ID)
 	task.Action = strings.TrimSpace(task.Action)

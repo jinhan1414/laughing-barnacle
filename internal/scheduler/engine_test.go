@@ -293,3 +293,45 @@ func TestEngineReload_SkipsInvalidExpr(t *testing.T) {
 		t.Fatalf("expected no scheduled entry for invalid expr, got %d", len(engine.entries))
 	}
 }
+
+func TestEngineHasRunningTask(t *testing.T) {
+	store := &fakeStore{tasks: []Task{{
+		ID:       "morning-plan",
+		Action:   "morning_planning",
+		CronExpr: "* * * * *",
+		Enabled:  true,
+	}}}
+	runner := &fakeRunner{delay: 120 * time.Millisecond}
+	engine := NewEngine(store, runner, nil)
+
+	if engine.HasRunningTask() {
+		t.Fatalf("expected no running task initially")
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- engine.RunNow("morning-plan")
+	}()
+
+	deadline := time.After(2 * time.Second)
+	for !engine.HasRunningTask() {
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Fatalf("RunNow error before observing running state: %v", err)
+			}
+			t.Fatalf("run completed before observing running state")
+		case <-deadline:
+			t.Fatalf("timeout waiting for running task state")
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+
+	if err := <-done; err != nil {
+		t.Fatalf("RunNow error: %v", err)
+	}
+	if engine.HasRunningTask() {
+		t.Fatalf("expected no running task after completion")
+	}
+}
