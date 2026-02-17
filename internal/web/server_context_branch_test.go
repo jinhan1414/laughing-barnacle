@@ -11,99 +11,6 @@ import (
 	"laughing-barnacle/internal/conversation"
 )
 
-func TestHandleAPIContextBranches_ReturnsCurrentAndBranches(t *testing.T) {
-	convPath := filepath.Join(t.TempDir(), "conversation.db")
-	convStore, err := conversation.NewStoreWithFile(convPath)
-	if err != nil {
-		t.Fatalf("NewStoreWithFile error: %v", err)
-	}
-	if err := convStore.SwitchBranch("task/api"); err != nil {
-		t.Fatalf("SwitchBranch error: %v", err)
-	}
-	if err := convStore.SwitchBranch("main"); err != nil {
-		t.Fatalf("SwitchBranch main error: %v", err)
-	}
-
-	s := &Server{convStore: convStore}
-	req := httptest.NewRequest(http.MethodGet, "/api/context/branches", nil)
-	rec := httptest.NewRecorder()
-	s.handleAPIContextBranches(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected status 200, got %d", rec.Code)
-	}
-	var payload struct {
-		CurrentBranch string   `json:"current_branch"`
-		Branches      []string `json:"branches"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
-		t.Fatalf("decode response error: %v", err)
-	}
-	if payload.CurrentBranch != "main" {
-		t.Fatalf("expected current_branch=main, got %q", payload.CurrentBranch)
-	}
-	if !containsWebString(payload.Branches, "task/api") {
-		t.Fatalf("expected task/api in branches, got %v", payload.Branches)
-	}
-}
-
-func TestHandleAPIContextBranchSwitch_AndMerge(t *testing.T) {
-	convPath := filepath.Join(t.TempDir(), "conversation.db")
-	convStore, err := conversation.NewStoreWithFile(convPath)
-	if err != nil {
-		t.Fatalf("NewStoreWithFile error: %v", err)
-	}
-	convStore.Append("user", "main-base")
-	if err := convStore.SwitchBranch("task/merge-api"); err != nil {
-		t.Fatalf("SwitchBranch error: %v", err)
-	}
-	convStore.Append("assistant", "task-output")
-	if err := convStore.SwitchBranch("main"); err != nil {
-		t.Fatalf("SwitchBranch main error: %v", err)
-	}
-
-	s := &Server{convStore: convStore}
-
-	switchReq := httptest.NewRequest(http.MethodPost, "/api/context/branch/switch", strings.NewReader("branch=task%2Fmerge-api"))
-	switchReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	switchRec := httptest.NewRecorder()
-	s.handleAPIContextBranchSwitch(switchRec, switchReq)
-	if switchRec.Code != http.StatusOK {
-		t.Fatalf("expected switch status 200, got %d", switchRec.Code)
-	}
-	if current := convStore.CurrentBranch(); current != "task/merge-api" {
-		t.Fatalf("expected switched branch task/merge-api, got %q", current)
-	}
-
-	backReq := httptest.NewRequest(http.MethodPost, "/api/context/branch/switch", strings.NewReader("branch=main"))
-	backReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	backRec := httptest.NewRecorder()
-	s.handleAPIContextBranchSwitch(backRec, backReq)
-	if backRec.Code != http.StatusOK {
-		t.Fatalf("expected switch-main status 200, got %d", backRec.Code)
-	}
-
-	mergeReq := httptest.NewRequest(http.MethodPost, "/api/context/branch/merge", strings.NewReader("source_branch=task%2Fmerge-api"))
-	mergeReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	mergeRec := httptest.NewRecorder()
-	s.handleAPIContextBranchMerge(mergeRec, mergeReq)
-	if mergeRec.Code != http.StatusOK {
-		t.Fatalf("expected merge status 200, got %d body=%s", mergeRec.Code, mergeRec.Body.String())
-	}
-
-	_, messages, _ := convStore.SnapshotWithEvents()
-	found := false
-	for _, msg := range messages {
-		if strings.TrimSpace(msg.Content) == "task-output" {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatalf("expected merged task-output message in main branch")
-	}
-}
-
 func TestHandleAPIContextArchiveIndexAndSection(t *testing.T) {
 	convPath := filepath.Join(t.TempDir(), "conversation.db")
 	convStore, err := conversation.NewStoreWithFile(convPath)
@@ -176,14 +83,4 @@ func extractArchiveIDFromSummary(summary string) string {
 		return strings.TrimSpace(rest)
 	}
 	return strings.TrimSpace(rest[:end])
-}
-
-func containsWebString(values []string, target string) bool {
-	target = strings.TrimSpace(target)
-	for _, value := range values {
-		if strings.TrimSpace(value) == target {
-			return true
-		}
-	}
-	return false
 }

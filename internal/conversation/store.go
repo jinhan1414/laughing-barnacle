@@ -6,8 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -52,14 +50,13 @@ type ArchiveSectionMeta struct {
 }
 
 type ArchiveIndex struct {
-	ArchiveID    string               `json:"archive_id"`
-	DBRef        string               `json:"db_ref"`
-	Title        string               `json:"title"`
-	Digest       string               `json:"digest"`
-	KeySummary   []string             `json:"key_summary,omitempty"`
-	Sections     []ArchiveSectionMeta `json:"sections"`
-	SourceBranch string               `json:"source_branch,omitempty"`
-	CreatedAt    time.Time            `json:"created_at"`
+	ArchiveID  string               `json:"archive_id"`
+	DBRef      string               `json:"db_ref"`
+	Title      string               `json:"title"`
+	Digest     string               `json:"digest"`
+	KeySummary []string             `json:"key_summary,omitempty"`
+	Sections   []ArchiveSectionMeta `json:"sections"`
+	CreatedAt  time.Time            `json:"created_at"`
 }
 
 type ArchiveSection struct {
@@ -79,19 +76,16 @@ const (
 	maxArchiveEvents     = 200
 	archiveIndexBeginTag = "[archive_index_begin]"
 	archiveIndexEndTag   = "[archive_index_end]"
-	defaultBranchName    = "main"
 
 	bucketMeta     = "meta"
-	bucketBranches = "branches"
 	bucketArchives = "archives"
 
-	metaActiveBranch = "active_branch"
+	metaConversationState = "conversation_state"
 )
 
 type archiveRecord struct {
 	ID                string               `json:"id"`
 	CreatedAt         time.Time            `json:"created_at"`
-	SourceBranch      string               `json:"source_branch"`
 	TrimmedMessageCnt int                  `json:"trimmed_message_count"`
 	KeySummary        []string             `json:"key_summary"`
 	Sections          []archiveSectionItem `json:"sections"`
@@ -114,13 +108,12 @@ type archiveRef struct {
 
 // Store holds one global conversation (no session concept).
 type Store struct {
-	mu           sync.RWMutex
-	path         string
-	db           *bolt.DB
-	activeBranch string
-	summary      string
-	messages     []Message
-	events       []Event
+	mu       sync.RWMutex
+	path     string
+	db       *bolt.DB
+	summary  string
+	messages []Message
+	events   []Event
 }
 
 func NewStore() *Store {
@@ -133,22 +126,16 @@ func NewStoreWithFile(path string) (*Store, error) {
 		return nil, fmt.Errorf("conversation store path is required")
 	}
 
-	legacyPayload, err := detectAndBackupLegacyJSON(path)
-	if err != nil {
-		return nil, err
-	}
-
 	db, err := bolt.Open(path, 0o600, &bolt.Options{Timeout: 2 * time.Second})
 	if err != nil {
 		return nil, fmt.Errorf("open conversation db: %w", err)
 	}
 
 	s := &Store{
-		path:         path,
-		db:           db,
-		activeBranch: defaultBranchName,
+		path: path,
+		db:   db,
 	}
-	if err := s.bootstrap(legacyPayload); err != nil {
+	if err := s.bootstrap(); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
@@ -244,12 +231,6 @@ func (s *Store) Reset() error {
 	return s.persistLocked()
 }
 
-func (s *Store) CurrentBranch() string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return strings.TrimSpace(s.activeBranch)
-}
-
 func (s *Store) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -259,143 +240,6 @@ func (s *Store) Close() error {
 	err := s.db.Close()
 	s.db = nil
 	return err
-}
-
-func (s *Store) ListBranches() []string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	if s.db == nil {
-		if strings.TrimSpace(s.activeBranch) == "" {
-			return nil
-		}
-		return []string{s.activeBranch}
-	}
-
-	out := make([]string, 0, 8)
-	_ = s.db.View(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(bucketBranches))
-		if b == nil {
-			return nil
-		}
-		return b.ForEach(func(k, _ []byte) error {
-			name := strings.TrimSpace(string(k))
-			if name != "" {
-				out = append(out, name)
-			}
-			return nil
-		})
-	})
-	sort.Strings(out)
-	return out
-}
-
-func (s *Store) SwitchBranch(branch string) error {
-	branch = strings.TrimSpace(branch)
-	if branch == "" {
-		return fmt.Errorf("branch name is required")
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if strings.EqualFold(branch, s.activeBranch) {
-		return nil
-	}
-	if s.db == nil {
-		return fmt.Errorf("switch branch requires persistent db-backed store")
-	}
-
-	if err := s.persistLocked(); err != nil {
-		return err
-	}
-
-	var loaded payload
-	err := s.db.Update(func(tx *bolt.Tx) error {
-		branches := tx.Bucket([]byte(bucketBranches))
-		if branches == nil {
-			return fmt.Errorf("branches bucket missing")
-		}
-
-		raw := branches.Get([]byte(branch))
-		if raw == nil {
-			seed := payload{
-				Summary:  s.summary,
-				Messages: cloneMessages(s.messages),
-				Events:   cloneEvents(s.events),
-			}
-			encoded, err := json.Marshal(seed)
-			if err != nil {
-				return err
-			}
-			if err := branches.Put([]byte(branch), encoded); err != nil {
-				return err
-			}
-			loaded = seed
-		} else {
-			if err := json.Unmarshal(raw, &loaded); err != nil {
-				return err
-			}
-			loaded.Messages = cloneMessages(loaded.Messages)
-			loaded.Events = normalizeEvents(loaded.Events)
-		}
-
-		meta := tx.Bucket([]byte(bucketMeta))
-		if meta == nil {
-			return fmt.Errorf("meta bucket missing")
-		}
-		return meta.Put([]byte(metaActiveBranch), []byte(branch))
-	})
-	if err != nil {
-		return fmt.Errorf("switch branch: %w", err)
-	}
-
-	s.activeBranch = branch
-	s.summary = strings.TrimSpace(loaded.Summary)
-	s.messages = cloneMessages(loaded.Messages)
-	s.events = normalizeEvents(loaded.Events)
-	return nil
-}
-
-func (s *Store) MergeBranch(sourceBranch string) error {
-	sourceBranch = strings.TrimSpace(sourceBranch)
-	if sourceBranch == "" {
-		return fmt.Errorf("source branch is required")
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.db == nil {
-		return fmt.Errorf("merge branch requires persistent db-backed store")
-	}
-	if sourceBranch == s.activeBranch {
-		return fmt.Errorf("cannot merge current branch %q into itself", sourceBranch)
-	}
-	if err := s.persistLocked(); err != nil {
-		return err
-	}
-
-	var source payload
-	err := s.db.View(func(tx *bolt.Tx) error {
-		branches := tx.Bucket([]byte(bucketBranches))
-		if branches == nil {
-			return fmt.Errorf("branches bucket missing")
-		}
-		raw := branches.Get([]byte(sourceBranch))
-		if raw == nil {
-			return fmt.Errorf("source branch %q does not exist", sourceBranch)
-		}
-		return json.Unmarshal(raw, &source)
-	})
-	if err != nil {
-		return err
-	}
-
-	s.summary = mergeSummary(s.summary, source.Summary)
-	s.messages = mergeMessages(s.messages, source.Messages)
-	s.events = mergeEvents(s.events, source.Events)
-	return s.persistLocked()
 }
 
 func (s *Store) ReadArchiveIndex(archiveID string) (ArchiveIndex, error) {
@@ -426,14 +270,13 @@ func (s *Store) ReadArchiveIndex(archiveID string) (ArchiveIndex, error) {
 		digest = record.Sections[0].Digest
 	}
 	return ArchiveIndex{
-		ArchiveID:    record.ID,
-		DBRef:        record.ID,
-		Title:        title,
-		Digest:       digest,
-		KeySummary:   append([]string(nil), record.KeySummary...),
-		Sections:     sections,
-		SourceBranch: record.SourceBranch,
-		CreatedAt:    record.CreatedAt,
+		ArchiveID:  record.ID,
+		DBRef:      record.ID,
+		Title:      title,
+		Digest:     digest,
+		KeySummary: append([]string(nil), record.KeySummary...),
+		Sections:   sections,
+		CreatedAt:  record.CreatedAt,
 	}, nil
 }
 
@@ -464,16 +307,13 @@ func (s *Store) ReadArchiveSection(archiveID, sectionID string) (ArchiveSection,
 	return ArchiveSection{}, ErrArchiveSectionNotFound
 }
 
-func (s *Store) bootstrap(legacy *payload) error {
+func (s *Store) bootstrap() error {
 	if s.db == nil {
 		return nil
 	}
 
 	if err := s.db.Update(func(tx *bolt.Tx) error {
 		if _, err := tx.CreateBucketIfNotExists([]byte(bucketMeta)); err != nil {
-			return err
-		}
-		if _, err := tx.CreateBucketIfNotExists([]byte(bucketBranches)); err != nil {
 			return err
 		}
 		if _, err := tx.CreateBucketIfNotExists([]byte(bucketArchives)); err != nil {
@@ -486,35 +326,18 @@ func (s *Store) bootstrap(legacy *payload) error {
 
 	return s.db.Update(func(tx *bolt.Tx) error {
 		meta := tx.Bucket([]byte(bucketMeta))
-		branches := tx.Bucket([]byte(bucketBranches))
-		if meta == nil || branches == nil {
+		if meta == nil {
 			return fmt.Errorf("conversation db schema missing")
 		}
 
-		active := strings.TrimSpace(string(meta.Get([]byte(metaActiveBranch))))
-		if active == "" {
-			active = defaultBranchName
-		}
-		s.activeBranch = active
-
-		state := branches.Get([]byte(active))
+		state := meta.Get([]byte(metaConversationState))
 		if state == nil {
 			seed := payload{}
-			if legacy != nil {
-				seed = payload{
-					Summary:  strings.TrimSpace(legacy.Summary),
-					Messages: cloneMessages(legacy.Messages),
-					Events:   normalizeEvents(legacy.Events),
-				}
-			}
 			encoded, err := json.Marshal(seed)
 			if err != nil {
 				return err
 			}
-			if err := branches.Put([]byte(active), encoded); err != nil {
-				return err
-			}
-			if err := meta.Put([]byte(metaActiveBranch), []byte(active)); err != nil {
+			if err := meta.Put([]byte(metaConversationState), encoded); err != nil {
 				return err
 			}
 			s.summary = seed.Summary
@@ -538,11 +361,6 @@ func (s *Store) persistLocked() error {
 	if s.db == nil {
 		return nil
 	}
-	branch := strings.TrimSpace(s.activeBranch)
-	if branch == "" {
-		branch = defaultBranchName
-		s.activeBranch = branch
-	}
 	state := payload{
 		Summary:  s.summary,
 		Messages: cloneMessages(s.messages),
@@ -550,19 +368,15 @@ func (s *Store) persistLocked() error {
 	}
 	encoded, err := json.Marshal(state)
 	if err != nil {
-		return fmt.Errorf("encode branch state: %w", err)
+		return fmt.Errorf("encode conversation state: %w", err)
 	}
 
 	return s.db.Update(func(tx *bolt.Tx) error {
-		branches := tx.Bucket([]byte(bucketBranches))
 		meta := tx.Bucket([]byte(bucketMeta))
-		if branches == nil || meta == nil {
+		if meta == nil {
 			return fmt.Errorf("conversation db schema missing")
 		}
-		if err := branches.Put([]byte(branch), encoded); err != nil {
-			return err
-		}
-		return meta.Put([]byte(metaActiveBranch), []byte(branch))
+		return meta.Put([]byte(metaConversationState), encoded)
 	})
 }
 
@@ -605,7 +419,6 @@ func (s *Store) createArchiveLocked(trimmed []Message) (archiveRef, error) {
 	record := archiveRecord{
 		ID:                id,
 		CreatedAt:         time.Now().UTC(),
-		SourceBranch:      strings.TrimSpace(s.activeBranch),
 		TrimmedMessageCnt: len(trimmed),
 		KeySummary:        keySummary,
 		Sections:          sections,
@@ -815,125 +628,6 @@ func renderArchiveIndexBlock(refs []archiveRef) string {
 	}
 	b.WriteString(archiveIndexEndTag)
 	return strings.TrimSpace(b.String())
-}
-
-func mergeSummary(current, source string) string {
-	current = strings.TrimSpace(current)
-	source = strings.TrimSpace(source)
-	if current == "" {
-		return source
-	}
-	if source == "" {
-		return current
-	}
-	if current == source || strings.Contains(current, source) {
-		return current
-	}
-	if strings.Contains(source, current) {
-		return source
-	}
-	return strings.TrimSpace(current + "\n\n" + source)
-}
-
-func mergeMessages(current, source []Message) []Message {
-	all := make([]Message, 0, len(current)+len(source))
-	seen := make(map[string]struct{}, len(current)+len(source))
-	appendUnique := func(msg Message) {
-		key := messageMergeKey(msg)
-		if _, ok := seen[key]; ok {
-			return
-		}
-		seen[key] = struct{}{}
-		all = append(all, msg)
-	}
-	for _, msg := range current {
-		appendUnique(msg)
-	}
-	for _, msg := range source {
-		appendUnique(msg)
-	}
-	sort.SliceStable(all, func(i, j int) bool {
-		if all[i].CreatedAt.Equal(all[j].CreatedAt) {
-			return i < j
-		}
-		return all[i].CreatedAt.Before(all[j].CreatedAt)
-	})
-	return all
-}
-
-func messageMergeKey(msg Message) string {
-	var b strings.Builder
-	b.WriteString(strings.TrimSpace(msg.Role))
-	b.WriteString("|")
-	b.WriteString(strings.TrimSpace(msg.Content))
-	b.WriteString("|")
-	b.WriteString(msg.CreatedAt.UTC().Format(time.RFC3339Nano))
-	for _, call := range msg.ToolCalls {
-		b.WriteString("|tc:")
-		b.WriteString(strings.TrimSpace(call.Name))
-		b.WriteString(":")
-		b.WriteString(strings.TrimSpace(call.Arguments))
-		b.WriteString(":")
-		b.WriteString(strings.TrimSpace(call.Result))
-	}
-	return b.String()
-}
-
-func mergeEvents(current, source []Event) []Event {
-	all := make([]Event, 0, len(current)+len(source))
-	seen := make(map[string]struct{}, len(current)+len(source))
-	appendUnique := func(evt Event) {
-		key := strings.TrimSpace(evt.Type) + "|" + strings.TrimSpace(evt.Content) + "|" + evt.CreatedAt.UTC().Format(time.RFC3339Nano)
-		if _, ok := seen[key]; ok {
-			return
-		}
-		seen[key] = struct{}{}
-		all = append(all, evt)
-	}
-	for _, evt := range current {
-		appendUnique(evt)
-	}
-	for _, evt := range source {
-		appendUnique(evt)
-	}
-	sort.SliceStable(all, func(i, j int) bool {
-		if all[i].CreatedAt.Equal(all[j].CreatedAt) {
-			return i < j
-		}
-		return all[i].CreatedAt.Before(all[j].CreatedAt)
-	})
-	return normalizeEvents(all)
-}
-
-func detectAndBackupLegacyJSON(path string) (*payload, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("read conversation store path: %w", err)
-	}
-	pl, err := decodePayload(data)
-	if err != nil {
-		return nil, nil
-	}
-	backup := path + ".legacy-" + time.Now().UTC().Format("20060102-150405") + ".json"
-	if err := os.Rename(path, backup); err != nil {
-		return nil, fmt.Errorf("backup legacy conversation json: %w", err)
-	}
-	return &pl, nil
-}
-
-func decodePayload(data []byte) (payload, error) {
-	trimmed := strings.TrimSpace(string(data))
-	if trimmed == "" {
-		return payload{}, nil
-	}
-	var pl payload
-	if err := json.Unmarshal([]byte(trimmed), &pl); err != nil {
-		return payload{}, err
-	}
-	return pl, nil
 }
 
 func cloneMessages(in []Message) []Message {

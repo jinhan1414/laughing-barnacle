@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -224,188 +223,6 @@ func TestHandleUserMessage_WithAutoCompression(t *testing.T) {
 	}
 }
 
-func TestHandleUserMessage_AutoSwitchesToTaskBranchForLongTaskStart(t *testing.T) {
-	requireGitForAgent(t)
-	convPath := filepath.Join(t.TempDir(), "conversation.json")
-	store, err := conversation.NewStoreWithFile(convPath)
-	if err != nil {
-		t.Fatalf("NewStoreWithFile error: %v", err)
-	}
-
-	fakeLLM := &mockLLM{responses: map[string][]string{
-		"context_branch_decision": {
-			`{"action":"start_task_branch","confidence":0.93,"branch_name":"task/payment-refactor"}`,
-			`{"action":"stay","confidence":0.90}`,
-		},
-		"chat_reply": {"执行计划已整理"},
-	}}
-
-	agentSvc := New(Config{
-		Model:                      "test-model",
-		MaxRecentMessages:          10,
-		CompressionTriggerMessages: 99,
-		CompressionTriggerChars:    99999,
-		KeepRecentAfterCompression: 1,
-		MaxCompressionLoopsPerTurn: 1,
-		MaxToolCallRounds:          2,
-		SystemPrompt:               "system",
-		CompressionSystemPrompt:    "compressor",
-	}, store, fakeLLM, nil)
-	agentSvc.nowFn = func() time.Time {
-		return time.Date(2026, 2, 15, 16, 0, 0, 0, time.Local)
-	}
-
-	reply, err := agentSvc.HandleUserMessage(context.Background(), "开始长任务：支付链路重构，本周推进")
-	if err != nil {
-		t.Fatalf("HandleUserMessage error: %v", err)
-	}
-	if !strings.Contains(reply, "已自动切换到 `task/payment-refactor`") {
-		t.Fatalf("expected auto-switch notice in reply, got %q", reply)
-	}
-	if current := store.CurrentBranch(); current != "task/payment-refactor" {
-		t.Fatalf("expected current branch switched to task branch, got %q", current)
-	}
-	if len(fakeLLM.calls) == 0 || fakeLLM.calls[0].Purpose != "context_branch_decision" {
-		t.Fatalf("expected first call purpose=context_branch_decision, got %+v", fakeLLM.calls)
-	}
-}
-
-func TestHandleUserMessage_AutoSwitchesWithoutExplicitLongTaskPhrase(t *testing.T) {
-	requireGitForAgent(t)
-	convPath := filepath.Join(t.TempDir(), "conversation.json")
-	store, err := conversation.NewStoreWithFile(convPath)
-	if err != nil {
-		t.Fatalf("NewStoreWithFile error: %v", err)
-	}
-
-	fakeLLM := &mockLLM{responses: map[string][]string{
-		"context_branch_decision": {
-			`{"action":"start_task_branch","confidence":0.88,"branch_name":"task/login-timeout-fix"}`,
-			`{"action":"stay","confidence":0.81}`,
-		},
-		"chat_reply": {"已给出修复方案"},
-	}}
-	agentSvc := New(Config{
-		Model:                      "test-model",
-		MaxRecentMessages:          10,
-		CompressionTriggerMessages: 99,
-		CompressionTriggerChars:    99999,
-		KeepRecentAfterCompression: 1,
-		MaxCompressionLoopsPerTurn: 1,
-		MaxToolCallRounds:          2,
-		SystemPrompt:               "system",
-		CompressionSystemPrompt:    "compressor",
-	}, store, fakeLLM, nil)
-	agentSvc.nowFn = func() time.Time {
-		return time.Date(2026, 2, 15, 16, 5, 0, 0, time.Local)
-	}
-
-	reply, err := agentSvc.HandleUserMessage(context.Background(), "帮我修复登录接口超时问题，并补一组回归测试")
-	if err != nil {
-		t.Fatalf("HandleUserMessage error: %v", err)
-	}
-	if !strings.Contains(reply, "已自动切换到 `task/login-timeout-fix`") {
-		t.Fatalf("expected auto-switch notice in reply, got %q", reply)
-	}
-	if current := store.CurrentBranch(); current != "task/login-timeout-fix" {
-		t.Fatalf("expected current branch switched to task branch, got %q", current)
-	}
-}
-
-func TestHandleUserMessage_AutoMergesTaskBranchOnCompletion(t *testing.T) {
-	requireGitForAgent(t)
-	convPath := filepath.Join(t.TempDir(), "conversation.json")
-	store, err := conversation.NewStoreWithFile(convPath)
-	if err != nil {
-		t.Fatalf("NewStoreWithFile error: %v", err)
-	}
-	if err := store.SwitchBranch("task/pay-refactor"); err != nil {
-		t.Fatalf("SwitchBranch error: %v", err)
-	}
-
-	fakeLLM := &mockLLM{responses: map[string][]string{
-		"context_branch_decision": {
-			`{"action":"finish_task_branch","confidence":0.96}`,
-		},
-		"chat_reply": {"已完成收尾与验收"},
-	}}
-	agentSvc := New(Config{
-		Model:                      "test-model",
-		MaxRecentMessages:          10,
-		CompressionTriggerMessages: 99,
-		CompressionTriggerChars:    99999,
-		KeepRecentAfterCompression: 1,
-		MaxCompressionLoopsPerTurn: 1,
-		MaxToolCallRounds:          2,
-		SystemPrompt:               "system",
-		CompressionSystemPrompt:    "compressor",
-	}, store, fakeLLM, nil)
-
-	reply, err := agentSvc.HandleUserMessage(context.Background(), "任务完成，合并回主线")
-	if err != nil {
-		t.Fatalf("HandleUserMessage error: %v", err)
-	}
-	if reply != "已完成收尾与验收" {
-		t.Fatalf("unexpected reply: %q", reply)
-	}
-	if current := store.CurrentBranch(); current != "main" {
-		t.Fatalf("expected branch switched back to main after auto merge, got %q", current)
-	}
-	_, messages, _ := store.SnapshotWithEvents()
-	foundMergeNotice := false
-	for _, msg := range messages {
-		if msg.Role == "assistant" && strings.Contains(msg.Content, "已自动将 `task/pay-refactor` 合并到 `main`") {
-			foundMergeNotice = true
-			break
-		}
-	}
-	if !foundMergeNotice {
-		t.Fatalf("expected assistant merge notice in main branch messages")
-	}
-}
-
-func TestHandleUserMessage_AutoMergesFromAssistantCompletionSignal(t *testing.T) {
-	requireGitForAgent(t)
-	convPath := filepath.Join(t.TempDir(), "conversation.json")
-	store, err := conversation.NewStoreWithFile(convPath)
-	if err != nil {
-		t.Fatalf("NewStoreWithFile error: %v", err)
-	}
-	if err := store.SwitchBranch("task/auto-close"); err != nil {
-		t.Fatalf("SwitchBranch error: %v", err)
-	}
-
-	fakeLLM := &mockLLM{responses: map[string][]string{
-		"context_branch_decision": {
-			`{"action":"stay","confidence":0.84}`,
-			`{"action":"finish_task_branch","confidence":0.91}`,
-		},
-		"chat_reply": {"已完成修复并通过验证。"},
-	}}
-	agentSvc := New(Config{
-		Model:                      "test-model",
-		MaxRecentMessages:          10,
-		CompressionTriggerMessages: 99,
-		CompressionTriggerChars:    99999,
-		KeepRecentAfterCompression: 1,
-		MaxCompressionLoopsPerTurn: 1,
-		MaxToolCallRounds:          2,
-		SystemPrompt:               "system",
-		CompressionSystemPrompt:    "compressor",
-	}, store, fakeLLM, nil)
-
-	reply, err := agentSvc.HandleUserMessage(context.Background(), "继续把收尾结果同步一下")
-	if err != nil {
-		t.Fatalf("HandleUserMessage error: %v", err)
-	}
-	if reply != "已完成修复并通过验证。" {
-		t.Fatalf("unexpected reply: %q", reply)
-	}
-	if current := store.CurrentBranch(); current != "main" {
-		t.Fatalf("expected branch switched back to main after assistant completion signal, got %q", current)
-	}
-}
-
 func TestHandleUserMessage_WithoutCompression(t *testing.T) {
 	store := conversation.NewStore()
 	fakeLLM := &mockLLM{responses: map[string][]string{
@@ -434,10 +251,6 @@ func TestHandleUserMessage_WithoutCompression(t *testing.T) {
 	if len(fakeLLM.calls) != 1 || fakeLLM.calls[0].Purpose != "chat_reply" {
 		t.Fatalf("unexpected calls: %+v", fakeLLM.calls)
 	}
-}
-
-func requireGitForAgent(t *testing.T) {
-	t.Helper()
 }
 
 func TestHandleUserMessage_WithToolCalls(t *testing.T) {

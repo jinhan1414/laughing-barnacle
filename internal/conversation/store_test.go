@@ -100,61 +100,6 @@ func TestStoreReset_ClearsAndPersistsAllState(t *testing.T) {
 	}
 }
 
-func TestStoreSwitchBranch_IsolatesBranchChanges(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "conversation.db")
-	store, err := NewStoreWithFile(path)
-	if err != nil {
-		t.Fatalf("NewStoreWithFile error: %v", err)
-	}
-
-	store.Append("user", "main-only")
-	if err := store.SwitchBranch("task/long-job"); err != nil {
-		t.Fatalf("SwitchBranch error: %v", err)
-	}
-	store.Append("assistant", "branch-only")
-	if err := store.SwitchBranch("main"); err != nil {
-		t.Fatalf("SwitchBranch main error: %v", err)
-	}
-
-	_, mainMsgs, _ := store.SnapshotWithEvents()
-	if !containsMessage(mainMsgs, "main-only") {
-		t.Fatalf("expected main message after switching back")
-	}
-	if containsMessage(mainMsgs, "branch-only") {
-		t.Fatalf("unexpected branch-only message on main")
-	}
-}
-
-func TestStoreListBranchesAndMerge(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "conversation.db")
-	store, err := NewStoreWithFile(path)
-	if err != nil {
-		t.Fatalf("NewStoreWithFile error: %v", err)
-	}
-
-	store.Append("user", "main-seed")
-	if err := store.SwitchBranch("task/merge"); err != nil {
-		t.Fatalf("SwitchBranch task/merge error: %v", err)
-	}
-	store.Append("assistant", "task-result")
-	if err := store.SwitchBranch("main"); err != nil {
-		t.Fatalf("SwitchBranch main error: %v", err)
-	}
-
-	branches := store.ListBranches()
-	if !containsString(branches, "main") || !containsString(branches, "task/merge") {
-		t.Fatalf("unexpected branch list: %v", branches)
-	}
-
-	if err := store.MergeBranch("task/merge"); err != nil {
-		t.Fatalf("MergeBranch error: %v", err)
-	}
-	_, msgs, _ := store.SnapshotWithEvents()
-	if !containsMessage(msgs, "task-result") {
-		t.Fatalf("expected merged message from task branch")
-	}
-}
-
 func TestSetSummaryAndTrim_CreatesArchiveAndSectionLookup(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "conversation.db")
 	store, err := NewStoreWithFile(path)
@@ -201,16 +146,6 @@ func containsMessage(messages []Message, target string) bool {
 	target = strings.TrimSpace(target)
 	for _, msg := range messages {
 		if strings.TrimSpace(msg.Content) == target {
-			return true
-		}
-	}
-	return false
-}
-
-func containsString(values []string, target string) bool {
-	target = strings.TrimSpace(target)
-	for _, value := range values {
-		if strings.TrimSpace(value) == target {
 			return true
 		}
 	}
