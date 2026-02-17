@@ -664,6 +664,35 @@ func TestStoreDefaultScheduledTasks_PersistedAndValid(t *testing.T) {
 	}
 }
 
+func TestStoreLoad_LegacySettingsWithoutSchedules_AutoFillDefaults(t *testing.T) {
+	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	raw := `{
+  "mcp": {
+    "services": []
+  },
+  "skills": {
+    "items": []
+  },
+  "agent": {
+    "prompts": {},
+    "habits": {}
+  }
+}`
+	if err := os.WriteFile(settingsPath, []byte(raw), 0o600); err != nil {
+		t.Fatalf("write settings file error: %v", err)
+	}
+
+	store, err := NewStore(settingsPath)
+	if err != nil {
+		t.Fatalf("NewStore legacy settings error: %v", err)
+	}
+
+	tasks := store.ListScheduledTasks()
+	if len(tasks) < 2 {
+		t.Fatalf("expected default scheduled tasks loaded for legacy settings, got %d", len(tasks))
+	}
+}
+
 func TestStoreUpsertScheduledTaskAndMarkRun(t *testing.T) {
 	settingsPath := filepath.Join(t.TempDir(), "settings.json")
 	store, err := NewStore(settingsPath)

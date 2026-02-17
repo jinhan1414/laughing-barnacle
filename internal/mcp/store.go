@@ -1334,6 +1334,7 @@ func normalizeAndMergeScheduledTasks(tasks []scheduler.Task) ([]scheduler.Task, 
 		task, ok := byID[def.ID]
 		if !ok {
 			merged = append(merged, def)
+			byID[def.ID] = def
 			changed = true
 			continue
 		}
@@ -1359,7 +1360,9 @@ func normalizeAndMergeScheduledTasks(tasks []scheduler.Task) ([]scheduler.Task, 
 	final := make([]scheduler.Task, 0, len(byID))
 	seen := map[string]struct{}{}
 	for _, task := range merged {
-		task = byID[task.ID]
+		if resolved, ok := byID[task.ID]; ok {
+			task = resolved
+		}
 		if _, ok := seen[task.ID]; ok {
 			continue
 		}
