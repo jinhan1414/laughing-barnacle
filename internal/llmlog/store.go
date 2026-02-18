@@ -22,6 +22,7 @@ type Entry struct {
 	Error      string
 	StatusCode int
 	DurationMS int64
+	Attempts   int
 }
 
 // Store keeps in-memory LLM call logs for the log page.

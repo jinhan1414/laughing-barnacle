@@ -338,6 +338,43 @@ func TestStoreHasBuiltinConfigSkills(t *testing.T) {
 	}
 }
 
+func TestListEnabledSkillIndex_MinimalProgressiveDisclosureFields(t *testing.T) {
+	root := t.TempDir()
+	store, err := NewStore(filepath.Join(root, "skills"), filepath.Join(root, "skills_state.json"))
+	if err != nil {
+		t.Fatalf("NewStore error: %v", err)
+	}
+
+	if err := store.UpsertSkill(Skill{
+		Name:        "日志诊断",
+		Description: "用于查看与分析日志",
+		Prompt:      "先查日志，再定位根因，再给修复路径。",
+		Enabled:     true,
+	}); err != nil {
+		t.Fatalf("UpsertSkill error: %v", err)
+	}
+
+	index := store.ListEnabledSkillIndex()
+	if len(index) == 0 {
+		t.Fatalf("expected non-empty skill index")
+	}
+	found := false
+	for _, line := range index {
+		if !strings.Contains(line, "skill_id=") || !strings.Contains(line, "path=skill://") {
+			t.Fatalf("index line should contain id/path: %q", line)
+		}
+		if strings.Contains(line, "brief=") {
+			t.Fatalf("index line should not include prompt brief: %q", line)
+		}
+		if strings.Contains(line, "日志诊断") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected custom skill in index")
+	}
+}
+
 func TestSearchSkillsCatalog(t *testing.T) {
 	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/search" {

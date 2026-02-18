@@ -19,6 +19,9 @@ type Config struct {
 	CerberBaseURL              string
 	CerberAPIKey               string
 	CerberModel                string
+	CerberMaxRetries           int
+	CerberRetryBaseDelay       time.Duration
+	CerberRetryMaxDelay        time.Duration
 	RequestTimeout             time.Duration
 	MCPRequestTimeout          time.Duration
 	MCPProtocolVersion         string
@@ -46,14 +49,17 @@ func Load() (Config, error) {
 		CerberBaseURL:              envOrDefault("CERBER_BASE_URL", "https://api.cerber.ai"),
 		CerberAPIKey:               os.Getenv("CERBER_API_KEY"),
 		CerberModel:                envOrDefault("CERBER_MODEL", "gpt-4o-mini"),
+		CerberMaxRetries:           envInt("CERBER_MAX_RETRIES", 2),
+		CerberRetryBaseDelay:       envDuration("CERBER_RETRY_BASE_DELAY", 700*time.Millisecond),
+		CerberRetryMaxDelay:        envDuration("CERBER_RETRY_MAX_DELAY", 8*time.Second),
 		Temperature:                envFloat("CERBER_TEMPERATURE", 0.2),
 		RequestTimeout:             envDuration("CERBER_TIMEOUT", 45*time.Second),
 		MCPRequestTimeout:          envDuration("MCP_HTTP_TIMEOUT", 20*time.Second),
 		MCPProtocolVersion:         envOrDefault("MCP_PROTOCOL_VERSION", "2025-06-18"),
 		MCPToolCacheTTL:            envDuration("MCP_TOOL_CACHE_TTL", 30*time.Second),
-		MaxRecentMessages:          envInt("AGENT_MAX_RECENT_MESSAGES", 14),
+		MaxRecentMessages:          envInt("AGENT_MAX_RECENT_MESSAGES", 10),
 		CompressionTriggerMessages: envInt("AGENT_COMPRESSION_TRIGGER_MESSAGES", 20),
-		CompressionTriggerChars:    envInt("AGENT_COMPRESSION_TRIGGER_CHARS", 14000),
+		CompressionTriggerChars:    envInt("AGENT_COMPRESSION_TRIGGER_CHARS", 9000),
 		KeepRecentAfterCompression: envInt("AGENT_KEEP_RECENT_AFTER_COMPRESSION", 8),
 		MaxCompressionLoopsPerTurn: envInt("AGENT_MAX_COMPRESSION_LOOPS", 3),
 		MaxToolCallRounds:          envInt("AGENT_MAX_TOOL_CALL_ROUNDS", 6),
@@ -69,6 +75,18 @@ func Load() (Config, error) {
 	}
 	if cfg.MaxRecentMessages <= 0 {
 		return Config{}, fmt.Errorf("AGENT_MAX_RECENT_MESSAGES must be > 0")
+	}
+	if cfg.CerberMaxRetries < 0 {
+		return Config{}, fmt.Errorf("CERBER_MAX_RETRIES must be >= 0")
+	}
+	if cfg.CerberRetryBaseDelay <= 0 {
+		return Config{}, fmt.Errorf("CERBER_RETRY_BASE_DELAY must be > 0")
+	}
+	if cfg.CerberRetryMaxDelay <= 0 {
+		return Config{}, fmt.Errorf("CERBER_RETRY_MAX_DELAY must be > 0")
+	}
+	if cfg.CerberRetryMaxDelay < cfg.CerberRetryBaseDelay {
+		return Config{}, fmt.Errorf("CERBER_RETRY_MAX_DELAY must be >= CERBER_RETRY_BASE_DELAY")
 	}
 	if cfg.KeepRecentAfterCompression < 0 {
 		return Config{}, fmt.Errorf("AGENT_KEEP_RECENT_AFTER_COMPRESSION must be >= 0")

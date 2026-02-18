@@ -343,6 +343,43 @@ func TestHandleUserMessage_WithToolCalls(t *testing.T) {
 	}
 }
 
+func TestHandleUserMessage_RequiresToolEvidenceForRuntimeScheduleQuery(t *testing.T) {
+	store := conversation.NewStore()
+	fakeLLM := &mockLLM{
+		responses: map[string][]string{
+			"chat_reply": {"当前有 2 个定时任务。", "已经查好了。"},
+		},
+	}
+
+	agentSvc := New(Config{
+		Model:                      "test-model",
+		MaxRecentMessages:          10,
+		CompressionTriggerMessages: 99,
+		CompressionTriggerChars:    99999,
+		KeepRecentAfterCompression: 1,
+		MaxCompressionLoopsPerTurn: 1,
+		MaxToolCallRounds:          2,
+		SystemPrompt:               "system",
+		CompressionSystemPrompt:    "compressor",
+	}, store, fakeLLM, nil)
+
+	_, err := agentSvc.HandleUserMessage(context.Background(), "有哪些定时任务")
+	if err == nil {
+		t.Fatalf("expected runtime-evidence error")
+	}
+	if !strings.Contains(err.Error(), "需要先调用工具") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(fakeLLM.calls) != 2 {
+		t.Fatalf("expected two llm calls due evidence enforcement, got %d", len(fakeLLM.calls))
+	}
+
+	_, messages := store.Snapshot()
+	if len(messages) != 1 || messages[0].Role != "user" {
+		t.Fatalf("expected only pending user message, got %+v", messages)
+	}
+}
+
 func TestHandleUserMessage_IncludesSkillIndexForProgressiveDisclosure(t *testing.T) {
 	store := conversation.NewStore()
 	fakeLLM := &mockLLM{responses: map[string][]string{

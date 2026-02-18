@@ -53,10 +53,13 @@ func run() error {
 	mcpToolProvider := mcp.NewToolProvider(mcpStore, mcpHTTPClient, cfg.MCPToolCacheTTL)
 
 	llmClient := cerber.NewClient(cerber.Config{
-		BaseURL:  cfg.CerberBaseURL,
-		APIKey:   cfg.CerberAPIKey,
-		Timeout:  cfg.RequestTimeout,
-		LogStore: logStore,
+		BaseURL:        cfg.CerberBaseURL,
+		APIKey:         cfg.CerberAPIKey,
+		Timeout:        cfg.RequestTimeout,
+		LogStore:       logStore,
+		MaxRetries:     cfg.CerberMaxRetries,
+		RetryBaseDelay: cfg.CerberRetryBaseDelay,
+		RetryMaxDelay:  cfg.CerberRetryMaxDelay,
 	})
 
 	agentSvc := agent.New(agent.Config{

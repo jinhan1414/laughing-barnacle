@@ -28,7 +28,7 @@
               <div>{{.Purpose}}</div>
               <div>{{.Model}}</div>
               <div>{{.DurationMS}}ms</div>
-              <div>HTTP {{.StatusCode}}</div>
+              <div>HTTP {{.StatusCode}}{{if gt .Attempts 1}} · x{{.Attempts}}{{end}}</div>
             </div>
           </div>
 
@@ -36,13 +36,36 @@
             {{if .Error}}<div class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">错误: {{.Error}}</div>{{end}}
 
             <div>
-              <div class="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Request Body</div>
-              <pre class="drag-scroll max-h-[36vh] overflow-auto rounded-xl bg-slate-900 p-3 font-mono text-[11px] leading-5 text-slate-100 cursor-grab">{{.Request}}</pre>
+              <div class="mb-1 flex items-center justify-between gap-2">
+                <div class="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Request Body</div>
+                <button
+                  type="button"
+                  class="copy-btn inline-flex min-h-8 items-center rounded-lg border border-slate-300 px-2 text-[11px] font-medium text-slate-700 active:bg-slate-100"
+                  data-copy-target="req-{{.ID}}"
+                >复制请求</button>
+              </div>
+              <pre id="req-{{.ID}}" class="drag-scroll max-h-[36vh] overflow-auto rounded-xl bg-slate-900 p-3 font-mono text-[11px] leading-5 text-slate-100 cursor-grab">{{.Request}}</pre>
             </div>
 
             <div>
-              <div class="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Response Body</div>
-              <pre class="drag-scroll max-h-[40vh] overflow-auto rounded-xl bg-slate-900 p-3 font-mono text-[11px] leading-5 text-slate-100 cursor-grab">{{.Response}}</pre>
+              <div class="mb-1 flex items-center justify-between gap-2">
+                <div class="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Response Body</div>
+                <button
+                  type="button"
+                  class="copy-btn inline-flex min-h-8 items-center rounded-lg border border-slate-300 px-2 text-[11px] font-medium text-slate-700 active:bg-slate-100"
+                  data-copy-target="resp-{{.ID}}"
+                >复制响应</button>
+              </div>
+              <pre id="resp-{{.ID}}" class="drag-scroll max-h-[40vh] overflow-auto rounded-xl bg-slate-900 p-3 font-mono text-[11px] leading-5 text-slate-100 cursor-grab">{{.Response}}</pre>
+            </div>
+
+            <div class="flex justify-end">
+              <button
+                type="button"
+                class="copy-btn inline-flex min-h-8 items-center rounded-lg border border-slate-300 px-2.5 text-[11px] font-medium text-slate-700 active:bg-slate-100"
+                data-copy-target="req-{{.ID}}"
+                data-copy-append="resp-{{.ID}}"
+              >复制本次请求+响应</button>
             </div>
           </div>
         </article>
@@ -82,6 +105,70 @@
         document.body.style.userSelect = '';
         active = null;
       });
+
+      function copyText(text) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          return navigator.clipboard.writeText(text);
+        }
+        return new Promise(function (resolve, reject) {
+          var ta = document.createElement('textarea');
+          ta.value = text;
+          ta.setAttribute('readonly', 'readonly');
+          ta.style.position = 'fixed';
+          ta.style.opacity = '0';
+          document.body.appendChild(ta);
+          ta.select();
+          try {
+            var ok = document.execCommand('copy');
+            document.body.removeChild(ta);
+            if (ok) {
+              resolve();
+              return;
+            }
+            reject(new Error('execCommand failed'));
+          } catch (err) {
+            document.body.removeChild(ta);
+            reject(err);
+          }
+        });
+      }
+
+      function resolveCopyText(btn) {
+        var targetId = btn.getAttribute('data-copy-target');
+        if (!targetId) return '';
+        var mainNode = document.getElementById(targetId);
+        if (!mainNode) return '';
+        var text = mainNode.textContent || '';
+
+        var appendId = btn.getAttribute('data-copy-append');
+        if (!appendId) return text;
+        var appendNode = document.getElementById(appendId);
+        if (!appendNode) return text;
+        var appendText = appendNode.textContent || '';
+        if (!appendText) return text;
+        return text + '\n\n' + appendText;
+      }
+
+      var copyButtons = document.querySelectorAll('.copy-btn');
+      for (var j = 0; j < copyButtons.length; j++) {
+        copyButtons[j].addEventListener('click', function (e) {
+          var btn = e.currentTarget;
+          var original = btn.textContent;
+          var text = resolveCopyText(btn);
+          if (!text) {
+            btn.textContent = '无可复制内容';
+            setTimeout(function () { btn.textContent = original; }, 1200);
+            return;
+          }
+          copyText(text).then(function () {
+            btn.textContent = '已复制';
+            setTimeout(function () { btn.textContent = original; }, 1200);
+          }).catch(function () {
+            btn.textContent = '复制失败';
+            setTimeout(function () { btn.textContent = original; }, 1200);
+          });
+        });
+      }
     })();
   </script>
 </body>

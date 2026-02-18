@@ -54,11 +54,11 @@ type evolvedSkill struct {
 }
 
 const (
-	maxInjectedSkillPrompts     = 6
-	maxInjectedSkillPromptRunes = 1200
-	maxSingleSkillPromptRunes   = 600
+	maxInjectedSkillPrompts     = 4
+	maxInjectedSkillPromptRunes = 520
+	maxSingleSkillPromptRunes   = 220
 	minInjectedSkillScore       = 3
-	maxSkillFocusUserMessages   = 4
+	maxSkillFocusUserMessages   = 3
 	maxNightEvolvedSkills       = 3
 	maxEvolvedSkillNameRunes    = 24
 	maxEvolvedSkillPromptRunes  = 180
@@ -70,6 +70,10 @@ const (
 	maxBashStderrRunes          = 2000
 	maxGreetingRecentMessages   = 8
 	maxGreetingTaskStatuses     = 5
+	maxSummaryForRequestRunes   = 1400
+	maxContextMessageRunes      = 900
+	maxRecentContextRunes       = 4200
+	maxAssistantReplyRunes      = 2200
 )
 
 var (
@@ -252,7 +256,7 @@ func (a *Agent) HandleUserMessage(ctx context.Context, userInput string) (string
 		return "", err
 	}
 
-	reply = strings.TrimSpace(reply)
+	reply = sanitizeLLMReply(reply)
 	a.store.Append("assistant", reply)
 	return reply, nil
 }
@@ -282,7 +286,7 @@ func (a *Agent) RetryLastUserMessage(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	reply = strings.TrimSpace(reply)
+	reply = sanitizeLLMReply(reply)
 	a.store.Append("assistant", reply)
 	return reply, nil
 }
@@ -437,29 +441,28 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 		Role:    "system",
 		Content: systemPrompt,
 	})
+	responseStylePrompt := "回答策略：默认简洁直答（3-6 行）。仅当用户明确要求“详细/方案/步骤/复盘/计划/总结”时再展开，避免无关模板、表格和冗长铺垫。"
 	builtinToolDefs := []llm.ToolDefinition{linuxBashToolDefinition()}
-	toolIntro := "内置工具仅有 linux__bash（用于本机命令执行）；其他能力应通过已加载的 MCP 工具完成。"
+	toolIntro := "内置工具仅有 linux__bash（用于本机命令执行）；其他能力应通过已加载的 MCP 工具完成。凡涉及实时系统状态或变更结果，必须先调用工具再给结论。"
 	skillIndexPrompt := ""
 	if a.skills != nil {
 		allSkillIndex := a.skills.ListEnabledSkillIndex()
 		if len(allSkillIndex) > 0 {
-			selectedSkillIDs := selectSkillIDsForTurn(allSkillIndex, messages)
 			var b strings.Builder
 			b.WriteString(fmt.Sprintf("已启用技能索引（渐进式披露）：共 %d 条。\n", len(allSkillIndex)))
 			b.WriteString("如需技能详情，仅在必要时通过 linux__bash 执行：curl -s \"http://127.0.0.1:8080/api/skills/read?id=<skill_id>\"。\n")
-			if len(selectedSkillIDs) > 0 {
-				b.WriteString("本轮高相关候选 skill_id：")
-				b.WriteString(strings.Join(selectedSkillIDs, ", "))
-				b.WriteString("\n")
-			}
 
+			selectedSkillIDs := selectSkillIDsForTurn(allSkillIndex, messages)
+			injectCandidates := compactSkillIndexByIDs(allSkillIndex, selectedSkillIDs)
+			if len(injectCandidates) == 0 {
+				injectCandidates = compactSkillIndexByIDs(allSkillIndex, nil)
+			}
 			injected := 0
 			usedRunes := 0
-			for _, raw := range allSkillIndex {
+			for _, line := range injectCandidates {
 				if injected >= maxInjectedSkillPrompts {
 					break
 				}
-				line := trimRunes(strings.TrimSpace(raw), maxSingleSkillPromptRunes)
 				if line == "" {
 					continue
 				}
@@ -475,34 +478,38 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 				b.WriteString(fmt.Sprintf("(索引共 %d 条，本轮展示 %d 条以控制上下文长度)\n", len(allSkillIndex), injected))
 			}
 			skillIndexPrompt = strings.TrimSpace(b.String())
-			requestMessages = append(requestMessages, llm.Message{
-				Role:    "system",
-				Content: skillIndexPrompt,
-			})
+			if skillIndexPrompt != "" {
+				requestMessages = append(requestMessages, llm.Message{
+					Role:    "system",
+					Content: skillIndexPrompt,
+				})
+			}
 		}
 	}
 	requestMessages = append(requestMessages, llm.Message{
 		Role:    "system",
 		Content: toolIntro,
 	})
-	summary = pruneSummaryOverlap(summary, systemPrompt, toolIntro, skillIndexPrompt)
+	requestMessages = append(requestMessages, llm.Message{
+		Role:    "system",
+		Content: responseStylePrompt,
+	})
+	summary = pruneSummaryOverlap(summary, systemPrompt, toolIntro, skillIndexPrompt, responseStylePrompt)
 	if strings.TrimSpace(summary) != "" {
 		requestMessages = append(requestMessages, llm.Message{
 			Role:    "system",
-			Content: "历史摘要（由系统自动压缩）：\n" + summary,
+			Content: "历史摘要（由系统自动压缩）：\n" + trimRunes(summary, maxSummaryForRequestRunes),
 		})
 	}
 
-	start := 0
-	if len(messages) > a.cfg.MaxRecentMessages {
-		start = len(messages) - a.cfg.MaxRecentMessages
-	}
-	for _, msg := range messages[start:] {
+	recentMessages := trimMessagesForRequest(messages, a.cfg.MaxRecentMessages, maxRecentContextRunes, maxContextMessageRunes)
+	for _, msg := range recentMessages {
 		requestMessages = append(requestMessages, llm.Message{
 			Role:    msg.Role,
 			Content: msg.Content,
 		})
 	}
+	requiresToolEvidence := shouldRequireRuntimeToolEvidence(latestUserMessageText(recentMessages))
 
 	toolDefs := make([]llm.ToolDefinition, 0, len(builtinToolDefs)+4)
 	toolDefs = append(toolDefs, builtinToolDefs...)
@@ -531,6 +538,7 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 		maxRounds = 1
 	}
 	executedCalls := make([]conversation.ToolCall, 0)
+	enforcedEvidence := false
 
 	for i := 0; i < maxRounds; i++ {
 		resp, err := a.llm.Chat(ctx, llm.ChatRequest{
@@ -545,12 +553,23 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 		}
 
 		if len(resp.ToolCalls) == 0 {
+			if requiresToolEvidence && len(executedCalls) == 0 {
+				if !enforcedEvidence {
+					enforcedEvidence = true
+					requestMessages = append(requestMessages, llm.Message{
+						Role:    "system",
+						Content: "上一条回答缺少工具证据。针对此类“实时状态/配置变更”问题，必须先调用工具查询或执行，再基于工具结果回复。",
+					})
+					continue
+				}
+				return "", executedCalls, fmt.Errorf("需要先调用工具获取实时数据后再回答")
+			}
 			return resp.Content, executedCalls, nil
 		}
 
 		requestMessages = append(requestMessages, llm.Message{
 			Role:      "assistant",
-			Content:   resp.Content,
+			Content:   trimRunes(resp.Content, maxContextMessageRunes),
 			ToolCalls: resp.ToolCalls,
 		})
 
@@ -567,11 +586,12 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 			if callArgs == "" {
 				callArgs = "{}"
 			}
+			trimmedResult := strings.TrimSpace(trimRunes(result, maxContextMessageRunes))
 			callRecord := conversation.ToolCall{
 				ID:        strings.TrimSpace(call.ID),
 				Name:      callName,
 				Arguments: callArgs,
-				Result:    strings.TrimSpace(result),
+				Result:    trimmedResult,
 				CreatedAt: a.nowFn(),
 			}
 			if callErr != nil {
@@ -586,7 +606,7 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 			requestMessages = append(requestMessages, llm.Message{
 				Role:       "tool",
 				ToolCallID: toolCallID,
-				Content:    result,
+				Content:    trimmedResult,
 			})
 		}
 	}
@@ -1318,18 +1338,107 @@ func selectSkillIDsForTurn(skillIndexLines []string, messages []conversation.Mes
 }
 
 func parseSkillIndexLine(raw string) (skillID string, line string) {
-	line = trimRunes(strings.TrimSpace(raw), maxSingleSkillPromptRunes)
-	if line == "" {
+	fields := parseSkillIndexFields(raw)
+	skillID = fields["skill_id"]
+	if skillID == "" {
 		return "", ""
 	}
-	for _, part := range strings.Split(line, "|") {
-		part = strings.TrimSpace(part)
-		if strings.HasPrefix(part, "skill_id=") {
-			skillID = strings.TrimSpace(strings.TrimPrefix(part, "skill_id="))
+	line = compactSkillIndexLine(fields)
+	return skillID, line
+}
+
+func compactSkillIndexByIDs(rawLines []string, selectedIDs []string) []string {
+	if len(rawLines) == 0 {
+		return nil
+	}
+
+	selectedSet := make(map[string]struct{}, len(selectedIDs))
+	for _, id := range selectedIDs {
+		if trimmed := strings.TrimSpace(id); trimmed != "" {
+			selectedSet[trimmed] = struct{}{}
+		}
+	}
+
+	useAll := len(selectedSet) == 0
+	seen := make(map[string]struct{}, len(rawLines))
+	out := make([]string, 0, min(maxInjectedSkillPrompts, len(rawLines)))
+	for _, raw := range rawLines {
+		fields := parseSkillIndexFields(raw)
+		skillID := fields["skill_id"]
+		if skillID == "" {
+			continue
+		}
+		if _, exists := seen[skillID]; exists {
+			continue
+		}
+		seen[skillID] = struct{}{}
+		if !useAll {
+			if _, ok := selectedSet[skillID]; !ok {
+				continue
+			}
+		}
+
+		line := compactSkillIndexLine(fields)
+		if line == "" {
+			continue
+		}
+		out = append(out, line)
+		if len(out) >= maxInjectedSkillPrompts {
 			break
 		}
 	}
-	return skillID, line
+	return out
+}
+
+func parseSkillIndexFields(raw string) map[string]string {
+	text := trimRunes(strings.TrimSpace(raw), maxSingleSkillPromptRunes)
+	if text == "" {
+		return nil
+	}
+	fields := make(map[string]string, 6)
+	for _, part := range strings.Split(text, "|") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		kv := strings.SplitN(part, "=", 2)
+		if len(kv) != 2 {
+			continue
+		}
+		key := strings.ToLower(strings.TrimSpace(kv[0]))
+		value := strings.TrimSpace(kv[1])
+		if key == "" || value == "" {
+			continue
+		}
+		fields[key] = value
+	}
+	return fields
+}
+
+func compactSkillIndexLine(fields map[string]string) string {
+	if len(fields) == 0 {
+		return ""
+	}
+	skillID := strings.TrimSpace(fields["skill_id"])
+	if skillID == "" {
+		return ""
+	}
+	name := trimRunes(strings.TrimSpace(fields["name"]), 20)
+	description := trimRunes(strings.TrimSpace(fields["description"]), 24)
+	path := trimRunes(strings.TrimSpace(fields["path"]), 48)
+	if path == "" {
+		path = "skill://" + skillID + "/SKILL.md"
+	}
+
+	parts := []string{"skill_id=" + skillID}
+	if name != "" {
+		parts = append(parts, "name="+name)
+	}
+	if description != "" {
+		parts = append(parts, "description="+description)
+	}
+	parts = append(parts, "path="+path)
+	return trimRunes(strings.Join(parts, " | "), maxSingleSkillPromptRunes)
 }
 
 func buildSkillFocus(messages []conversation.Message) string {
@@ -1548,6 +1657,120 @@ func normalizeComparableText(text string) string {
 	text = numberedListPrefixPattern.ReplaceAllString(text, "")
 	text = comparableStripPattern.ReplaceAllString(text, "")
 	return strings.TrimSpace(text)
+}
+
+func trimMessagesForRequest(
+	messages []conversation.Message,
+	maxRecent int,
+	maxTotalRunes int,
+	maxSingleRunes int,
+) []conversation.Message {
+	if len(messages) == 0 {
+		return nil
+	}
+
+	start := 0
+	if maxRecent > 0 && len(messages) > maxRecent {
+		start = len(messages) - maxRecent
+	}
+	subset := messages[start:]
+	rev := make([]conversation.Message, 0, len(subset))
+	used := 0
+	for i := len(subset) - 1; i >= 0; i-- {
+		msg := subset[i]
+		role := strings.TrimSpace(strings.ToLower(msg.Role))
+		if role != "user" && role != "assistant" {
+			continue
+		}
+		content := strings.TrimSpace(msg.Content)
+		if content == "" {
+			continue
+		}
+		if maxSingleRunes > 0 {
+			content = trimRunes(content, maxSingleRunes)
+		}
+		contentRunes := len([]rune(content))
+		if maxTotalRunes > 0 && len(rev) > 0 && used+contentRunes > maxTotalRunes {
+			break
+		}
+		if maxTotalRunes > 0 && len(rev) == 0 && contentRunes > maxTotalRunes {
+			content = trimRunes(content, maxTotalRunes)
+			contentRunes = len([]rune(content))
+		}
+		msg.Content = content
+		rev = append(rev, msg)
+		used += contentRunes
+	}
+	if len(rev) == 0 {
+		return nil
+	}
+	out := make([]conversation.Message, 0, len(rev))
+	for i := len(rev) - 1; i >= 0; i-- {
+		out = append(out, rev[i])
+	}
+	return out
+}
+
+func latestUserMessageText(messages []conversation.Message) string {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if strings.EqualFold(strings.TrimSpace(messages[i].Role), "user") {
+			return strings.TrimSpace(messages[i].Content)
+		}
+	}
+	return ""
+}
+
+func shouldRequireRuntimeToolEvidence(userInput string) bool {
+	text := strings.ToLower(strings.TrimSpace(userInput))
+	if text == "" {
+		return false
+	}
+
+	domainHits := []string{"定时任务", "schedule", "cron", "mcp", "skill", "服务配置", "api/schedules", "api/skills"}
+	hasDomain := false
+	for _, token := range domainHits {
+		if strings.Contains(text, token) {
+			hasDomain = true
+			break
+		}
+	}
+	if !hasDomain {
+		return false
+	}
+
+	intentHits := []string{
+		"有哪些", "列表", "当前", "状态", "查看", "查询",
+		"启用", "禁用", "删除", "移除", "新增", "创建", "修改", "更新",
+		"运行", "执行", "触发", "run", "enable", "disable", "delete",
+	}
+	for _, token := range intentHits {
+		if strings.Contains(text, token) {
+			return true
+		}
+	}
+	return false
+}
+
+func sanitizeLLMReply(reply string) string {
+	reply = strings.ReplaceAll(reply, "\r\n", "\n")
+	var b strings.Builder
+	for _, r := range reply {
+		switch {
+		case r == '\n' || r == '\t':
+			b.WriteRune(r)
+		case r >= 32:
+			b.WriteRune(r)
+		}
+	}
+
+	clean := strings.TrimSpace(b.String())
+	for strings.Contains(clean, "\"\"\"") {
+		clean = strings.ReplaceAll(clean, "\"\"\"", "\"")
+	}
+	if strings.Count(clean, "```")%2 == 1 {
+		clean = strings.ReplaceAll(clean, "```", "")
+	}
+	return trimRunes(clean, maxAssistantReplyRunes)
 }
 
 func trimRunes(input string, max int) string {
