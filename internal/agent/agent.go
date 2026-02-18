@@ -178,7 +178,9 @@ func (a *Agent) RunScheduledTask(ctx context.Context, action string) error {
 	now := a.nowFn()
 	skillID, ok := routine.SkillIDFromAction(action)
 	if !ok {
-		return fmt.Errorf("unknown scheduled action: %s", action)
+		err := fmt.Errorf("unknown scheduled action: %s", action)
+		a.appendScheduledTaskFailureLocked(action, err)
+		return err
 	}
 
 	var (
@@ -197,6 +199,7 @@ func (a *Agent) RunScheduledTask(ctx context.Context, action string) error {
 		title, content, err = a.runGenericScheduledSkill(ctx, now, skillID)
 	}
 	if err != nil {
+		a.appendScheduledTaskFailureLocked(action, err)
 		return err
 	}
 	content = strings.TrimSpace(content)
@@ -209,6 +212,21 @@ func (a *Agent) RunScheduledTask(ctx context.Context, action string) error {
 	}
 	a.store.Append("assistant", "【"+strings.TrimSpace(title)+"】\n"+content)
 	return nil
+}
+
+func (a *Agent) appendScheduledTaskFailureLocked(action string, runErr error) {
+	if a == nil || a.store == nil || runErr == nil {
+		return
+	}
+	action = strings.TrimSpace(action)
+	if action == "" {
+		action = "(unknown)"
+	}
+	errText := strings.TrimSpace(runErr.Error())
+	if errText == "" {
+		errText = "unknown error"
+	}
+	a.store.Append("assistant", "【定时任务执行失败】\n任务："+action+"\n状态：失败\n原因："+trimRunes(errText, 180))
 }
 
 // HandleUserMessage processes one user turn, updating shared conversation state.

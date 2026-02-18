@@ -168,6 +168,12 @@ type apiScheduledTask struct {
 	UpdatedAt   time.Time `json:"updated_at,omitempty"`
 }
 
+type apiChatUpdate struct {
+	Kind        string `json:"kind"`
+	Content     string `json:"content"`
+	CreatedAtUS int64  `json:"created_at_us"`
+}
+
 type chatGreetResponse struct {
 	Created bool   `json:"created"`
 	Content string `json:"content,omitempty"`
@@ -234,6 +240,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/skills/read", s.handleAPISkillRead)
 	mux.HandleFunc("/api/skills/catalog/search", s.handleAPISkillsCatalogSearch)
 	mux.HandleFunc("/api/schedules", s.handleAPISchedules)
+	mux.HandleFunc("/api/chat/updates", s.handleAPIChatUpdates)
 	mux.HandleFunc("/api/context/archive/index", s.handleAPIContextArchiveIndex)
 	mux.HandleFunc("/api/context/archive/section", s.handleAPIContextArchiveSection)
 	mux.HandleFunc("/healthz", s.handleHealthz)
@@ -1082,6 +1089,53 @@ func (s *Server) handleAPISchedules(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"schedules": items,
+	})
+}
+
+func (s *Server) handleAPIChatUpdates(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if s.convStore == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		return
+	}
+
+	sinceUS := int64(0)
+	if raw := strings.TrimSpace(r.URL.Query().Get("since_us")); raw != "" {
+		parsed, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || parsed < 0 {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"error": "query parameter since_us must be a non-negative integer",
+			})
+			return
+		}
+		sinceUS = parsed
+	}
+
+	_, messages, events := s.convStore.SnapshotWithEvents()
+	timeline := buildChatTimeline(messages, events)
+	updates := make([]apiChatUpdate, 0, len(timeline))
+	for _, item := range timeline {
+		if item.Kind != "assistant" && item.Kind != "event" {
+			continue
+		}
+		createdAtUS := item.CreatedAt.UnixMicro()
+		if createdAtUS <= sinceUS {
+			continue
+		}
+		updates = append(updates, apiChatUpdate{
+			Kind:        item.Kind,
+			Content:     item.Content,
+			CreatedAtUS: createdAtUS,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"updates": updates,
 	})
 }
 

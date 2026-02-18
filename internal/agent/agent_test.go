@@ -1145,6 +1145,43 @@ func TestRunScheduledHumanRoutine_MorningPlanAppendsOncePerDay(t *testing.T) {
 	}
 }
 
+func TestRunScheduledTask_AppendsFailureMessageWhenSkillMissing(t *testing.T) {
+	store := conversation.NewStore()
+	fakeLLM := &mockLLM{responses: map[string][]string{}}
+
+	agentSvc := New(Config{
+		Model:                      "test-model",
+		MaxRecentMessages:          10,
+		CompressionTriggerMessages: 99,
+		CompressionTriggerChars:    99999,
+		KeepRecentAfterCompression: 1,
+		MaxCompressionLoopsPerTurn: 1,
+		MaxToolCallRounds:          2,
+		SystemPrompt:               "system",
+		CompressionSystemPrompt:    "compressor",
+		EnforceHumanRoutine:        true,
+	}, store, fakeLLM, nil)
+
+	err := agentSvc.RunScheduledTask(context.Background(), "skill:not-installed")
+	if err == nil {
+		t.Fatalf("expected scheduled task error")
+	}
+
+	_, messages := store.Snapshot()
+	if len(messages) != 1 {
+		t.Fatalf("expected one failure message, got %d", len(messages))
+	}
+	if messages[0].Role != "assistant" {
+		t.Fatalf("expected assistant failure message, got role=%q", messages[0].Role)
+	}
+	if !strings.Contains(messages[0].Content, "定时任务执行失败") {
+		t.Fatalf("expected failure prefix, got %q", messages[0].Content)
+	}
+	if !strings.Contains(messages[0].Content, "skill:not-installed") {
+		t.Fatalf("expected task action in failure message, got %q", messages[0].Content)
+	}
+}
+
 func TestRetryLastUserMessage_ReusesPendingUserMessage(t *testing.T) {
 	store := conversation.NewStore()
 	fakeLLM := &mockLLM{
