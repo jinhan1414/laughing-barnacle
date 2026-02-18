@@ -231,6 +231,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/settings/skills/delete", s.handleSettingsSkillDelete)
 	mux.HandleFunc("/settings/skills/toggle", s.handleSettingsSkillToggle)
 	mux.HandleFunc("/settings/schedules/save", s.handleSettingsScheduleSave)
+	mux.HandleFunc("/settings/schedules/delete", s.handleSettingsScheduleDelete)
 	mux.HandleFunc("/settings/schedules/toggle", s.handleSettingsScheduleToggle)
 	mux.HandleFunc("/settings/schedules/run", s.handleSettingsScheduleRun)
 	mux.HandleFunc("/settings/llm/prompts/save", s.handleSettingsLLMPromptsSave)
@@ -839,6 +840,62 @@ func (s *Server) handleSettingsScheduleSave(w http.ResponseWriter, r *http.Reque
 		}
 	}
 	s.redirectSettings(w, r, "schedules", "定时任务已保存", "")
+}
+
+func (s *Server) handleSettingsScheduleDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		s.redirectSettings(w, r, "schedules", "", "请求参数解析失败")
+		return
+	}
+	id := strings.TrimSpace(r.FormValue("id"))
+	allTasks := s.mcpStore.ListScheduledTasks()
+	task, taskFound := findScheduledTaskByID(allTasks, id)
+	if err := s.mcpStore.DeleteScheduledTask(id); err != nil {
+		s.redirectSettings(w, r, "schedules", "", err.Error())
+		return
+	}
+	if s.scheduler != nil {
+		if err := s.scheduler.Reload(); err != nil {
+			s.redirectSettings(w, r, "schedules", "", "调度器重载失败："+err.Error())
+			return
+		}
+	}
+
+	success := fmt.Sprintf("定时任务 %s 已删除", id)
+	if s.skillStore != nil && taskFound {
+		if skillID, ok := routine.SkillIDFromAction(task.Action); ok {
+			referencedByOthers := false
+			for _, otherTask := range allTasks {
+				if strings.TrimSpace(otherTask.ID) == strings.TrimSpace(task.ID) {
+					continue
+				}
+				otherSkillID, skillAction := routine.SkillIDFromAction(otherTask.Action)
+				if skillAction && otherSkillID == skillID {
+					referencedByOthers = true
+					break
+				}
+			}
+			if referencedByOthers {
+				success += fmt.Sprintf("；Skill %s 仍被其他任务引用，未删除", skillID)
+			} else if err := s.skillStore.DeleteSkill(skillID); err != nil {
+				s.redirectSettings(
+					w,
+					r,
+					"schedules",
+					success,
+					fmt.Sprintf("删除关联 Skill %s 失败: %v", skillID, err),
+				)
+				return
+			} else {
+				success += fmt.Sprintf("；关联 Skill %s 已删除", skillID)
+			}
+		}
+	}
+	s.redirectSettings(w, r, "schedules", success, "")
 }
 
 func (s *Server) handleSettingsScheduleToggle(w http.ResponseWriter, r *http.Request) {

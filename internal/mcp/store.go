@@ -390,6 +390,25 @@ func (s *Store) UpsertScheduledTask(task scheduler.Task) error {
 	return s.persistLocked()
 }
 
+func (s *Store) DeleteScheduledTask(id string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return fmt.Errorf("scheduled task id is required")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	next := make([]scheduler.Task, 0, len(s.cfg.Agent.Schedules))
+	for _, task := range s.cfg.Agent.Schedules {
+		if task.ID != id {
+			next = append(next, task)
+		}
+	}
+	s.cfg.Agent.Schedules = next
+	return s.persistLocked()
+}
+
 func (s *Store) SetScheduledTaskEnabled(id string, enabled bool) error {
 	id = strings.TrimSpace(id)
 	if id == "" {

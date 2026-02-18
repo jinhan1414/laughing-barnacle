@@ -216,6 +216,10 @@
                     <input type="hidden" name="id" value="{{.ID}}">
                     <button class="w-full rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 active:scale-[0.99]" type="submit">立即执行一次</button>
                   </form>
+                  <form method="post" action="/settings/schedules/delete" class="mt-2" onsubmit="return confirm('确认删除定时任务 {{.ID}} ?')">
+                    <input type="hidden" name="id" value="{{.ID}}">
+                    <button class="w-full rounded-lg bg-rose-600 px-3 py-2 text-sm font-medium text-white active:scale-[0.99]" type="submit">删除任务</button>
+                  </form>
                 </article>
               {{end}}
             {{else}}

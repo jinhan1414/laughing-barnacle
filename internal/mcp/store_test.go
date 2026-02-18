@@ -738,6 +738,24 @@ func TestStoreUpsertScheduledTaskAndMarkRun(t *testing.T) {
 	}
 }
 
+func TestStoreDeleteScheduledTask(t *testing.T) {
+	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	store, err := NewStore(settingsPath)
+	if err != nil {
+		t.Fatalf("NewStore error: %v", err)
+	}
+
+	if err := store.DeleteScheduledTask("morning-planning"); err != nil {
+		t.Fatalf("DeleteScheduledTask error: %v", err)
+	}
+
+	for _, task := range store.ListScheduledTasks() {
+		if task.ID == "morning-planning" {
+			t.Fatalf("expected morning-planning deleted")
+		}
+	}
+}
+
 func TestStoreUpsertScheduledTask_InvalidCronRejected(t *testing.T) {
 	settingsPath := filepath.Join(t.TempDir(), "settings.json")
 	store, err := NewStore(settingsPath)
