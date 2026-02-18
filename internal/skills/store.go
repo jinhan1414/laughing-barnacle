@@ -109,6 +109,10 @@ var builtinSkills = []Skill{
 		Description: "当用户要求查看/修改 Cron 定时任务时使用",
 		Prompt: strings.TrimSpace(
 			"先查现状：用 linux__bash 执行 curl -s http://127.0.0.1:8080/api/schedules。\n" +
+				"创建/修改前先用 linux__bash 执行 curl -s http://127.0.0.1:8080/api/skills，确认 action 中的 skill_id 存在且已启用。\n" +
+				"若 skill 不存在：在用户确认后，先创建任务 skill（POST /settings/skills/save(name,description,prompt,enabled=on)），再重新查询 /api/skills 获取实际 skill_id，然后再写入定时任务 action=skill:<skill_id>。\n" +
+				"若 skill 已存在但未启用：在用户确认后先启用（POST /settings/skills/toggle(id,enabled=true)），再写入定时任务。\n" +
+				"禁止写入引用不存在或未启用 skill 的 action。\n" +
 				"任何写操作前必须先输出“变更计划”（任务 id、action、cron、启停状态），并等待用户明确确认（例如：确认修改 morning-planning 为 0 9 * * *）。\n" +
 				"新增/更新：POST /settings/schedules/save(id,name,description,action,cron_expr,enabled=on)。\n" +
 				"启停：POST /settings/schedules/toggle(id,enabled)。\n" +

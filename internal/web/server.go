@@ -760,6 +760,10 @@ func (s *Server) handleSettingsScheduleSave(w http.ResponseWriter, r *http.Reque
 		CronExpr:    strings.TrimSpace(r.FormValue("cron_expr")),
 		Enabled:     r.FormValue("enabled") == "on",
 	}
+	if err := s.validateScheduleActionSkill(task.Action); err != nil {
+		s.redirectSettings(w, r, "schedules", "", err.Error())
+		return
+	}
 	if err := s.mcpStore.UpsertScheduledTask(task); err != nil {
 		s.redirectSettings(w, r, "schedules", "", err.Error())
 		return
@@ -818,6 +822,12 @@ func (s *Server) handleSettingsScheduleRun(w http.ResponseWriter, r *http.Reques
 	task, ok := findScheduledTaskByID(s.mcpStore.ListScheduledTasks(), taskID)
 	if !ok {
 		s.redirectSettings(w, r, "schedules", "", fmt.Sprintf("定时任务 %s 不存在", taskID))
+		return
+	}
+	if err := s.validateScheduleActionSkill(task.Action); err != nil {
+		runAt := time.Now().Truncate(time.Second)
+		_ = s.mcpStore.MarkScheduledTaskRun(task.ID, runAt, "error", err.Error())
+		s.redirectSettings(w, r, "schedules", "", "立即执行失败："+err.Error())
 		return
 	}
 	if s.scheduler != nil {
@@ -1194,6 +1204,20 @@ func findScheduledTaskByID(tasks []scheduler.Task, id string) (scheduler.Task, b
 		}
 	}
 	return scheduler.Task{}, false
+}
+
+func (s *Server) validateScheduleActionSkill(action string) error {
+	if s.skillStore == nil {
+		return nil
+	}
+	skillID, ok := routine.SkillIDFromAction(action)
+	if !ok {
+		return nil
+	}
+	if _, found := s.skillStore.ReadEnabledSkillPrompt(skillID); found {
+		return nil
+	}
+	return fmt.Errorf("action 引用的 skill %q 不存在或未启用", skillID)
 }
 
 func displayScheduleAction(action string) string {

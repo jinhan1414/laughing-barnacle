@@ -15,6 +15,8 @@ import (
 	"laughing-barnacle/internal/llm"
 	"laughing-barnacle/internal/mcp"
 	"laughing-barnacle/internal/routine"
+	"laughing-barnacle/internal/scheduler"
+	"laughing-barnacle/internal/skills"
 )
 
 type mockScheduleLLM struct {
@@ -131,6 +133,50 @@ func TestHandleSettingsScheduleSave(t *testing.T) {
 	}
 }
 
+func TestHandleSettingsScheduleSave_RejectsUnknownSkillAction(t *testing.T) {
+	root := t.TempDir()
+	store, err := mcp.NewStore(filepath.Join(root, "settings.json"))
+	if err != nil {
+		t.Fatalf("NewStore error: %v", err)
+	}
+	skillStore, err := skills.NewStore(filepath.Join(root, "skills"), filepath.Join(root, "skills_state.json"))
+	if err != nil {
+		t.Fatalf("New skill store error: %v", err)
+	}
+
+	s := &Server{mcpStore: store, skillStore: skillStore}
+	form := url.Values{}
+	form.Set("id", "greeting-task")
+	form.Set("name", "问候任务")
+	form.Set("description", "测试不存在 skill")
+	form.Set("action", "skill:greeting")
+	form.Set("cron_expr", "*/5 * * * *")
+	form.Set("enabled", "on")
+
+	req := httptest.NewRequest(http.MethodPost, "/settings/schedules/save", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	s.handleSettingsScheduleSave(rec, req)
+
+	if rec.Code != http.StatusFound {
+		t.Fatalf("expected 302, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	location := rec.Result().Header.Get("Location")
+	if !strings.Contains(location, "section=schedules") {
+		t.Fatalf("unexpected redirect location: %q", location)
+	}
+	if !strings.Contains(location, "error=") {
+		t.Fatalf("expected error hint in redirect location: %q", location)
+	}
+
+	tasks := store.ListScheduledTasks()
+	for _, task := range tasks {
+		if task.ID == "greeting-task" {
+			t.Fatalf("unexpected task persisted for unknown skill action: %+v", task)
+		}
+	}
+}
+
 func TestHandleSettingsScheduleRun(t *testing.T) {
 	store, err := mcp.NewStore(filepath.Join(t.TempDir(), "settings.json"))
 	if err != nil {
@@ -196,6 +242,68 @@ func TestHandleSettingsScheduleRun(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("expected night task not found")
+	}
+}
+
+func TestHandleSettingsScheduleRun_RejectsUnknownSkillAction(t *testing.T) {
+	root := t.TempDir()
+	store, err := mcp.NewStore(filepath.Join(root, "settings.json"))
+	if err != nil {
+		t.Fatalf("NewStore error: %v", err)
+	}
+	skillStore, err := skills.NewStore(filepath.Join(root, "skills"), filepath.Join(root, "skills_state.json"))
+	if err != nil {
+		t.Fatalf("New skill store error: %v", err)
+	}
+	if err := store.UpsertScheduledTask(scheduler.Task{
+		ID:       "greeting-task",
+		Name:     "greeting-task",
+		Action:   "skill:greeting",
+		CronExpr: "*/5 * * * *",
+		Enabled:  true,
+	}); err != nil {
+		t.Fatalf("UpsertScheduledTask error: %v", err)
+	}
+
+	s := &Server{
+		mcpStore:   store,
+		skillStore: skillStore,
+	}
+	form := url.Values{}
+	form.Set("id", "greeting-task")
+
+	req := httptest.NewRequest(http.MethodPost, "/settings/schedules/run", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	s.handleSettingsScheduleRun(rec, req)
+
+	if rec.Code != http.StatusFound {
+		t.Fatalf("expected 302, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	location := rec.Result().Header.Get("Location")
+	if !strings.Contains(location, "section=schedules") {
+		t.Fatalf("unexpected redirect location: %q", location)
+	}
+	if !strings.Contains(location, "error=") {
+		t.Fatalf("expected error hint in redirect location: %q", location)
+	}
+
+	tasks := store.ListScheduledTasks()
+	found := false
+	for _, task := range tasks {
+		if task.ID != "greeting-task" {
+			continue
+		}
+		found = true
+		if task.LastStatus != "error" {
+			t.Fatalf("expected error status, got %q", task.LastStatus)
+		}
+		if strings.TrimSpace(task.LastMessage) == "" {
+			t.Fatalf("expected non-empty error message")
+		}
+	}
+	if !found {
+		t.Fatalf("expected greeting task not found")
 	}
 }
 

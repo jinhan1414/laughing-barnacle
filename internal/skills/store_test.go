@@ -64,6 +64,32 @@ func TestBuiltinScheduledExecutionSkillsPresent(t *testing.T) {
 	}
 }
 
+func TestBuiltinScheduleConfigMaintainerRequiresSkillValidation(t *testing.T) {
+	found := false
+	for _, builtin := range builtinSkills {
+		if strings.TrimSpace(builtin.ID) != "schedule-config-maintainer" {
+			continue
+		}
+		found = true
+		prompt := strings.ToLower(strings.TrimSpace(builtin.Prompt))
+		if !strings.Contains(prompt, "/api/skills") {
+			t.Fatalf("schedule-config-maintainer should check /api/skills before save")
+		}
+		if !strings.Contains(prompt, "/settings/skills/save") {
+			t.Fatalf("schedule-config-maintainer should support creating missing task skill")
+		}
+		if !strings.Contains(prompt, "/settings/skills/toggle") {
+			t.Fatalf("schedule-config-maintainer should support enabling existing disabled task skill")
+		}
+		if !strings.Contains(prompt, "禁止写入") || !strings.Contains(prompt, "未启用 skill") {
+			t.Fatalf("schedule-config-maintainer should forbid invalid skill action")
+		}
+	}
+	if !found {
+		t.Fatalf("expected builtin schedule-config-maintainer skill")
+	}
+}
+
 func TestStoreUpsertAndReload(t *testing.T) {
 	root := t.TempDir()
 	store, err := NewStore(filepath.Join(root, "skills"), filepath.Join(root, "skills_state.json"))
