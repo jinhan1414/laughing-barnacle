@@ -54,10 +54,12 @@ type chatPageData struct {
 }
 
 type chatTimelineItem struct {
-	Kind      string
-	Content   string
-	ToolCalls []conversation.ToolCall
-	CreatedAt time.Time
+	Kind           string
+	Content        string
+	ToolCalls      []conversation.ToolCall
+	CreatedAt      time.Time
+	ShowTimestamp  bool
+	TimestampLabel string
 }
 
 type logsPageData struct {
@@ -172,7 +174,10 @@ type chatGreetResponse struct {
 	Reason  string `json:"reason,omitempty"`
 }
 
-const chatGreetingCooldown = 30 * time.Minute
+const (
+	chatGreetingCooldown = 30 * time.Minute
+	chatTimestampGap     = 5 * time.Minute
+)
 
 func NewServer(
 	agent *agent.Agent,
@@ -364,10 +369,62 @@ func buildChatTimeline(messages []conversation.Message, events []conversation.Ev
 	})
 
 	out := make([]chatTimelineItem, 0, len(all))
+	now := time.Now()
+	var previousAt time.Time
 	for _, it := range all {
-		out = append(out, it.item)
+		item := it.item
+		if shouldShowChatTimestamp(previousAt, item.CreatedAt) {
+			item.ShowTimestamp = true
+			item.TimestampLabel = formatChatTimestamp(item.CreatedAt, now)
+		}
+		out = append(out, item)
+		if !item.CreatedAt.IsZero() {
+			previousAt = item.CreatedAt
+		}
 	}
 	return out
+}
+
+func shouldShowChatTimestamp(previous, current time.Time) bool {
+	if current.IsZero() {
+		return false
+	}
+	if previous.IsZero() {
+		return true
+	}
+	previousLocal := previous.Local()
+	currentLocal := current.Local()
+	if !sameLocalDay(previousLocal, currentLocal) {
+		return true
+	}
+	return currentLocal.Sub(previousLocal) >= chatTimestampGap
+}
+
+func formatChatTimestamp(current, now time.Time) string {
+	if current.IsZero() {
+		return ""
+	}
+	currentLocal := current.Local()
+	if now.IsZero() {
+		now = time.Now()
+	}
+	nowLocal := now.Local()
+	if sameLocalDay(currentLocal, nowLocal) {
+		return currentLocal.Format("15:04")
+	}
+	if sameLocalDay(currentLocal, nowLocal.AddDate(0, 0, -1)) {
+		return "昨天 " + currentLocal.Format("15:04")
+	}
+	if currentLocal.Year() == nowLocal.Year() {
+		return fmt.Sprintf("%d月%d日 %s", int(currentLocal.Month()), currentLocal.Day(), currentLocal.Format("15:04"))
+	}
+	return fmt.Sprintf("%d年%d月%d日 %s", currentLocal.Year(), int(currentLocal.Month()), currentLocal.Day(), currentLocal.Format("15:04"))
+}
+
+func sameLocalDay(left, right time.Time) bool {
+	return left.Year() == right.Year() &&
+		left.Month() == right.Month() &&
+		left.Day() == right.Day()
 }
 
 func (s *Server) handleChatSend(w http.ResponseWriter, r *http.Request) {

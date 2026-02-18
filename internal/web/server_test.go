@@ -32,4 +32,56 @@ func TestBuildChatTimeline_MergeAndSort(t *testing.T) {
 	if got[2].Kind != "assistant" || got[2].Content != "a1" {
 		t.Fatalf("unexpected third item: %+v", got[2])
 	}
+	if !got[0].ShowTimestamp {
+		t.Fatalf("expected first item to show timestamp")
+	}
+	if got[1].ShowTimestamp {
+		t.Fatalf("expected second item to hide timestamp")
+	}
+	if got[2].ShowTimestamp {
+		t.Fatalf("expected third item to hide timestamp")
+	}
+}
+
+func TestShouldShowChatTimestamp(t *testing.T) {
+	loc := time.Local
+	base := time.Date(2026, 2, 18, 10, 0, 0, 0, loc)
+
+	if !shouldShowChatTimestamp(time.Time{}, base) {
+		t.Fatalf("expected first timestamp to be shown")
+	}
+	if shouldShowChatTimestamp(base, base.Add(4*time.Minute)) {
+		t.Fatalf("expected timestamp to stay hidden within 5 minutes")
+	}
+	if !shouldShowChatTimestamp(base, base.Add(5*time.Minute)) {
+		t.Fatalf("expected timestamp to be shown at 5-minute gap")
+	}
+	if !shouldShowChatTimestamp(base, base.Add(14*time.Hour)) {
+		t.Fatalf("expected timestamp to be shown across different days")
+	}
+}
+
+func TestFormatChatTimestamp(t *testing.T) {
+	loc := time.Local
+	now := time.Date(2026, 2, 18, 10, 30, 0, 0, loc)
+
+	today := time.Date(2026, 2, 18, 9, 5, 0, 0, loc)
+	if got := formatChatTimestamp(today, now); got != "09:05" {
+		t.Fatalf("unexpected today label: %s", got)
+	}
+
+	yesterday := time.Date(2026, 2, 17, 21, 8, 0, 0, loc)
+	if got := formatChatTimestamp(yesterday, now); got != "昨天 21:08" {
+		t.Fatalf("unexpected yesterday label: %s", got)
+	}
+
+	sameYear := time.Date(2026, 1, 2, 8, 7, 0, 0, loc)
+	if got := formatChatTimestamp(sameYear, now); got != "1月2日 08:07" {
+		t.Fatalf("unexpected same-year label: %s", got)
+	}
+
+	lastYear := time.Date(2025, 12, 31, 23, 59, 0, 0, loc)
+	if got := formatChatTimestamp(lastYear, now); got != "2025年12月31日 23:59" {
+		t.Fatalf("unexpected cross-year label: %s", got)
+	}
 }
