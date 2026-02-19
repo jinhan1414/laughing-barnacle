@@ -343,6 +343,88 @@ func TestHandleUserMessage_WithToolCalls(t *testing.T) {
 	}
 }
 
+func TestHandleUserMessage_AllowsFinalReplyAfterMaxToolCallRounds(t *testing.T) {
+	store := conversation.NewStore()
+	fakeLLM := &mockLLM{
+		responses: map[string][]string{
+			"chat_reply": {"", "", "weather final"},
+		},
+		toolCalls: map[string][][]llm.ToolCall{
+			"chat_reply": {
+				{
+					{
+						ID:   "call_1",
+						Type: "function",
+						Function: llm.ToolFunctionCall{
+							Name:      "weather__query",
+							Arguments: `{"city":"beijing","day":1}`,
+						},
+					},
+				},
+				{
+					{
+						ID:   "call_2",
+						Type: "function",
+						Function: llm.ToolFunctionCall{
+							Name:      "weather__query",
+							Arguments: `{"city":"beijing","day":2}`,
+						},
+					},
+				},
+				nil,
+			},
+		},
+	}
+	fakeTools := &mockTools{
+		listed: []llm.ToolDefinition{
+			{
+				Type: "function",
+				Function: llm.ToolFunctionDefinition{
+					Name: "weather__query",
+				},
+			},
+		},
+		response: map[string]string{
+			`weather__query:{"city":"beijing","day":1}`: `{"temp":18}`,
+			`weather__query:{"city":"beijing","day":2}`: `{"temp":19}`,
+		},
+	}
+
+	agentSvc := New(Config{
+		Model:                      "test-model",
+		MaxRecentMessages:          10,
+		CompressionTriggerMessages: 99,
+		CompressionTriggerChars:    99999,
+		KeepRecentAfterCompression: 1,
+		MaxCompressionLoopsPerTurn: 1,
+		MaxToolCallRounds:          2,
+		SystemPrompt:               "system",
+		CompressionSystemPrompt:    "compressor",
+	}, store, fakeLLM, fakeTools)
+
+	reply, err := agentSvc.HandleUserMessage(context.Background(), "两天北京天气")
+	if err != nil {
+		t.Fatalf("HandleUserMessage error: %v", err)
+	}
+	if reply != "weather final" {
+		t.Fatalf("unexpected reply: %s", reply)
+	}
+	if len(fakeLLM.calls) != 3 {
+		t.Fatalf("expected 3 llm calls (2 tool rounds + final reply), got %d", len(fakeLLM.calls))
+	}
+	if len(fakeTools.calls) != 2 {
+		t.Fatalf("expected 2 tool calls, got %d", len(fakeTools.calls))
+	}
+
+	_, messages := store.Snapshot()
+	if len(messages) != 2 {
+		t.Fatalf("expected user + assistant messages, got %d", len(messages))
+	}
+	if len(messages[0].ToolCalls) != 2 {
+		t.Fatalf("expected 2 recorded tool calls, got %d", len(messages[0].ToolCalls))
+	}
+}
+
 func TestHandleUserMessage_RequiresToolEvidenceForRuntimeScheduleQuery(t *testing.T) {
 	store := conversation.NewStore()
 	fakeLLM := &mockLLM{

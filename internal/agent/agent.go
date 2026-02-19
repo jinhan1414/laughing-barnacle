@@ -519,7 +519,8 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 	executedCalls := make([]conversation.ToolCall, 0)
 	enforcedEvidence := false
 
-	for i := 0; i < maxRounds; i++ {
+	toolRounds := 0
+	for {
 		resp, err := a.llm.Chat(ctx, llm.ChatRequest{
 			Purpose:     "chat_reply",
 			Model:       a.cfg.Model,
@@ -545,6 +546,10 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 			}
 			return resp.Content, executedCalls, nil
 		}
+		if toolRounds >= maxRounds {
+			return "", executedCalls, fmt.Errorf("tool call rounds exceeded %d", maxRounds)
+		}
+		toolRounds++
 
 		requestMessages = append(requestMessages, llm.Message{
 			Role:      "assistant",
@@ -580,7 +585,7 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 
 			toolCallID := strings.TrimSpace(call.ID)
 			if toolCallID == "" {
-				toolCallID = fmt.Sprintf("tool_call_%d_%s", i, call.Function.Name)
+				toolCallID = fmt.Sprintf("tool_call_%d_%s", toolRounds, call.Function.Name)
 			}
 			requestMessages = append(requestMessages, llm.Message{
 				Role:       "tool",
@@ -589,8 +594,6 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 			})
 		}
 	}
-
-	return "", executedCalls, fmt.Errorf("tool call rounds exceeded %d", maxRounds)
 }
 
 func renderConversation(messages []conversation.Message) string {
