@@ -425,6 +425,139 @@ func TestHandleUserMessage_AllowsFinalReplyAfterMaxToolCallRounds(t *testing.T) 
 	}
 }
 
+func TestHandleUserMessage_ForcesFinalAnswerWhenToolRoundsExceeded(t *testing.T) {
+	store := conversation.NewStore()
+	fakeLLM := &mockLLM{
+		responses: map[string][]string{
+			"chat_reply": {"", "", "forced final"},
+		},
+		toolCalls: map[string][][]llm.ToolCall{
+			"chat_reply": {
+				{
+					{
+						ID:   "call_1",
+						Type: "function",
+						Function: llm.ToolFunctionCall{
+							Name:      "weather__query",
+							Arguments: `{"city":"beijing","day":1}`,
+						},
+					},
+				},
+				{
+					{
+						ID:   "call_2",
+						Type: "function",
+						Function: llm.ToolFunctionCall{
+							Name:      "weather__query",
+							Arguments: `{"city":"beijing","day":2}`,
+						},
+					},
+				},
+				nil,
+			},
+		},
+	}
+	fakeTools := &mockTools{
+		listed: []llm.ToolDefinition{
+			{
+				Type: "function",
+				Function: llm.ToolFunctionDefinition{
+					Name: "weather__query",
+				},
+			},
+		},
+		response: map[string]string{
+			`weather__query:{"city":"beijing","day":1}`: `{"temp":18}`,
+		},
+	}
+
+	agentSvc := New(Config{
+		Model:                      "test-model",
+		MaxRecentMessages:          10,
+		CompressionTriggerMessages: 99,
+		CompressionTriggerChars:    99999,
+		KeepRecentAfterCompression: 1,
+		MaxCompressionLoopsPerTurn: 1,
+		MaxToolCallRounds:          1,
+		SystemPrompt:               "system",
+		CompressionSystemPrompt:    "compressor",
+	}, store, fakeLLM, fakeTools)
+
+	reply, err := agentSvc.HandleUserMessage(context.Background(), "两天北京天气")
+	if err != nil {
+		t.Fatalf("HandleUserMessage error: %v", err)
+	}
+	if reply != "forced final" {
+		t.Fatalf("unexpected reply: %s", reply)
+	}
+	if len(fakeTools.calls) != 1 {
+		t.Fatalf("expected only one tool execution before hitting cap, got %d", len(fakeTools.calls))
+	}
+	if len(fakeLLM.calls) != 3 {
+		t.Fatalf("expected 3 llm calls (1 tool round + capped fallback), got %d", len(fakeLLM.calls))
+	}
+	if len(fakeLLM.calls[2].Tools) != 0 {
+		t.Fatalf("expected capped fallback call without tools, got %d tools", len(fakeLLM.calls[2].Tools))
+	}
+}
+
+func TestHandleUserMessage_IncludesCarryoverToolContextFromPreviousUserMessage(t *testing.T) {
+	store := conversation.NewStore()
+	store.Append("user", "今天北京天气")
+	if err := store.SetLatestUserToolCalls([]conversation.ToolCall{
+		{
+			ID:        "call_prev_1",
+			Name:      "weather__query",
+			Arguments: `{"city":"beijing"}`,
+			Result:    `{"temp":18}`,
+		},
+	}); err != nil {
+		t.Fatalf("SetLatestUserToolCalls error: %v", err)
+	}
+
+	fakeLLM := &mockLLM{responses: map[string][]string{
+		"chat_reply": {"ok"},
+	}}
+	agentSvc := New(Config{
+		Model:                      "test-model",
+		MaxRecentMessages:          10,
+		CompressionTriggerMessages: 99,
+		CompressionTriggerChars:    99999,
+		KeepRecentAfterCompression: 1,
+		MaxCompressionLoopsPerTurn: 1,
+		MaxToolCallRounds:          2,
+		SystemPrompt:               "system",
+		CompressionSystemPrompt:    "compressor",
+	}, store, fakeLLM, nil)
+
+	reply, err := agentSvc.HandleUserMessage(context.Background(), "继续总结下这个天气")
+	if err != nil {
+		t.Fatalf("HandleUserMessage error: %v", err)
+	}
+	if reply != "ok" {
+		t.Fatalf("unexpected reply: %s", reply)
+	}
+	if len(fakeLLM.calls) != 1 {
+		t.Fatalf("expected one llm call, got %d", len(fakeLLM.calls))
+	}
+
+	foundCarryover := false
+	for _, msg := range fakeLLM.calls[0].Messages {
+		if msg.Role != "system" {
+			continue
+		}
+		if strings.Contains(msg.Content, "可复用工具结果（最近）") &&
+			strings.Contains(msg.Content, "weather__query") &&
+			strings.Contains(msg.Content, `{"temp":18}`) {
+			foundCarryover = true
+			break
+		}
+	}
+	if !foundCarryover {
+		t.Fatalf("expected carryover tool context in request messages")
+	}
+}
+
 func TestHandleUserMessage_RequiresToolEvidenceForRuntimeScheduleQuery(t *testing.T) {
 	store := conversation.NewStore()
 	fakeLLM := &mockLLM{

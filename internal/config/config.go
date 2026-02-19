@@ -62,7 +62,7 @@ func Load() (Config, error) {
 		CompressionTriggerChars:    envInt("AGENT_COMPRESSION_TRIGGER_CHARS", 9000),
 		KeepRecentAfterCompression: envInt("AGENT_KEEP_RECENT_AFTER_COMPRESSION", 8),
 		MaxCompressionLoopsPerTurn: envInt("AGENT_MAX_COMPRESSION_LOOPS", 3),
-		MaxToolCallRounds:          envInt("AGENT_MAX_TOOL_CALL_ROUNDS", 6),
+		MaxToolCallRounds:          envInt("AGENT_MAX_TOOL_CALL_ROUNDS", 10),
 		LLMLogLimit:                envInt("APP_LLM_LOG_LIMIT", 500),
 		AgentSystemPrompt: envOrDefault("AGENT_SYSTEM_PROMPT",
 			agentprompt.DefaultSystemPrompt),

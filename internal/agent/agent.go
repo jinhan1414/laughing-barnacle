@@ -55,25 +55,31 @@ type evolvedSkill struct {
 }
 
 const (
-	maxInjectedSkillPrompts    = 4
-	maxSingleSkillPromptRunes  = 220
-	minInjectedSkillScore      = 3
-	maxSkillFocusUserMessages  = 3
-	maxNightEvolvedSkills      = 3
-	maxEvolvedSkillNameRunes   = 24
-	maxEvolvedSkillPromptRunes = 180
-	maxScheduledRecentMessages = 20
-	builtinLinuxBashToolName   = "linux__bash"
-	defaultBashTimeoutSeconds  = 20
-	maxBashTimeoutSeconds      = 180
-	maxBashStdoutRunes         = 4000
-	maxBashStderrRunes         = 2000
-	maxGreetingRecentMessages  = 8
-	maxGreetingTaskStatuses    = 5
-	maxSummaryForRequestRunes  = 1400
-	maxContextMessageRunes     = 900
-	maxRecentContextRunes      = 4200
-	maxAssistantReplyRunes     = 2200
+	maxInjectedSkillPrompts      = 4
+	maxSingleSkillPromptRunes    = 220
+	minInjectedSkillScore        = 3
+	maxSkillFocusUserMessages    = 3
+	maxNightEvolvedSkills        = 3
+	maxEvolvedSkillNameRunes     = 24
+	maxEvolvedSkillPromptRunes   = 180
+	maxScheduledRecentMessages   = 20
+	builtinLinuxBashToolName     = "linux__bash"
+	defaultBashTimeoutSeconds    = 20
+	maxBashTimeoutSeconds        = 180
+	maxBashStdoutRunes           = 4000
+	maxBashStderrRunes           = 2000
+	maxGreetingRecentMessages    = 8
+	maxGreetingTaskStatuses      = 5
+	maxSummaryForRequestRunes    = 1400
+	maxContextMessageRunes       = 900
+	maxRecentContextRunes        = 4200
+	maxAssistantReplyRunes       = 2200
+	maxCarryoverToolMessages     = 2
+	maxCarryoverToolCalls        = 6
+	maxCarryoverToolArgsRunes    = 160
+	maxCarryoverToolResultRunes  = 260
+	maxCarryoverToolUserRunes    = 70
+	maxCarryoverToolContextRunes = 1200
 )
 
 var (
@@ -488,6 +494,12 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 			Content: msg.Content,
 		})
 	}
+	if carryoverToolContext := renderCarryoverToolContext(recentMessages); carryoverToolContext != "" {
+		requestMessages = append(requestMessages, llm.Message{
+			Role:    "system",
+			Content: carryoverToolContext,
+		})
+	}
 	requiresToolEvidence := shouldRequireRuntimeToolEvidence(latestUserMessageText(recentMessages))
 
 	toolDefs := make([]llm.ToolDefinition, 0, len(builtinToolDefs)+4)
@@ -547,7 +559,23 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 			return resp.Content, executedCalls, nil
 		}
 		if toolRounds >= maxRounds {
-			return "", executedCalls, fmt.Errorf("tool call rounds exceeded %d", maxRounds)
+			requestMessages = append(requestMessages, llm.Message{
+				Role:    "system",
+				Content: fmt.Sprintf("已达到工具调用上限（%d 轮）。禁止继续调用工具，请仅基于已有对话与工具结果直接回答；若信息不足，请明确说明缺口。", maxRounds),
+			})
+			finalResp, finalErr := a.llm.Chat(ctx, llm.ChatRequest{
+				Purpose:     "chat_reply",
+				Model:       a.cfg.Model,
+				Messages:    requestMessages,
+				Temperature: a.cfg.Temperature,
+			})
+			if finalErr != nil {
+				return "", executedCalls, fmt.Errorf("generate reply failed: %w", finalErr)
+			}
+			if strings.TrimSpace(finalResp.Content) == "" {
+				return "", executedCalls, fmt.Errorf("tool call rounds exceeded %d", maxRounds)
+			}
+			return finalResp.Content, executedCalls, nil
 		}
 		toolRounds++
 
@@ -1686,6 +1714,76 @@ func trimMessagesForRequest(
 		out = append(out, rev[i])
 	}
 	return out
+}
+
+func renderCarryoverToolContext(messages []conversation.Message) string {
+	type carryItem struct {
+		userPrompt string
+		call       conversation.ToolCall
+	}
+
+	if len(messages) == 0 {
+		return ""
+	}
+
+	items := make([]carryItem, 0, maxCarryoverToolCalls)
+	msgWithCalls := 0
+	for i := len(messages) - 1; i >= 0 && msgWithCalls < maxCarryoverToolMessages && len(items) < maxCarryoverToolCalls; i-- {
+		msg := messages[i]
+		if !strings.EqualFold(strings.TrimSpace(msg.Role), "user") || len(msg.ToolCalls) == 0 {
+			continue
+		}
+		msgWithCalls++
+		userPrompt := trimRunes(strings.TrimSpace(msg.Content), maxCarryoverToolUserRunes)
+		for j := len(msg.ToolCalls) - 1; j >= 0 && len(items) < maxCarryoverToolCalls; j-- {
+			call := msg.ToolCalls[j]
+			if strings.TrimSpace(call.Name) == "" {
+				continue
+			}
+			if strings.TrimSpace(call.Result) == "" && strings.TrimSpace(call.Error) == "" {
+				continue
+			}
+			items = append(items, carryItem{
+				userPrompt: userPrompt,
+				call:       call,
+			})
+		}
+	}
+	if len(items) == 0 {
+		return ""
+	}
+
+	for left, right := 0, len(items)-1; left < right; left, right = left+1, right-1 {
+		items[left], items[right] = items[right], items[left]
+	}
+
+	var b strings.Builder
+	b.WriteString("可复用工具结果（最近）：如当前问题与下列结果直接相关，优先复用；仅当用户明确要求刷新/重查时再调用工具。\n")
+	for i, item := range items {
+		name := strings.TrimSpace(item.call.Name)
+		args := trimRunes(strings.TrimSpace(item.call.Arguments), maxCarryoverToolArgsRunes)
+		if args == "" {
+			args = "{}"
+		}
+		result := strings.TrimSpace(item.call.Result)
+		if errText := strings.TrimSpace(item.call.Error); errText != "" {
+			if result == "" {
+				result = "error: " + errText
+			} else {
+				result = result + " | error: " + errText
+			}
+		}
+		if result == "" {
+			result = "(空结果)"
+		}
+		result = trimRunes(result, maxCarryoverToolResultRunes)
+		userPrompt := strings.TrimSpace(item.userPrompt)
+		if userPrompt == "" {
+			userPrompt = "(未记录问题)"
+		}
+		b.WriteString(fmt.Sprintf("%d. 问题=%s | 工具=%s | 参数=%s | 结果=%s\n", i+1, userPrompt, name, args, result))
+	}
+	return trimRunes(strings.TrimSpace(b.String()), maxCarryoverToolContextRunes)
 }
 
 func latestUserMessageText(messages []conversation.Message) string {

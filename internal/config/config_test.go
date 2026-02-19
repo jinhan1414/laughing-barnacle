@@ -43,3 +43,16 @@ func TestLoad_PromptEnvOverrideWorks(t *testing.T) {
 		t.Fatalf("expected custom compression prompt, got %q", cfg.CompressionSystemPrompt)
 	}
 }
+
+func TestLoad_DefaultMaxToolCallRoundsIsTen(t *testing.T) {
+	t.Setenv("CERBER_API_KEY", "test-key")
+	t.Setenv("AGENT_MAX_TOOL_CALL_ROUNDS", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load error: %v", err)
+	}
+	if cfg.MaxToolCallRounds != 10 {
+		t.Fatalf("expected default MaxToolCallRounds=10, got %d", cfg.MaxToolCallRounds)
+	}
+}
