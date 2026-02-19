@@ -71,7 +71,7 @@ func (m *mockSkills) ListEnabledSkillIndex() []string {
 	out := make([]string, 0, len(m.prompts))
 	for i, prompt := range m.prompts {
 		id := fmt.Sprintf("skill-%d", i+1)
-		out = append(out, fmt.Sprintf("skill_id=%s | name=%s | brief=%s", id, id, prompt))
+		out = append(out, fmt.Sprintf("skill_id=%s | name=%s | description=%s", id, id, prompt))
 	}
 	return out
 }
@@ -400,7 +400,7 @@ func TestHandleUserMessage_IncludesSkillIndexForProgressiveDisclosure(t *testing
 	}, store, fakeLLM, nil)
 	agentSvc.SetSkillProvider(&mockSkills{
 		indexLines: []string{
-			"skill_id=research-flow | name=检索闭环 | description=先检索再回答 | brief=检索后再回答并附来源 | path=skill://research-flow/SKILL.md",
+			"skill_id=research-flow | name=检索闭环 | description=先检索再回答",
 		},
 		promptByID: map[string]string{
 			"research-flow": "这是完整技能正文，不应在首轮直接注入。",

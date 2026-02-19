@@ -193,6 +193,9 @@ func TestStoreSkillCatalogIndexAndRead(t *testing.T) {
 	if !strings.Contains(index[0], "description=用于代码评审与上线风险治理。") {
 		t.Fatalf("expected description in skill index line, got %q", index[0])
 	}
+	if strings.Contains(index[0], "brief=") || strings.Contains(index[0], "path=") {
+		t.Fatalf("skill index should keep minimal fields only, got %q", index[0])
+	}
 
 	prompt, ok := store.ReadEnabledSkillPrompt("code-review-playbook")
 	if !ok {

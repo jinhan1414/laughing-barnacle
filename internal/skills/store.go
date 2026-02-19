@@ -220,11 +220,10 @@ func (s *Store) ListEnabledSkillIndex() []string {
 			continue
 		}
 		out = append(out, fmt.Sprintf(
-			"skill_id=%s | name=%s | description=%s | path=skill://%s/SKILL.md",
+			"skill_id=%s | name=%s | description=%s",
 			id,
 			name,
 			trimSkillText(description, 28),
-			id,
 		))
 	}
 	return out

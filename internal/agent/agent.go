@@ -1400,10 +1400,6 @@ func compactSkillIndexLine(fields map[string]string) string {
 	}
 	name := trimRunes(strings.TrimSpace(fields["name"]), 20)
 	description := trimRunes(strings.TrimSpace(fields["description"]), 24)
-	path := trimRunes(strings.TrimSpace(fields["path"]), 48)
-	if path == "" {
-		path = "skill://" + skillID + "/SKILL.md"
-	}
 
 	parts := []string{"skill_id=" + skillID}
 	if name != "" {
@@ -1412,7 +1408,6 @@ func compactSkillIndexLine(fields map[string]string) string {
 	if description != "" {
 		parts = append(parts, "description="+description)
 	}
-	parts = append(parts, "path="+path)
 	return trimRunes(strings.Join(parts, " | "), maxSingleSkillPromptRunes)
 }
 

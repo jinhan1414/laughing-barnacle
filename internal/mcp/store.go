@@ -500,14 +500,11 @@ func (s *Store) ListEnabledSkillIndex() []string {
 		if description == "" {
 			description = normalizeSkillDescription("", name, prompt)
 		}
-		brief := trimSkillText(prompt, 72)
 		out = append(out, fmt.Sprintf(
-			"skill_id=%s | name=%s | description=%s | brief=%s | path=skill://%s/SKILL.md",
+			"skill_id=%s | name=%s | description=%s",
 			id,
 			name,
 			description,
-			brief,
-			id,
 		))
 	}
 	return out

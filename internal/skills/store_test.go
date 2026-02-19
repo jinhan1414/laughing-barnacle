@@ -360,11 +360,14 @@ func TestListEnabledSkillIndex_MinimalProgressiveDisclosureFields(t *testing.T) 
 	}
 	found := false
 	for _, line := range index {
-		if !strings.Contains(line, "skill_id=") || !strings.Contains(line, "path=skill://") {
-			t.Fatalf("index line should contain id/path: %q", line)
+		if !strings.Contains(line, "skill_id=") || !strings.Contains(line, "name=") || !strings.Contains(line, "description=") {
+			t.Fatalf("index line should contain skill_id/name/description: %q", line)
 		}
 		if strings.Contains(line, "brief=") {
 			t.Fatalf("index line should not include prompt brief: %q", line)
+		}
+		if strings.Contains(line, "path=") {
+			t.Fatalf("index line should not include path for token efficiency: %q", line)
 		}
 		if strings.Contains(line, "日志诊断") {
 			found = true
