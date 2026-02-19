@@ -55,31 +55,25 @@ type evolvedSkill struct {
 }
 
 const (
-	maxInjectedSkillPrompts      = 4
-	maxSingleSkillPromptRunes    = 220
-	minInjectedSkillScore        = 3
-	maxSkillFocusUserMessages    = 3
-	maxNightEvolvedSkills        = 3
-	maxEvolvedSkillNameRunes     = 24
-	maxEvolvedSkillPromptRunes   = 180
-	maxScheduledRecentMessages   = 20
-	builtinLinuxBashToolName     = "linux__bash"
-	defaultBashTimeoutSeconds    = 20
-	maxBashTimeoutSeconds        = 180
-	maxBashStdoutRunes           = 4000
-	maxBashStderrRunes           = 2000
-	maxGreetingRecentMessages    = 8
-	maxGreetingTaskStatuses      = 5
-	maxSummaryForRequestRunes    = 1400
-	maxContextMessageRunes       = 900
-	maxRecentContextRunes        = 4200
-	maxAssistantReplyRunes       = 2200
-	maxCarryoverToolMessages     = 2
-	maxCarryoverToolCalls        = 6
-	maxCarryoverToolArgsRunes    = 160
-	maxCarryoverToolResultRunes  = 260
-	maxCarryoverToolUserRunes    = 70
-	maxCarryoverToolContextRunes = 1200
+	maxInjectedSkillPrompts    = 4
+	maxSingleSkillPromptRunes  = 220
+	minInjectedSkillScore      = 3
+	maxSkillFocusUserMessages  = 3
+	maxNightEvolvedSkills      = 3
+	maxEvolvedSkillNameRunes   = 24
+	maxEvolvedSkillPromptRunes = 180
+	maxScheduledRecentMessages = 20
+	builtinLinuxBashToolName   = "linux__bash"
+	defaultBashTimeoutSeconds  = 20
+	maxBashTimeoutSeconds      = 180
+	maxBashStdoutRunes         = 4000
+	maxBashStderrRunes         = 2000
+	maxGreetingRecentMessages  = 8
+	maxGreetingTaskStatuses    = 5
+	maxSummaryForRequestRunes  = 1400
+	maxContextMessageRunes     = 900
+	maxRecentContextRunes      = 4200
+	maxAssistantReplyRunes     = 2200
 )
 
 var (
@@ -488,18 +482,7 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 	}
 
 	recentMessages := trimMessagesForRequest(messages, a.cfg.MaxRecentMessages, maxRecentContextRunes, maxContextMessageRunes)
-	for _, msg := range recentMessages {
-		requestMessages = append(requestMessages, llm.Message{
-			Role:    msg.Role,
-			Content: msg.Content,
-		})
-	}
-	if carryoverToolContext := renderCarryoverToolContext(recentMessages); carryoverToolContext != "" {
-		requestMessages = append(requestMessages, llm.Message{
-			Role:    "system",
-			Content: carryoverToolContext,
-		})
-	}
+	requestMessages = appendHistoryMessagesWithToolCalls(requestMessages, recentMessages)
 	requiresToolEvidence := shouldRequireRuntimeToolEvidence(latestUserMessageText(recentMessages))
 
 	toolDefs := make([]llm.ToolDefinition, 0, len(builtinToolDefs)+4)
@@ -1716,74 +1699,67 @@ func trimMessagesForRequest(
 	return out
 }
 
-func renderCarryoverToolContext(messages []conversation.Message) string {
-	type carryItem struct {
-		userPrompt string
-		call       conversation.ToolCall
-	}
-
+func appendHistoryMessagesWithToolCalls(dst []llm.Message, messages []conversation.Message) []llm.Message {
 	if len(messages) == 0 {
-		return ""
+		return dst
 	}
 
-	items := make([]carryItem, 0, maxCarryoverToolCalls)
-	msgWithCalls := 0
-	for i := len(messages) - 1; i >= 0 && msgWithCalls < maxCarryoverToolMessages && len(items) < maxCarryoverToolCalls; i-- {
-		msg := messages[i]
+	out := dst
+	for i, msg := range messages {
+		out = append(out, llm.Message{
+			Role:    msg.Role,
+			Content: msg.Content,
+		})
 		if !strings.EqualFold(strings.TrimSpace(msg.Role), "user") || len(msg.ToolCalls) == 0 {
 			continue
 		}
-		msgWithCalls++
-		userPrompt := trimRunes(strings.TrimSpace(msg.Content), maxCarryoverToolUserRunes)
-		for j := len(msg.ToolCalls) - 1; j >= 0 && len(items) < maxCarryoverToolCalls; j-- {
-			call := msg.ToolCalls[j]
-			if strings.TrimSpace(call.Name) == "" {
+		for j, call := range msg.ToolCalls {
+			name := strings.TrimSpace(call.Name)
+			if name == "" {
 				continue
 			}
-			if strings.TrimSpace(call.Result) == "" && strings.TrimSpace(call.Error) == "" {
+			callID := strings.TrimSpace(call.ID)
+			if callID == "" {
+				callID = fmt.Sprintf("history_tool_call_%d_%d_%s", i, j, name)
+			}
+			args := strings.TrimSpace(call.Arguments)
+			if args == "" {
+				args = "{}"
+			}
+
+			result := strings.TrimSpace(call.Result)
+			if errText := strings.TrimSpace(call.Error); errText != "" {
+				if result == "" {
+					result = "tool execution error: " + errText
+				} else {
+					result = result + " | tool execution error: " + errText
+				}
+			}
+			if result == "" {
 				continue
 			}
-			items = append(items, carryItem{
-				userPrompt: userPrompt,
-				call:       call,
+
+			out = append(out, llm.Message{
+				Role: "assistant",
+				ToolCalls: []llm.ToolCall{
+					{
+						ID:   callID,
+						Type: "function",
+						Function: llm.ToolFunctionCall{
+							Name:      name,
+							Arguments: trimRunes(args, maxContextMessageRunes),
+						},
+					},
+				},
+			})
+			out = append(out, llm.Message{
+				Role:       "tool",
+				ToolCallID: callID,
+				Content:    trimRunes(result, maxContextMessageRunes),
 			})
 		}
 	}
-	if len(items) == 0 {
-		return ""
-	}
-
-	for left, right := 0, len(items)-1; left < right; left, right = left+1, right-1 {
-		items[left], items[right] = items[right], items[left]
-	}
-
-	var b strings.Builder
-	b.WriteString("可复用工具结果（最近）：如当前问题与下列结果直接相关，优先复用；仅当用户明确要求刷新/重查时再调用工具。\n")
-	for i, item := range items {
-		name := strings.TrimSpace(item.call.Name)
-		args := trimRunes(strings.TrimSpace(item.call.Arguments), maxCarryoverToolArgsRunes)
-		if args == "" {
-			args = "{}"
-		}
-		result := strings.TrimSpace(item.call.Result)
-		if errText := strings.TrimSpace(item.call.Error); errText != "" {
-			if result == "" {
-				result = "error: " + errText
-			} else {
-				result = result + " | error: " + errText
-			}
-		}
-		if result == "" {
-			result = "(空结果)"
-		}
-		result = trimRunes(result, maxCarryoverToolResultRunes)
-		userPrompt := strings.TrimSpace(item.userPrompt)
-		if userPrompt == "" {
-			userPrompt = "(未记录问题)"
-		}
-		b.WriteString(fmt.Sprintf("%d. 问题=%s | 工具=%s | 参数=%s | 结果=%s\n", i+1, userPrompt, name, args, result))
-	}
-	return trimRunes(strings.TrimSpace(b.String()), maxCarryoverToolContextRunes)
+	return out
 }
 
 func latestUserMessageText(messages []conversation.Message) string {
