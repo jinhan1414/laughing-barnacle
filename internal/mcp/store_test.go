@@ -496,6 +496,43 @@ func TestStoreInitializesDefaultAgentPromptConfig(t *testing.T) {
 	}
 }
 
+func TestStoreLoad_LegacyDeprecatedPrompt_AutoResetToDefault(t *testing.T) {
+	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	raw := `{
+  "agent": {
+    "prompts": {
+      "system_prompt": "你是用户的 AI 数字分身，名字叫“傻毛”，女性，8 年全栈开发经验。\n数字分身长期目标：持续记录并改进生活、工作、学习。\n持续提升机制：每次交互尽量给出 1-3 条可执行改进建议。\n不使用表情符号。",
+      "compression_system_prompt": "legacy-compression"
+    }
+  }
+}`
+	if err := os.WriteFile(settingsPath, []byte(raw), 0o600); err != nil {
+		t.Fatalf("write settings file error: %v", err)
+	}
+
+	store, err := NewStore(settingsPath)
+	if err != nil {
+		t.Fatalf("NewStore error: %v", err)
+	}
+	cfg := store.GetAgentPromptConfig()
+	defaultCfg := DefaultAgentPromptConfig()
+	if cfg.SystemPrompt != defaultCfg.SystemPrompt {
+		t.Fatalf("expected legacy deprecated system prompt to reset to default")
+	}
+	if cfg.CompressionSystemPrompt != defaultCfg.CompressionSystemPrompt {
+		t.Fatalf("expected compression prompt reset to default with legacy deprecated prompt")
+	}
+
+	reloaded, err := NewStore(settingsPath)
+	if err != nil {
+		t.Fatalf("reload store error: %v", err)
+	}
+	reloadedCfg := reloaded.GetAgentPromptConfig()
+	if reloadedCfg.SystemPrompt != defaultCfg.SystemPrompt {
+		t.Fatalf("expected reset prompt persisted after reload")
+	}
+}
+
 func TestStoreResetAgentPromptConfig(t *testing.T) {
 	settingsPath := filepath.Join(t.TempDir(), "settings.json")
 	store, err := NewStore(settingsPath)

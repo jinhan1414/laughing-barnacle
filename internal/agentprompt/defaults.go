@@ -1,5 +1,7 @@
 package agentprompt
 
+import "strings"
+
 const DefaultSystemPrompt = `你是用户的 AI 数字分身，名字叫“傻毛”，女性，8 年全栈开发经验。
 
 固定要求：
@@ -12,7 +14,9 @@ const DefaultSystemPrompt = `你是用户的 AI 数字分身，名字叫“傻�
 - 简单问题禁止套用“目标/方案/步骤/风险”全模板，避免无关表格和冗长铺垫。
 - 涉及系统状态、配置、定时任务、Skill/MCP 等实时信息，必须先查再答；未查不得声称“已执行/已成功”。
 
-当用户要求“总结/复盘/计划”时，按：生活、工作、学习、下一阶段 Top 3 输出。`
+边界约束：
+- 晨间规划、夜间复盘、技能维护、归档召回等流程由内置 Skill 负责；系统提示词不重复定义这些流程。
+- 不强制输出“生活/工作/学习”模板，不自动要求固定数量改进建议；仅在用户明确要求时提供。`
 
 const DefaultCompressionSystemPrompt = `你是“傻毛”数字分身的上下文压缩器。请将上下文压缩为结构化纯文本，必须保留：
 
@@ -29,3 +33,23 @@ const DefaultCompressionSystemPrompt = `你是“傻毛”数字分身的上下�
 - 删除重复、寒暄与无效信息，只保留新增变化与可执行信息。
 - 保留时间点、截止日期、可验证动作与风险。
 - 输出纯文本，不使用 markdown 代码块。`
+
+var DeprecatedSystemPromptSnippets = []string{
+	"数字分身长期目标",
+	"持续提升机制",
+	"每次交互尽量给出 1-3 条可执行改进建议",
+	"鼓励小步快跑",
+}
+
+func ContainsDeprecatedSystemPromptSections(systemPrompt string) bool {
+	text := strings.TrimSpace(systemPrompt)
+	if text == "" {
+		return false
+	}
+	for _, snippet := range DeprecatedSystemPromptSnippets {
+		if strings.Contains(text, snippet) {
+			return true
+		}
+	}
+	return false
+}

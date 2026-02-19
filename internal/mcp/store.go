@@ -127,6 +127,24 @@ func defaultScheduledTasks() []scheduler.Task {
 	}
 }
 
+func normalizeAgentPromptConfigOnLoad(cfg AgentPromptConfig) (AgentPromptConfig, bool) {
+	normalized := cfg
+	normalized.SystemPrompt = strings.TrimSpace(normalized.SystemPrompt)
+	normalized.CompressionSystemPrompt = strings.TrimSpace(normalized.CompressionSystemPrompt)
+
+	changed := normalized.SystemPrompt != cfg.SystemPrompt ||
+		normalized.CompressionSystemPrompt != cfg.CompressionSystemPrompt
+
+	if agentprompt.ContainsDeprecatedSystemPromptSections(normalized.SystemPrompt) {
+		defaults := DefaultAgentPromptConfig()
+		normalized.SystemPrompt = defaults.SystemPrompt
+		normalized.CompressionSystemPrompt = defaults.CompressionSystemPrompt
+		normalized.UpdatedAt = time.Now()
+		return normalized, true
+	}
+	return normalized, changed
+}
+
 func NewStore(path string) (*Store, error) {
 	if strings.TrimSpace(path) == "" {
 		return nil, fmt.Errorf("settings file path is required")
@@ -887,6 +905,10 @@ func (s *Store) load() error {
 			return fmt.Errorf("invalid skill %q: %w", skill.ID, err)
 		}
 		cfg.Skills.Items[i] = skill
+	}
+	if normalizedPrompts, changed := normalizeAgentPromptConfigOnLoad(cfg.Agent.Prompts); changed {
+		cfg.Agent.Prompts = normalizedPrompts
+		needsPersist = true
 	}
 	if err := validateAgentPromptConfig(cfg.Agent.Prompts); err != nil {
 		return fmt.Errorf("invalid agent prompts: %w", err)

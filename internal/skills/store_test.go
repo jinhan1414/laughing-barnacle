@@ -52,6 +52,12 @@ func TestBuiltinScheduledExecutionSkillsPresent(t *testing.T) {
 			if !strings.Contains(strings.ToLower(builtin.Prompt), "json") {
 				t.Fatalf("night scheduled skill should require json output")
 			}
+			if !strings.Contains(builtin.Prompt, "不得包含“数字分身长期目标”") {
+				t.Fatalf("night scheduled skill should block deprecated long-term-goal sections")
+			}
+			if !strings.Contains(builtin.Prompt, "内置技能") {
+				t.Fatalf("night scheduled skill should avoid duplicating built-in skill responsibilities")
+			}
 		case "morning-planning":
 			foundMorning = true
 			if !strings.Contains(strings.ToLower(builtin.Prompt), "json") {

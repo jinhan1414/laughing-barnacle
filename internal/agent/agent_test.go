@@ -1403,3 +1403,22 @@ func TestGenerateChatGreeting_LLMError(t *testing.T) {
 		t.Fatalf("expected llm error")
 	}
 }
+
+func TestIsValidEvolvedPrompt_RejectsDeprecatedSystemSections(t *testing.T) {
+	systemPrompt := strings.TrimSpace(`
+你是用户的 AI 数字分身，名字叫“傻毛”，女性，8 年全栈开发经验。
+固定要求：不使用表情符号，语气务实稳定。
+数字分身长期目标：
+- 持续记录并改进“生活、工作、学习”三个维度。
+持续提升机制：
+- 每次交互尽量给出 1-3 条可执行改进建议。
+`)
+	compressionPrompt := strings.TrimSpace(`
+你是“傻毛”数字分身的上下文压缩器。
+保留关键事实、待办与可验证动作，输出纯文本。
+`)
+
+	if isValidEvolvedPrompt(systemPrompt, compressionPrompt) {
+		t.Fatalf("expected evolved prompt containing deprecated sections to be rejected")
+	}
+}

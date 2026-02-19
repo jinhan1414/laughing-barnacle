@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"laughing-barnacle/internal/agentprompt"
 	"laughing-barnacle/internal/conversation"
 	"laughing-barnacle/internal/llm"
 	"laughing-barnacle/internal/routine"
@@ -54,25 +55,25 @@ type evolvedSkill struct {
 }
 
 const (
-	maxInjectedSkillPrompts     = 4
-	maxSingleSkillPromptRunes   = 220
-	minInjectedSkillScore       = 3
-	maxSkillFocusUserMessages   = 3
-	maxNightEvolvedSkills       = 3
-	maxEvolvedSkillNameRunes    = 24
-	maxEvolvedSkillPromptRunes  = 180
-	maxScheduledRecentMessages  = 20
-	builtinLinuxBashToolName    = "linux__bash"
-	defaultBashTimeoutSeconds   = 20
-	maxBashTimeoutSeconds       = 180
-	maxBashStdoutRunes          = 4000
-	maxBashStderrRunes          = 2000
-	maxGreetingRecentMessages   = 8
-	maxGreetingTaskStatuses     = 5
-	maxSummaryForRequestRunes   = 1400
-	maxContextMessageRunes      = 900
-	maxRecentContextRunes       = 4200
-	maxAssistantReplyRunes      = 2200
+	maxInjectedSkillPrompts    = 4
+	maxSingleSkillPromptRunes  = 220
+	minInjectedSkillScore      = 3
+	maxSkillFocusUserMessages  = 3
+	maxNightEvolvedSkills      = 3
+	maxEvolvedSkillNameRunes   = 24
+	maxEvolvedSkillPromptRunes = 180
+	maxScheduledRecentMessages = 20
+	builtinLinuxBashToolName   = "linux__bash"
+	defaultBashTimeoutSeconds  = 20
+	maxBashTimeoutSeconds      = 180
+	maxBashStdoutRunes         = 4000
+	maxBashStderrRunes         = 2000
+	maxGreetingRecentMessages  = 8
+	maxGreetingTaskStatuses    = 5
+	maxSummaryForRequestRunes  = 1400
+	maxContextMessageRunes     = 900
+	maxRecentContextRunes      = 4200
+	maxAssistantReplyRunes     = 2200
 )
 
 var (
@@ -1008,6 +1009,9 @@ func isValidEvolvedPrompt(systemPrompt, compressionPrompt string) bool {
 		return false
 	}
 	if !strings.Contains(systemPrompt, "不使用表情符号") {
+		return false
+	}
+	if agentprompt.ContainsDeprecatedSystemPromptSections(systemPrompt) {
 		return false
 	}
 	return true
