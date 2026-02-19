@@ -55,7 +55,6 @@ type evolvedSkill struct {
 
 const (
 	maxInjectedSkillPrompts     = 4
-	maxInjectedSkillPromptRunes = 520
 	maxSingleSkillPromptRunes   = 220
 	minInjectedSkillScore       = 3
 	maxSkillFocusUserMessages   = 3
@@ -443,7 +442,6 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 	})
 	responseStylePrompt := "回答策略：默认简洁直答（3-6 行）。仅当用户明确要求“详细/方案/步骤/复盘/计划/总结”时再展开，避免无关模板、表格和冗长铺垫。"
 	builtinToolDefs := []llm.ToolDefinition{linuxBashToolDefinition()}
-	toolIntro := "内置工具仅有 linux__bash（用于本机命令执行）；其他能力应通过已加载的 MCP 工具完成。凡涉及实时系统状态或变更结果，必须先调用工具再给结论。"
 	skillIndexPrompt := ""
 	if a.skills != nil {
 		allSkillIndex := a.skills.ListEnabledSkillIndex()
@@ -452,30 +450,14 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 			b.WriteString(fmt.Sprintf("已启用技能索引（渐进式披露）：共 %d 条。\n", len(allSkillIndex)))
 			b.WriteString("如需技能详情，仅在必要时通过 linux__bash 执行：curl -s \"http://127.0.0.1:8080/api/skills/read?id=<skill_id>\"。\n")
 
-			selectedSkillIDs := selectSkillIDsForTurn(allSkillIndex, messages)
-			injectCandidates := compactSkillIndexByIDs(allSkillIndex, selectedSkillIDs)
-			if len(injectCandidates) == 0 {
-				injectCandidates = compactSkillIndexByIDs(allSkillIndex, nil)
-			}
+			injectCandidates := compactSkillIndexByIDs(allSkillIndex, nil)
 			injected := 0
-			usedRunes := 0
 			for _, line := range injectCandidates {
-				if injected >= maxInjectedSkillPrompts {
-					break
-				}
 				if line == "" {
 					continue
 				}
-				lineLen := len([]rune(line))
-				if usedRunes+lineLen > maxInjectedSkillPromptRunes {
-					break
-				}
 				b.WriteString(fmt.Sprintf("%d. %s\n", injected+1, line))
 				injected++
-				usedRunes += lineLen
-			}
-			if injected < len(allSkillIndex) {
-				b.WriteString(fmt.Sprintf("(索引共 %d 条，本轮展示 %d 条以控制上下文长度)\n", len(allSkillIndex), injected))
 			}
 			skillIndexPrompt = strings.TrimSpace(b.String())
 			if skillIndexPrompt != "" {
@@ -488,13 +470,9 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 	}
 	requestMessages = append(requestMessages, llm.Message{
 		Role:    "system",
-		Content: toolIntro,
-	})
-	requestMessages = append(requestMessages, llm.Message{
-		Role:    "system",
 		Content: responseStylePrompt,
 	})
-	summary = pruneSummaryOverlap(summary, systemPrompt, toolIntro, skillIndexPrompt, responseStylePrompt)
+	summary = pruneSummaryOverlap(summary, systemPrompt, skillIndexPrompt, responseStylePrompt)
 	if strings.TrimSpace(summary) != "" {
 		requestMessages = append(requestMessages, llm.Message{
 			Role:    "system",
@@ -1361,7 +1339,7 @@ func compactSkillIndexByIDs(rawLines []string, selectedIDs []string) []string {
 
 	useAll := len(selectedSet) == 0
 	seen := make(map[string]struct{}, len(rawLines))
-	out := make([]string, 0, min(maxInjectedSkillPrompts, len(rawLines)))
+	out := make([]string, 0, len(rawLines))
 	for _, raw := range rawLines {
 		fields := parseSkillIndexFields(raw)
 		skillID := fields["skill_id"]
@@ -1383,9 +1361,6 @@ func compactSkillIndexByIDs(rawLines []string, selectedIDs []string) []string {
 			continue
 		}
 		out = append(out, line)
-		if len(out) >= maxInjectedSkillPrompts {
-			break
-		}
 	}
 	return out
 }

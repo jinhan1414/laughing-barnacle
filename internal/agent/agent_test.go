@@ -445,6 +445,9 @@ func TestHandleUserMessage_IncludesSkillIndexForProgressiveDisclosure(t *testing
 		if msg.Role != "system" {
 			continue
 		}
+		if strings.Contains(msg.Content, "内置工具仅有 linux__bash") {
+			t.Fatalf("linux__bash policy text should not be injected as system context, got %q", msg.Content)
+		}
 		if strings.Contains(msg.Content, "/api/context/archive/index") || strings.Contains(msg.Content, "内置技能 archive_recall") {
 			t.Fatalf("archive recall should not be hardcoded in system prompt, got %q", msg.Content)
 		}
@@ -559,7 +562,7 @@ func TestHandleUserMessage_LinuxBashToolCall(t *testing.T) {
 	}
 }
 
-func TestHandleUserMessage_SkillPromptInjectionIsCapped(t *testing.T) {
+func TestHandleUserMessage_SkillIndexInjectionIncludesAllLines(t *testing.T) {
 	store := conversation.NewStore()
 	fakeLLM := &mockLLM{responses: map[string][]string{
 		"chat_reply": {"ok"},
@@ -619,11 +622,8 @@ func TestHandleUserMessage_SkillPromptInjectionIsCapped(t *testing.T) {
 	if strings.Contains(content, longPrompt) {
 		t.Fatalf("expected long prompt to be trimmed out from injected skill index")
 	}
-	if strings.Count(content, "\n") > maxInjectedSkillPrompts+4 {
-		t.Fatalf("expected injected skill list to be capped, got: %q", content)
-	}
-	if !strings.Contains(content, "索引共") {
-		t.Fatalf("expected index truncation note, got %q", content)
+	if got := strings.Count(content, "skill_id="); got != 8 {
+		t.Fatalf("expected all skill index lines to be injected, got %d lines: %q", got, content)
 	}
 }
 
