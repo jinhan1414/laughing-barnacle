@@ -18,6 +18,7 @@ import (
 	"laughing-barnacle/internal/conversation"
 	"laughing-barnacle/internal/llmlog"
 	"laughing-barnacle/internal/mcp"
+	"laughing-barnacle/internal/project"
 	"laughing-barnacle/internal/routine"
 	"laughing-barnacle/internal/scheduler"
 	"laughing-barnacle/internal/skills"
@@ -27,14 +28,15 @@ import (
 var embeddedTemplates embed.FS
 
 type Server struct {
-	agent      *agent.Agent
-	convStore  *conversation.Store
-	logStore   *llmlog.Store
-	mcpStore   *mcp.Store
-	mcpTools   *mcp.ToolProvider
-	skillStore *skills.Store
-	scheduler  ScheduleReloader
-	tmpl       *template.Template
+	agent        *agent.Agent
+	convStore    *conversation.Store
+	logStore     *llmlog.Store
+	mcpStore     *mcp.Store
+	mcpTools     *mcp.ToolProvider
+	skillStore   *skills.Store
+	projectStore *project.Store
+	scheduler    ScheduleReloader
+	tmpl         *template.Template
 }
 
 type ScheduleReloader interface {
@@ -99,6 +101,7 @@ type settingsPageData struct {
 	Sections      []settingsSection
 	Services      []mcpServiceView
 	Skills        []skillView
+	Projects      []projectView
 	Schedules     []scheduledTaskView
 	AgentPrompts  agentPromptsView
 	Success       string
@@ -113,6 +116,20 @@ type skillView struct {
 	Source      string
 	Enabled     bool
 	UpdatedAt   string
+}
+
+type projectView struct {
+	ID         string
+	Name       string
+	Goal       string
+	Status     string
+	Summary    string
+	KeyFacts   []string
+	Milestones []string
+	Risks      []string
+	Todos      []string
+	Decisions  []string
+	UpdatedAt  string
 }
 
 type agentPromptsView struct {
@@ -168,6 +185,21 @@ type apiScheduledTask struct {
 	UpdatedAt   time.Time `json:"updated_at,omitempty"`
 }
 
+type apiProject struct {
+	ID         string    `json:"id"`
+	Name       string    `json:"name"`
+	Goal       string    `json:"goal,omitempty"`
+	Status     string    `json:"status,omitempty"`
+	Summary    string    `json:"summary,omitempty"`
+	KeyFacts   []string  `json:"key_facts,omitempty"`
+	Milestones []string  `json:"milestones,omitempty"`
+	Risks      []string  `json:"risks,omitempty"`
+	Todos      []string  `json:"todos,omitempty"`
+	Decisions  []string  `json:"decisions,omitempty"`
+	CreatedAt  time.Time `json:"created_at,omitempty"`
+	UpdatedAt  time.Time `json:"updated_at,omitempty"`
+}
+
 type apiChatUpdate struct {
 	Kind        string `json:"kind"`
 	Content     string `json:"content"`
@@ -211,6 +243,10 @@ func NewServer(
 	}, nil
 }
 
+func (s *Server) SetProjectStore(store *project.Store) {
+	s.projectStore = store
+}
+
 func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/", s.handleRoot)
 	mux.HandleFunc("/chat", s.handleChatPage)
@@ -241,6 +277,9 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/skills/read", s.handleAPISkillRead)
 	mux.HandleFunc("/api/skills/catalog/search", s.handleAPISkillsCatalogSearch)
 	mux.HandleFunc("/api/schedules", s.handleAPISchedules)
+	mux.HandleFunc("/api/projects", s.handleAPIProjects)
+	mux.HandleFunc("/api/projects/read", s.handleAPIProjectRead)
+	mux.HandleFunc("/api/projects/upsert", s.handleAPIProjectUpsert)
 	mux.HandleFunc("/api/chat/updates", s.handleAPIChatUpdates)
 	mux.HandleFunc("/api/context/archive/index", s.handleAPIContextArchiveIndex)
 	mux.HandleFunc("/api/context/archive/section", s.handleAPIContextArchiveSection)
@@ -515,7 +554,7 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 	if section == "" {
 		section = "mcp"
 	}
-	if section != "mcp" && section != "llm" && section != "security" && section != "skills" && section != "schedules" {
+	if section != "mcp" && section != "llm" && section != "security" && section != "skills" && section != "schedules" && section != "projects" {
 		section = "mcp"
 	}
 
@@ -523,6 +562,7 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 		ActiveSection: section,
 		Sections: []settingsSection{
 			{Key: "mcp", Title: "MCP 服务", Description: "管理 Agent 可用的 MCP 工具服务"},
+			{Key: "projects", Title: "项目记忆", Description: "查看数字分身维护的结构化项目信息"},
 			{Key: "schedules", Title: "定时任务", Description: "统一管理系统 Cron 定时任务"},
 			{Key: "llm", Title: "提示词策略", Description: "配置 Agent 系统提示词与压缩提示词"},
 			{Key: "security", Title: "安全策略", Description: "预留：权限与审计配置"},
@@ -585,6 +625,30 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 				view.UpdatedAt = skill.UpdatedAt.Format("2006-01-02 15:04:05")
 			}
 			data.Skills = append(data.Skills, view)
+		}
+	} else if section == "projects" {
+		allProjects := []project.Project(nil)
+		if s.projectStore != nil {
+			allProjects = s.projectStore.ListProjects()
+		}
+		data.Projects = make([]projectView, 0, len(allProjects))
+		for _, item := range allProjects {
+			view := projectView{
+				ID:         item.ID,
+				Name:       item.Name,
+				Goal:       item.Goal,
+				Status:     item.Status,
+				Summary:    item.Summary,
+				KeyFacts:   append([]string(nil), item.KeyFacts...),
+				Milestones: append([]string(nil), item.Milestones...),
+				Risks:      append([]string(nil), item.Risks...),
+				Todos:      append([]string(nil), item.Todos...),
+				Decisions:  append([]string(nil), item.Decisions...),
+			}
+			if !item.UpdatedAt.IsZero() {
+				view.UpdatedAt = item.UpdatedAt.Format("2006-01-02 15:04:05")
+			}
+			data.Projects = append(data.Projects, view)
 		}
 	} else if section == "llm" {
 		cfg := s.mcpStore.GetAgentPromptConfig()
@@ -1147,6 +1211,200 @@ func (s *Server) handleAPISchedules(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"schedules": items,
 	})
+}
+
+func (s *Server) handleAPIProjects(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if s.projectStore == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error": "project store unavailable",
+		})
+		return
+	}
+
+	projects := s.projectStore.ListProjects()
+	items := make([]apiProject, 0, len(projects))
+	for _, item := range projects {
+		items = append(items, toAPIProject(item))
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"projects": items,
+	})
+}
+
+func (s *Server) handleAPIProjectRead(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if s.projectStore == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error": "project store unavailable",
+		})
+		return
+	}
+
+	id := strings.TrimSpace(r.URL.Query().Get("id"))
+	if id == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error": "query parameter id is required",
+		})
+		return
+	}
+	item, ok := s.projectStore.ReadProject(id)
+	if !ok {
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error": "project not found",
+		})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(toAPIProject(item))
+}
+
+func (s *Server) handleAPIProjectUpsert(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if s.projectStore == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error": "project store unavailable",
+		})
+		return
+	}
+
+	input, err := parseProjectUpsertRequest(r)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error": err.Error(),
+		})
+		return
+	}
+	saved, err := s.projectStore.UpsertProject(input)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"project": toAPIProject(saved),
+	})
+}
+
+func toAPIProject(item project.Project) apiProject {
+	return apiProject{
+		ID:         item.ID,
+		Name:       item.Name,
+		Goal:       item.Goal,
+		Status:     item.Status,
+		Summary:    item.Summary,
+		KeyFacts:   append([]string(nil), item.KeyFacts...),
+		Milestones: append([]string(nil), item.Milestones...),
+		Risks:      append([]string(nil), item.Risks...),
+		Todos:      append([]string(nil), item.Todos...),
+		Decisions:  append([]string(nil), item.Decisions...),
+		CreatedAt:  item.CreatedAt,
+		UpdatedAt:  item.UpdatedAt,
+	}
+}
+
+func parseProjectUpsertRequest(r *http.Request) (project.Project, error) {
+	contentType := strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Type")))
+	if strings.Contains(contentType, "application/json") {
+		var req struct {
+			ID         string   `json:"id"`
+			Name       string   `json:"name"`
+			Goal       string   `json:"goal"`
+			Status     string   `json:"status"`
+			Summary    string   `json:"summary"`
+			KeyFacts   []string `json:"key_facts"`
+			Milestones []string `json:"milestones"`
+			Risks      []string `json:"risks"`
+			Todos      []string `json:"todos"`
+			Decisions  []string `json:"decisions"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			return project.Project{}, fmt.Errorf("invalid json body")
+		}
+		return project.Project{
+			ID:         strings.TrimSpace(req.ID),
+			Name:       strings.TrimSpace(req.Name),
+			Goal:       strings.TrimSpace(req.Goal),
+			Status:     strings.TrimSpace(req.Status),
+			Summary:    strings.TrimSpace(req.Summary),
+			KeyFacts:   append([]string(nil), req.KeyFacts...),
+			Milestones: append([]string(nil), req.Milestones...),
+			Risks:      append([]string(nil), req.Risks...),
+			Todos:      append([]string(nil), req.Todos...),
+			Decisions:  append([]string(nil), req.Decisions...),
+		}, nil
+	}
+
+	if err := r.ParseForm(); err != nil {
+		return project.Project{}, fmt.Errorf("invalid form body")
+	}
+	return project.Project{
+		ID:         strings.TrimSpace(r.FormValue("id")),
+		Name:       strings.TrimSpace(r.FormValue("name")),
+		Goal:       strings.TrimSpace(r.FormValue("goal")),
+		Status:     strings.TrimSpace(r.FormValue("status")),
+		Summary:    strings.TrimSpace(r.FormValue("summary")),
+		KeyFacts:   parseProjectListField(r.FormValue("key_facts")),
+		Milestones: parseProjectListField(r.FormValue("milestones")),
+		Risks:      parseProjectListField(r.FormValue("risks")),
+		Todos:      parseProjectListField(r.FormValue("todos")),
+		Decisions:  parseProjectListField(r.FormValue("decisions")),
+	}, nil
+}
+
+func parseProjectListField(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+
+	if strings.HasPrefix(raw, "[") {
+		var arr []string
+		if err := json.Unmarshal([]byte(raw), &arr); err == nil {
+			return arr
+		}
+	}
+
+	parts := strings.FieldsFunc(raw, func(r rune) bool {
+		switch r {
+		case '\n', '\r', ';', '|', '，', '、':
+			return true
+		default:
+			return false
+		}
+	})
+	if len(parts) == 1 && strings.Contains(raw, ",") {
+		parts = strings.Split(raw, ",")
+	}
+	out := make([]string, 0, len(parts))
+	for _, item := range parts {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		out = append(out, item)
+	}
+	return out
 }
 
 func (s *Server) handleAPIChatUpdates(w http.ResponseWriter, r *http.Request) {

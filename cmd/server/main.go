@@ -16,6 +16,7 @@ import (
 	"laughing-barnacle/internal/llm/cerber"
 	"laughing-barnacle/internal/llmlog"
 	"laughing-barnacle/internal/mcp"
+	"laughing-barnacle/internal/project"
 	"laughing-barnacle/internal/scheduler"
 	"laughing-barnacle/internal/skills"
 	"laughing-barnacle/internal/web"
@@ -41,6 +42,11 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	projectStore, err := project.NewStoreWithFile(cfg.ProjectsFile)
+	if err != nil {
+		return err
+	}
+	defer projectStore.Close()
 	skillStore, err := skills.NewStore(cfg.SkillsDir, cfg.SkillsStateFile)
 	if err != nil {
 		return err
@@ -89,6 +95,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	webServer.SetProjectStore(projectStore)
 
 	mux := http.NewServeMux()
 	webServer.RegisterRoutes(mux)

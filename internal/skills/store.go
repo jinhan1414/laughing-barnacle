@@ -140,6 +140,22 @@ var builtinSkills = []Skill{
 		Enabled: true,
 		Source:  builtinSkillSource,
 	},
+	{
+		ID:          "project-memory-maintainer",
+		Name:        "项目记忆维护",
+		Description: "当用户更新项目进展、风险、里程碑或决策时使用",
+		Prompt: strings.TrimSpace(
+			"目标：维护结构化项目记忆，服务单用户长期演进。\n" +
+				"先查项目索引：用 linux__bash 执行 curl -s http://127.0.0.1:8080/api/projects。\n" +
+				"必要时按需读取详情：curl -s \"http://127.0.0.1:8080/api/projects/read?id=<project_id>\"。\n" +
+				"仅当当前对话存在明确项目变更时写入；信息不确定时禁止写入。\n" +
+				"写入接口：POST /api/projects/upsert，字段支持 id/name/goal/status/summary/key_facts/milestones/risks/todos/decisions。\n" +
+				"list 字段可用 JSON 字符串数组或换行文本；优先小步更新，不要一次性重写全部项目。\n" +
+				"写入后再次读取 /api/projects 或 /api/projects/read?id=<project_id> 做结果校验，再向用户汇报“已记录哪些变化”。",
+		),
+		Enabled: true,
+		Source:  builtinSkillSource,
+	},
 }
 
 type Skill struct {

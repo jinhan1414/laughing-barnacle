@@ -342,6 +342,26 @@ func TestStoreHasBuiltinConfigSkills(t *testing.T) {
 	if !strings.Contains(archiveSkill.Prompt, "禁止一次性拉取全部归档正文") {
 		t.Fatalf("builtin archive recall skill should enforce minimal retrieval, got: %q", archiveSkill.Prompt)
 	}
+
+	projectSkill, ok := findByID("project-memory-maintainer")
+	if !ok {
+		t.Fatalf("builtin skill project-memory-maintainer missing")
+	}
+	if !projectSkill.Enabled {
+		t.Fatalf("builtin project maintainer skill should be enabled by default")
+	}
+	if projectSkill.Source != "builtin" {
+		t.Fatalf("builtin project maintainer skill source mismatch: %q", projectSkill.Source)
+	}
+	if !strings.Contains(projectSkill.Prompt, "/api/projects") {
+		t.Fatalf("builtin project maintainer should include /api/projects endpoint, got: %q", projectSkill.Prompt)
+	}
+	if !strings.Contains(projectSkill.Prompt, "/api/projects/upsert") {
+		t.Fatalf("builtin project maintainer should include upsert endpoint, got: %q", projectSkill.Prompt)
+	}
+	if !strings.Contains(projectSkill.Prompt, "信息不确定时禁止写入") {
+		t.Fatalf("builtin project maintainer should forbid uncertain writes, got: %q", projectSkill.Prompt)
+	}
 }
 
 func TestListEnabledSkillIndex_MinimalProgressiveDisclosureFields(t *testing.T) {

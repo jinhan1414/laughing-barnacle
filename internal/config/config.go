@@ -15,6 +15,7 @@ type Config struct {
 	SkillsDir                  string
 	SkillsStateFile            string
 	ConversationFile           string
+	ProjectsFile               string
 	LLMLogFile                 string
 	CerberBaseURL              string
 	CerberAPIKey               string
@@ -45,6 +46,7 @@ func Load() (Config, error) {
 		SkillsDir:                  envOrDefault("APP_SKILLS_DIR", "./data/skills"),
 		SkillsStateFile:            envOrDefault("APP_SKILLS_STATE_FILE", "./data/skills_state.json"),
 		ConversationFile:           envOrDefault("APP_CONVERSATION_FILE", "./data/conversation.json"),
+		ProjectsFile:               envOrDefault("APP_PROJECTS_FILE", "./data/projects.db"),
 		LLMLogFile:                 envOrDefault("APP_LLM_LOG_FILE", "./data/llm_logs.json"),
 		CerberBaseURL:              envOrDefault("CERBER_BASE_URL", "https://api.cerber.ai"),
 		CerberAPIKey:               os.Getenv("CERBER_API_KEY"),
@@ -105,6 +107,9 @@ func Load() (Config, error) {
 	}
 	if cfg.ConversationFile == "" {
 		return Config{}, fmt.Errorf("APP_CONVERSATION_FILE is required")
+	}
+	if cfg.ProjectsFile == "" {
+		return Config{}, fmt.Errorf("APP_PROJECTS_FILE is required")
 	}
 	if cfg.SkillsDir == "" {
 		return Config{}, fmt.Errorf("APP_SKILLS_DIR is required")
