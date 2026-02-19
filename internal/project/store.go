@@ -15,9 +15,10 @@ import (
 var projectIDPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 const (
-	bucketProjects      = "projects"
-	maxListItemsPerType = 32
-	maxItemRunes        = 180
+	bucketProjects       = "projects"
+	maxListItemsPerType  = 32
+	maxItemRunes         = 180
+	maxIndexSummaryRunes = 28
 )
 
 type Project struct {
@@ -80,6 +81,34 @@ func (s *Store) ListProjects() []Project {
 		return nil
 	}
 	return items
+}
+
+func (s *Store) ListProjectIndex() []string {
+	items := s.ListProjects()
+	if len(items) == 0 {
+		return nil
+	}
+
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		id := strings.TrimSpace(item.ID)
+		name := strings.TrimSpace(item.Name)
+		if id == "" || name == "" {
+			continue
+		}
+		parts := []string{
+			"project_id=" + id,
+			"name=" + trimText(name, 24),
+		}
+		if v := trimText(item.Status, 18); v != "" {
+			parts = append(parts, "status="+v)
+		}
+		if v := trimText(item.Summary, maxIndexSummaryRunes); v != "" {
+			parts = append(parts, "summary="+v)
+		}
+		out = append(out, strings.Join(parts, " | "))
+	}
+	return out
 }
 
 func (s *Store) ReadProject(id string) (Project, bool) {

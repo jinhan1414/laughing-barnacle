@@ -64,6 +64,10 @@ type mockSkills struct {
 	upserts    []evolvedSkill
 }
 
+type mockProjects struct {
+	indexLines []string
+}
+
 func (m *mockSkills) ListEnabledSkillIndex() []string {
 	if len(m.indexLines) > 0 {
 		return m.indexLines
@@ -90,6 +94,13 @@ func (m *mockSkills) UpsertAutoSkill(name, prompt string) error {
 		Prompt: strings.TrimSpace(prompt),
 	})
 	return nil
+}
+
+func (m *mockProjects) ListProjectIndex() []string {
+	if m == nil {
+		return nil
+	}
+	return append([]string(nil), m.indexLines...)
 }
 
 type mockPromptProvider struct {
@@ -850,6 +861,58 @@ func TestHandleUserMessage_SkillIndexInjectionIncludesAllLines(t *testing.T) {
 	}
 	if got := strings.Count(content, "skill_id="); got != 8 {
 		t.Fatalf("expected all skill index lines to be injected, got %d lines: %q", got, content)
+	}
+}
+
+func TestHandleUserMessage_ProjectIndexInjectionIncludesReadHint(t *testing.T) {
+	store := conversation.NewStore()
+	fakeLLM := &mockLLM{responses: map[string][]string{
+		"chat_reply": {"ok"},
+	}}
+
+	agentSvc := New(Config{
+		Model:                      "test-model",
+		MaxRecentMessages:          10,
+		CompressionTriggerMessages: 99,
+		CompressionTriggerChars:    99999,
+		KeepRecentAfterCompression: 1,
+		MaxCompressionLoopsPerTurn: 1,
+		MaxToolCallRounds:          2,
+		SystemPrompt:               "system",
+		CompressionSystemPrompt:    "compressor",
+	}, store, fakeLLM, nil)
+	agentSvc.SetProjectProvider(&mockProjects{
+		indexLines: []string{
+			"project_id=pay-refactor | name=支付重构 | status=进行中 | summary=灰度中",
+		},
+	})
+
+	reply, err := agentSvc.HandleUserMessage(context.Background(), "今天支付项目进展如何")
+	if err != nil {
+		t.Fatalf("HandleUserMessage error: %v", err)
+	}
+	if reply != "ok" {
+		t.Fatalf("unexpected reply: %s", reply)
+	}
+	if len(fakeLLM.calls) != 1 {
+		t.Fatalf("expected one llm call, got %d", len(fakeLLM.calls))
+	}
+
+	content := ""
+	for _, msg := range fakeLLM.calls[0].Messages {
+		if msg.Role == "system" && strings.Contains(msg.Content, "项目记忆索引（结构化）") {
+			content = msg.Content
+			break
+		}
+	}
+	if strings.TrimSpace(content) == "" {
+		t.Fatalf("expected injected project index message")
+	}
+	if !strings.Contains(content, "/api/projects/read?id=<project_id>") {
+		t.Fatalf("expected project read hint, got %q", content)
+	}
+	if !strings.Contains(content, "project_id=pay-refactor") {
+		t.Fatalf("expected project index line, got %q", content)
 	}
 }
 

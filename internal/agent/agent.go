@@ -45,6 +45,10 @@ type SkillProvider interface {
 	ReadEnabledSkillPrompt(skillID string) (string, bool)
 }
 
+type ProjectProvider interface {
+	ListProjectIndex() []string
+}
+
 type AutoSkillWriter interface {
 	UpsertAutoSkill(name, prompt string) error
 }
@@ -109,16 +113,17 @@ type ChatGreetingInput struct {
 }
 
 type Agent struct {
-	cfg     Config
-	llm     llm.Client
-	tools   ToolProvider
-	skills  SkillProvider
-	prompts PromptProvider
-	updater PromptUpdater
-	habits  HabitProvider
-	store   *conversation.Store
-	nowFn   func() time.Time
-	mu      sync.Mutex
+	cfg      Config
+	llm      llm.Client
+	tools    ToolProvider
+	skills   SkillProvider
+	projects ProjectProvider
+	prompts  PromptProvider
+	updater  PromptUpdater
+	habits   HabitProvider
+	store    *conversation.Store
+	nowFn    func() time.Time
+	mu       sync.Mutex
 }
 
 func New(cfg Config, store *conversation.Store, llmClient llm.Client, tools ToolProvider) *Agent {
@@ -135,6 +140,12 @@ func (a *Agent) SetSkillProvider(provider SkillProvider) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.skills = provider
+}
+
+func (a *Agent) SetProjectProvider(provider ProjectProvider) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.projects = provider
 }
 
 func (a *Agent) SetPromptProvider(provider PromptProvider) {
@@ -444,6 +455,7 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 	responseStylePrompt := "回答策略：默认简洁直答（3-6 行）。仅当用户明确要求“详细/方案/步骤/复盘/计划/总结”时再展开，避免无关模板、表格和冗长铺垫。"
 	builtinToolDefs := []llm.ToolDefinition{linuxBashToolDefinition()}
 	skillIndexPrompt := ""
+	projectIndexPrompt := ""
 	if a.skills != nil {
 		allSkillIndex := a.skills.ListEnabledSkillIndex()
 		if len(allSkillIndex) > 0 {
@@ -469,11 +481,33 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 			}
 		}
 	}
+	if a.projects != nil {
+		projectIndex := a.projects.ListProjectIndex()
+		if len(projectIndex) > 0 {
+			var b strings.Builder
+			b.WriteString(fmt.Sprintf("项目记忆索引（结构化）：共 %d 条。\n", len(projectIndex)))
+			b.WriteString("如需项目详情，仅在必要时通过 linux__bash 执行：curl -s \"http://127.0.0.1:8080/api/projects/read?id=<project_id>\"。\n")
+			for i, line := range projectIndex {
+				line = trimRunes(strings.TrimSpace(line), maxSingleSkillPromptRunes)
+				if line == "" {
+					continue
+				}
+				b.WriteString(fmt.Sprintf("%d. %s\n", i+1, line))
+			}
+			projectIndexPrompt = strings.TrimSpace(b.String())
+			if projectIndexPrompt != "" {
+				requestMessages = append(requestMessages, llm.Message{
+					Role:    "system",
+					Content: projectIndexPrompt,
+				})
+			}
+		}
+	}
 	requestMessages = append(requestMessages, llm.Message{
 		Role:    "system",
 		Content: responseStylePrompt,
 	})
-	summary = pruneSummaryOverlap(summary, systemPrompt, skillIndexPrompt, responseStylePrompt)
+	summary = pruneSummaryOverlap(summary, systemPrompt, skillIndexPrompt, projectIndexPrompt, responseStylePrompt)
 	if strings.TrimSpace(summary) != "" {
 		requestMessages = append(requestMessages, llm.Message{
 			Role:    "system",

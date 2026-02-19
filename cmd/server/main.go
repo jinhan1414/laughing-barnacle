@@ -82,6 +82,7 @@ func run() error {
 		EnforceHumanRoutine:        true,
 	}, convStore, llmClient, mcpToolProvider)
 	agentSvc.SetSkillProvider(skillStore)
+	agentSvc.SetProjectProvider(projectStore)
 	agentSvc.SetPromptProvider(mcpStore)
 	agentSvc.SetPromptUpdater(mcpStore)
 	agentSvc.SetHabitProvider(mcpStore)
