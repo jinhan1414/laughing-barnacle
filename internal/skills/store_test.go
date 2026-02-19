@@ -356,6 +356,9 @@ func TestStoreHasBuiltinConfigSkills(t *testing.T) {
 	if !strings.Contains(projectSkill.Prompt, "/api/projects") {
 		t.Fatalf("builtin project maintainer should include /api/projects endpoint, got: %q", projectSkill.Prompt)
 	}
+	if !strings.Contains(projectSkill.Prompt, "/api/projects/index") {
+		t.Fatalf("builtin project maintainer should include /api/projects/index endpoint, got: %q", projectSkill.Prompt)
+	}
 	if !strings.Contains(projectSkill.Prompt, "/api/projects/upsert") {
 		t.Fatalf("builtin project maintainer should include upsert endpoint, got: %q", projectSkill.Prompt)
 	}

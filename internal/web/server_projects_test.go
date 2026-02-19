@@ -72,6 +72,16 @@ func TestHandleAPIProjects_ListReadAndUpsert(t *testing.T) {
 	if len(listPayload.Projects) != 1 {
 		t.Fatalf("expected one project, got %d", len(listPayload.Projects))
 	}
+	if strings.Contains(listRec.Body.String(), `"todos"`) {
+		t.Fatalf("expected index response without full details, got %s", listRec.Body.String())
+	}
+
+	indexReq := httptest.NewRequest(http.MethodGet, "/api/projects/index", nil)
+	indexRec := httptest.NewRecorder()
+	s.handleAPIProjects(indexRec, indexReq)
+	if indexRec.Code != http.StatusOK {
+		t.Fatalf("expected index status 200, got %d body=%s", indexRec.Code, indexRec.Body.String())
+	}
 
 	readReq := httptest.NewRequest(http.MethodGet, "/api/projects/read?id="+upsertPayload.Project.ID, nil)
 	readRec := httptest.NewRecorder()

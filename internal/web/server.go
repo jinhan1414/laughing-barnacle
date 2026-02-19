@@ -200,6 +200,14 @@ type apiProject struct {
 	UpdatedAt  time.Time `json:"updated_at,omitempty"`
 }
 
+type apiProjectIndexItem struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Status    string    `json:"status,omitempty"`
+	Summary   string    `json:"summary,omitempty"`
+	UpdatedAt time.Time `json:"updated_at,omitempty"`
+}
+
 type apiChatUpdate struct {
 	Kind        string `json:"kind"`
 	Content     string `json:"content"`
@@ -278,6 +286,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/skills/catalog/search", s.handleAPISkillsCatalogSearch)
 	mux.HandleFunc("/api/schedules", s.handleAPISchedules)
 	mux.HandleFunc("/api/projects", s.handleAPIProjects)
+	mux.HandleFunc("/api/projects/index", s.handleAPIProjects)
 	mux.HandleFunc("/api/projects/read", s.handleAPIProjectRead)
 	mux.HandleFunc("/api/projects/upsert", s.handleAPIProjectUpsert)
 	mux.HandleFunc("/api/chat/updates", s.handleAPIChatUpdates)
@@ -1227,9 +1236,9 @@ func (s *Server) handleAPIProjects(w http.ResponseWriter, r *http.Request) {
 	}
 
 	projects := s.projectStore.ListProjects()
-	items := make([]apiProject, 0, len(projects))
+	items := make([]apiProjectIndexItem, 0, len(projects))
 	for _, item := range projects {
-		items = append(items, toAPIProject(item))
+		items = append(items, toAPIProjectIndex(item))
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(map[string]any{
@@ -1320,6 +1329,16 @@ func toAPIProject(item project.Project) apiProject {
 		Decisions:  append([]string(nil), item.Decisions...),
 		CreatedAt:  item.CreatedAt,
 		UpdatedAt:  item.UpdatedAt,
+	}
+}
+
+func toAPIProjectIndex(item project.Project) apiProjectIndexItem {
+	return apiProjectIndexItem{
+		ID:        item.ID,
+		Name:      item.Name,
+		Status:    item.Status,
+		Summary:   item.Summary,
+		UpdatedAt: item.UpdatedAt,
 	}
 }
 

@@ -19,7 +19,7 @@
 - 独立日志页展示每次真实 LLM 输入/输出
 - 独立设置页管理 MCP 服务与 Skills
 - 提供 API 供数字分身通过 `bash` 查询与检索：`/api/mcp/services`、`/api/skills`、`/api/skills/catalog/search`
-- 提供项目记忆 API：`/api/projects`、`/api/projects/read`、`/api/projects/upsert`
+- 提供项目记忆 API：`/api/projects`（索引）/`/api/projects/index`（索引别名）、`/api/projects/read`、`/api/projects/upsert`
 - 非流式输出
 
 ## 目录结构
