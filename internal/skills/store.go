@@ -153,8 +153,9 @@ var builtinSkills = []Skill{
 				"必要时按需读取详情：curl -s \"http://127.0.0.1:8080/api/memory/read?path=/projects/<project_id>/overview\"。\n" +
 				"仅当当前对话存在明确项目变更时写入；信息不确定时禁止写入。\n" +
 				"写入接口：POST /api/memory/upsert，path 采用 /projects/<project_id>/overview|milestones|risks|decisions。\n" +
+				"低置信候选会进入 /api/memory/inbox，可通过 POST /api/memory/inbox/review 做 confirm/reject。\n" +
 				"facts/sections 支持结构化增量写入；优先小步更新，不要一次性重写全部项目。\n" +
-				"写入后再次读取 /api/memory/read?path=<path> 做结果校验，再向用户汇报“已记录哪些变化”。",
+				"写入后再次读取 /api/memory/read?path=<path> 做结果校验，再向用户汇报“已记录哪些变化”；必要时可 POST /api/memory/maintenance/run 做维护。",
 		),
 		Enabled: true,
 		Source:  builtinSkillSource,

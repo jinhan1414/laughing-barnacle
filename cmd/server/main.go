@@ -93,6 +93,8 @@ func run() error {
 		cfg.MemoryIdleWindow,
 		cfg.MemoryMaxSegmentWindow,
 		cfg.MemoryMaxSegmentMessages,
+		cfg.MemoryTrashTTL,
+		cfg.MemoryFailedRetryAfter,
 	)
 	memoryWorker.Start()
 	defer memoryWorker.Stop()

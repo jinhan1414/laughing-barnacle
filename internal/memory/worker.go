@@ -11,6 +11,8 @@ type Worker struct {
 	idleWindow  time.Duration
 	maxWindow   time.Duration
 	maxMessages int
+	trashTTL    time.Duration
+	retryAfter  time.Duration
 
 	mu      sync.Mutex
 	stopCh  chan struct{}
@@ -18,7 +20,7 @@ type Worker struct {
 	started bool
 }
 
-func NewWorker(store *Store, interval, idleWindow, maxWindow time.Duration, maxMessages int) *Worker {
+func NewWorker(store *Store, interval, idleWindow, maxWindow time.Duration, maxMessages int, trashTTL, retryAfter time.Duration) *Worker {
 	if interval <= 0 {
 		interval = 30 * time.Second
 	}
@@ -31,12 +33,20 @@ func NewWorker(store *Store, interval, idleWindow, maxWindow time.Duration, maxM
 	if maxMessages <= 0 {
 		maxMessages = 8
 	}
+	if trashTTL <= 0 {
+		trashTTL = 30 * 24 * time.Hour
+	}
+	if retryAfter <= 0 {
+		retryAfter = 2 * time.Minute
+	}
 	return &Worker{
 		store:       store,
 		interval:    interval,
 		idleWindow:  idleWindow,
 		maxWindow:   maxWindow,
 		maxMessages: maxMessages,
+		trashTTL:    trashTTL,
+		retryAfter:  retryAfter,
 	}
 }
 
@@ -87,5 +97,5 @@ func (w *Worker) loop() {
 func (w *Worker) runOnce() {
 	now := time.Now().UTC()
 	_, _ = w.store.CloseIdleSegments(now, w.idleWindow, w.maxWindow, w.maxMessages)
-	_ = w.store.ProcessClosedSegments(now)
+	_, _ = w.store.RunMaintenance(now, w.trashTTL, w.retryAfter)
 }

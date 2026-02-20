@@ -102,3 +102,77 @@ func TestHandleAPIMemoryUpsertMoveDelete(t *testing.T) {
 		t.Fatalf("expected 200, got %d body=%s", deleteRec.Code, deleteRec.Body.String())
 	}
 }
+
+func TestHandleAPIMemoryInboxReviewMaintenanceAndAudit(t *testing.T) {
+	store, err := memory.NewStoreWithFile(filepath.Join(t.TempDir(), "memory.db"))
+	if err != nil {
+		t.Fatalf("NewStoreWithFile error: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	_, err = store.UpsertNode(memory.UpsertRequest{
+		Mode:          "replace",
+		Path:          "/inbox/pending/seg-demo-goals",
+		Type:          memory.NodeTypeFile,
+		Title:         "待审核 目标",
+		SchemaKind:    "memory_candidate",
+		SchemaVersion: 1,
+		Summary:       "本段用户目标候选",
+		Refs: []memory.Ref{
+			{Kind: "target_path", Value: "/goals/active/seg-demo"},
+			{Kind: "target_title", Value: "目标沉淀 seg-demo"},
+			{Kind: "target_schema_kind", Value: "goal"},
+			{Kind: "target_confidence", Value: "0.70"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Upsert pending candidate error: %v", err)
+	}
+
+	s := &Server{memoryStore: store}
+
+	inboxReq := httptest.NewRequest(http.MethodGet, "/api/memory/inbox?limit=10", nil)
+	inboxRec := httptest.NewRecorder()
+	s.handleAPIMemoryInbox(inboxRec, inboxReq)
+	if inboxRec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", inboxRec.Code, inboxRec.Body.String())
+	}
+
+	reviewBody := bytes.NewBufferString(`{"path":"/inbox/pending/seg-demo-goals","action":"confirm"}`)
+	reviewReq := httptest.NewRequest(http.MethodPost, "/api/memory/inbox/review", reviewBody)
+	reviewRec := httptest.NewRecorder()
+	s.handleAPIMemoryInboxReview(reviewRec, reviewReq)
+	if reviewRec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", reviewRec.Code, reviewRec.Body.String())
+	}
+
+	maintenanceReq := httptest.NewRequest(http.MethodPost, "/api/memory/maintenance/run", bytes.NewBuffer(nil))
+	maintenanceRec := httptest.NewRecorder()
+	s.handleAPIMemoryMaintenanceRun(maintenanceRec, maintenanceReq)
+	if maintenanceRec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", maintenanceRec.Code, maintenanceRec.Body.String())
+	}
+
+	updateBody := bytes.NewBufferString(`{"mode":"patch","path":"/goals/active/seg-demo","summary":"patched summary for rollback"}`)
+	updateReq := httptest.NewRequest(http.MethodPost, "/api/memory/upsert", updateBody)
+	updateRec := httptest.NewRecorder()
+	s.handleAPIMemoryUpsert(updateRec, updateReq)
+	if updateRec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", updateRec.Code, updateRec.Body.String())
+	}
+
+	auditReq := httptest.NewRequest(http.MethodGet, "/api/memory/audit?limit=10", nil)
+	auditRec := httptest.NewRecorder()
+	s.handleAPIMemoryAudit(auditRec, auditReq)
+	if auditRec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", auditRec.Code, auditRec.Body.String())
+	}
+
+	rollbackBody := bytes.NewBufferString(`{"path":"/goals/active/seg-demo"}`)
+	rollbackReq := httptest.NewRequest(http.MethodPost, "/api/memory/rollback", rollbackBody)
+	rollbackRec := httptest.NewRecorder()
+	s.handleAPIMemoryRollback(rollbackRec, rollbackReq)
+	if rollbackRec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rollbackRec.Code, rollbackRec.Body.String())
+	}
+}

@@ -93,12 +93,17 @@ MemoryFS 节点仅两类：
 - `GET /api/memory/index?path=/...`
 - `GET /api/memory/read?path=/...`
 - `GET /api/memory/section?path=/...&section_id=...`
+- `GET /api/memory/inbox?limit=...`
+- `GET /api/memory/audit?limit=...`
 
 写接口：
 
 - `POST /api/memory/upsert`
 - `POST /api/memory/move`
 - `POST /api/memory/delete`
+- `POST /api/memory/inbox/review`
+- `POST /api/memory/maintenance/run`
+- `POST /api/memory/rollback`
 
 写入协议：
 
@@ -170,7 +175,9 @@ curl -s "http://127.0.0.1:8080/api/memory/section?path=/projects/pay-refactor/ri
 3. 用户不活跃达到 **5 分钟**，`open -> closed`。
 4. 处理 `closed segment`（当前实现）：
    - 将分段对话写入 `/conversation/archive/<segment_id>/index`
-   - 生成 sections（分节）供按需回读
+   - 生成结构化记忆：
+     - 高置信直写：`/projects/session-journal/<segment_id>`
+     - 低置信候选：`/inbox/pending/<segment_id>-{profile|preferences|constraints|goals}`
 5. 写入后记录 segment 持久化路径（`persisted_paths`）。
 
 后续增强（规划中）：
@@ -210,7 +217,9 @@ curl -s "http://127.0.0.1:8080/api/memory/section?path=/projects/pay-refactor/ri
 
 1. 节点视图：展示 `path/type/schema/rev/summary/updated_at`。
 2. segment 视图：展示 `status/turns/close_reason/persisted_paths/error`。
-3. 运营排查顺序：先看 segment 是否 `persisted`，再按 `persisted_paths` 读取节点明细。
+3. inbox 视图：展示待审核候选，支持“确认写入 / 拒绝入回收区”。
+4. 维护入口：支持手动触发一次 maintenance run。
+5. 运营排查顺序：先看 segment 是否 `persisted`，再按 `persisted_paths` 读取节点明细。
 
 ---
 

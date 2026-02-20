@@ -122,6 +122,7 @@ type SegmentTurn struct {
 type Segment struct {
 	ID             string        `json:"id"`
 	Status         SegmentStatus `json:"status"`
+	RetryCount     int           `json:"retry_count,omitempty"`
 	Turns          []SegmentTurn `json:"turns"`
 	StartedAt      time.Time     `json:"started_at"`
 	LastUserAt     time.Time     `json:"last_user_at"`
@@ -183,7 +184,7 @@ func (s *Store) bootstrap() error {
 		return fmt.Errorf("init memory db schema: %w", err)
 	}
 	for _, path := range []string{
-		"/", "/meta", "/profile", "/preferences", "/constraints", "/goals", "/projects", "/routines", "/conversation", "/conversation/archive", "/inbox", "/inbox/trash",
+		"/", "/meta", "/profile", "/preferences", "/constraints", "/goals", "/projects", "/routines", "/conversation", "/conversation/archive", "/inbox", "/inbox/pending", "/inbox/reviewed", "/inbox/trash",
 	} {
 		if _, err := s.UpsertNode(UpsertRequest{
 			Mode:          "patch",
@@ -318,6 +319,19 @@ func (s *Store) upsertNodeLocked(req UpsertRequest) (Node, error) {
 			return Node{}, err
 		}
 	}
+	after := cloneNodePtr(&node)
+	var before *Node
+	if found {
+		before = cloneNodePtr(&existing)
+	}
+	_ = s.appendAuditLocked(AuditEntry{
+		Action:    "upsert",
+		Path:      path,
+		Detail:    "mode=" + mode,
+		Before:    before,
+		After:     after,
+		CreatedAt: now,
+	})
 	return node, nil
 }
 
@@ -455,15 +469,7 @@ func (s *Store) MoveNode(fromPath, toPath string, expectedRevision int64) error 
 	} else if exists {
 		return ErrPathConflict
 	}
-	if err := s.ensureParentLocked(toPath); err != nil {
-		return err
-	}
-	if err := s.moveSubtreeLocked(fromPath, toPath); err != nil {
-		return err
-	}
-	_ = s.removeChildLocked(parentPath(fromPath), fromPath)
-	_ = s.addChildLocked(parentPath(toPath), toPath)
-	return nil
+	return s.moveNodeLocked(fromPath, toPath)
 }
 
 func (s *Store) moveSubtreeLocked(fromPrefix, toPrefix string) error {
@@ -544,10 +550,23 @@ func (s *Store) DeleteNode(path string, soft bool) (string, error) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	before, found, err := s.readNodeLocked(path)
+	if err != nil {
+		return "", err
+	}
+	if !found {
+		return "", ErrNodeNotFound
+	}
 	if err := s.deleteSubtreeLocked(path); err != nil {
 		return "", err
 	}
 	_ = s.removeChildLocked(parentPath(path), path)
+	_ = s.appendAuditLocked(AuditEntry{
+		Action:    "delete_hard",
+		Path:      path,
+		Before:    cloneNodePtr(&before),
+		CreatedAt: time.Now().UTC(),
+	})
 	return "", nil
 }
 
@@ -781,6 +800,17 @@ func (s *Store) ProcessClosedSegments(now time.Time) error {
 			}
 			continue
 		}
+		extractedPaths, extractErr := s.persistSegmentStructuredMemoryLocked(seg)
+		if extractErr != nil {
+			seg.Status = SegmentStatusFailed
+			seg.Error = trimRunes(extractErr.Error(), 220)
+			seg.UpdatedAt = now
+			if err := s.writeSegmentLocked(seg); err != nil {
+				return err
+			}
+			continue
+		}
+		paths = append(paths, extractedPaths...)
 		seg.Status = SegmentStatusPersisted
 		seg.PersistedPaths = paths
 		seg.Error = ""
@@ -1097,7 +1127,7 @@ func buildNodeID(path string, now time.Time) string {
 }
 
 func buildSegmentID(now time.Time) string {
-	return fmt.Sprintf("seg-%s", now.UTC().Format("20060102-150405-000000000"))
+	return fmt.Sprintf("seg-%s-%d", now.UTC().Format("20060102-150405"), now.UTC().UnixNano())
 }
 
 func normalizeStringList(in []string, limit int, maxRunes int) []string {

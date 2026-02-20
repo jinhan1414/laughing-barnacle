@@ -18,8 +18,10 @@
 - 会话历史持久化，重启后可恢复聊天记录
 - 独立日志页展示每次真实 LLM 输入/输出
 - 独立设置页管理 MCP 服务、Skills 与 MemoryFS 可视化（节点/segment）
+- MemoryFS 支持低置信记忆进入 Inbox 审核，确认后写入正式命名空间
+- Memory worker 内置维护任务：失败分段重试、trash 清理、children 索引一致性修复
 - 提供 API 供数字分身通过 `bash` 查询与检索：`/api/mcp/services`、`/api/skills`、`/api/skills/catalog/search`
-- 提供记忆 API：`/api/memory/index`、`/api/memory/read`、`/api/memory/section`、`/api/memory/upsert`、`/api/memory/move`、`/api/memory/delete`
+- 提供记忆 API：`/api/memory/index`、`/api/memory/read`、`/api/memory/section`、`/api/memory/upsert`、`/api/memory/move`、`/api/memory/delete`、`/api/memory/inbox`、`/api/memory/inbox/review`、`/api/memory/maintenance/run`、`/api/memory/rollback`、`/api/memory/audit`
 - 非流式输出
 
 ## 目录结构
@@ -155,5 +157,7 @@ docker run --rm -p 8080:8080 \
 - `AGENT_MEMORY_MAX_SEGMENT_WINDOW`: 单分段最大持续时间（默认 `10m`）
 - `AGENT_MEMORY_MAX_SEGMENT_MESSAGES`: 单分段最大轮次数（默认 `8`）
 - `AGENT_MEMORY_WORKER_INTERVAL`: 记忆沉淀 worker 扫描周期（默认 `30s`）
+- `AGENT_MEMORY_TRASH_TTL`: `/inbox/trash` 过期清理周期（默认 `720h`）
+- `AGENT_MEMORY_FAILED_RETRY_AFTER`: failed segment 进入重试的最短等待时间（默认 `2m`）
 - Agent 提示词统一通过设置页管理（单一来源，可编辑、可重置为内置默认）
 - `APP_LLM_LOG_LIMIT`: 内存日志上限

@@ -2,6 +2,7 @@ package memory
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -77,5 +78,97 @@ func TestSegmentIdleCloseAndPersist(t *testing.T) {
 	}
 	if node.Content == nil || len(node.Content.Sections) == 0 {
 		t.Fatalf("expected archive sections, got %+v", node)
+	}
+
+	projectNode, err := store.ReadNode("/projects/session-journal/" + closed[0].ID)
+	if err != nil {
+		t.Fatalf("Read project journal node error: %v", err)
+	}
+	if projectNode.Content == nil || strings.TrimSpace(projectNode.Content.Summary) == "" {
+		t.Fatalf("expected project journal summary, got %+v", projectNode)
+	}
+
+	pending := store.ListInboxPending(20)
+	if len(pending) == 0 {
+		t.Fatalf("expected pending inbox candidates")
+	}
+
+	confirmedPath, err := store.ReviewInboxCandidate(pending[0].Path, "confirm")
+	if err != nil {
+		t.Fatalf("ReviewInboxCandidate confirm error: %v", err)
+	}
+	confirmedNode, err := store.ReadNode(confirmedPath)
+	if err != nil {
+		t.Fatalf("Read confirmed node error: %v", err)
+	}
+	if confirmedNode.Content == nil {
+		t.Fatalf("expected confirmed file content")
+	}
+
+	if len(pending) > 1 {
+		rejectedPath, err := store.ReviewInboxCandidate(pending[1].Path, "reject")
+		if err != nil {
+			t.Fatalf("ReviewInboxCandidate reject error: %v", err)
+		}
+		if !strings.HasPrefix(rejectedPath, "/inbox/trash/") {
+			t.Fatalf("expected reject moved to trash, got %s", rejectedPath)
+		}
+	}
+}
+
+func TestRunMaintenanceRetryAndCleanup(t *testing.T) {
+	store, err := NewStoreWithFile(filepath.Join(t.TempDir(), "memory.db"))
+	if err != nil {
+		t.Fatalf("NewStoreWithFile error: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	base := time.Date(2026, 2, 20, 10, 0, 0, 0, time.UTC)
+	seg := Segment{
+		ID:             "seg-maintenance-1",
+		Status:         SegmentStatusFailed,
+		Turns:          []SegmentTurn{{User: "更新项目状态", Assistant: "收到", CreatedAt: base}},
+		StartedAt:      base,
+		LastUserAt:     base,
+		LastActivityAt: base,
+		UpdatedAt:      base,
+		CreatedAt:      base,
+	}
+	if err := store.writeSegmentLocked(seg); err != nil {
+		t.Fatalf("writeSegmentLocked error: %v", err)
+	}
+
+	trashNode, err := store.UpsertNode(UpsertRequest{
+		Mode:          "replace",
+		Path:          "/inbox/trash/old-candidate",
+		Type:          NodeTypeFile,
+		Title:         "old",
+		SchemaKind:    "trash_item",
+		SchemaVersion: 1,
+		Summary:       "old item",
+		Source:        "system",
+		Confidence:    1,
+	})
+	if err != nil {
+		t.Fatalf("Upsert trash node error: %v", err)
+	}
+	trashNode.UpdatedAt = base.Add(-40 * 24 * time.Hour)
+	if err := store.writeNodeLocked(trashNode); err != nil {
+		t.Fatalf("writeNodeLocked error: %v", err)
+	}
+
+	report, err := store.RunMaintenance(base.Add(10*time.Minute), 30*24*time.Hour, time.Minute)
+	if err != nil {
+		t.Fatalf("RunMaintenance error: %v", err)
+	}
+	if report.RetriedSegments == 0 {
+		t.Fatalf("expected retried segments > 0")
+	}
+	if report.RemovedTrashNodes == 0 {
+		t.Fatalf("expected removed trash nodes > 0")
+	}
+
+	if _, err := store.ReadNode("/inbox/trash/old-candidate"); err == nil {
+		t.Fatalf("expected old trash node removed")
 	}
 }

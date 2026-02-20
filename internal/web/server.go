@@ -104,6 +104,7 @@ type settingsPageData struct {
 	Services       []mcpServiceView
 	Skills         []skillView
 	MemoryNodes    []memoryNodeView
+	MemoryPending  []memoryPendingView
 	MemorySegments []memorySegmentView
 	Schedules      []scheduledTaskView
 	AgentPrompts   agentPromptsView
@@ -134,12 +135,22 @@ type memoryNodeView struct {
 type memorySegmentView struct {
 	ID             string
 	Status         string
+	RetryCount     int
 	Turns          int
 	CloseReason    string
 	LastUserAt     string
 	UpdatedAt      string
 	PersistedPaths []string
 	Error          string
+}
+
+type memoryPendingView struct {
+	Path       string
+	TargetPath string
+	Title      string
+	Summary    string
+	Confidence string
+	UpdatedAt  string
 }
 
 type agentPromptsView struct {
@@ -292,6 +303,8 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/settings/schedules/delete", s.handleSettingsScheduleDelete)
 	mux.HandleFunc("/settings/schedules/toggle", s.handleSettingsScheduleToggle)
 	mux.HandleFunc("/settings/schedules/run", s.handleSettingsScheduleRun)
+	mux.HandleFunc("/settings/memory/inbox/review", s.handleSettingsMemoryInboxReview)
+	mux.HandleFunc("/settings/memory/maintenance/run", s.handleSettingsMemoryMaintenanceRun)
 	mux.HandleFunc("/settings/llm/prompts/save", s.handleSettingsLLMPromptsSave)
 	mux.HandleFunc("/settings/llm/prompts/reset", s.handleSettingsLLMPromptsReset)
 	mux.HandleFunc("/api/mcp/services", s.handleAPIMCPServices)
@@ -305,6 +318,11 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/memory/upsert", s.handleAPIMemoryUpsert)
 	mux.HandleFunc("/api/memory/move", s.handleAPIMemoryMove)
 	mux.HandleFunc("/api/memory/delete", s.handleAPIMemoryDelete)
+	mux.HandleFunc("/api/memory/inbox", s.handleAPIMemoryInbox)
+	mux.HandleFunc("/api/memory/inbox/review", s.handleAPIMemoryInboxReview)
+	mux.HandleFunc("/api/memory/maintenance/run", s.handleAPIMemoryMaintenanceRun)
+	mux.HandleFunc("/api/memory/rollback", s.handleAPIMemoryRollback)
+	mux.HandleFunc("/api/memory/audit", s.handleAPIMemoryAudit)
 	mux.HandleFunc("/api/chat/updates", s.handleAPIChatUpdates)
 	mux.HandleFunc("/api/chat/tools/run", s.handleAPIChatToolRun)
 	mux.HandleFunc("/healthz", s.handleHealthz)
@@ -678,6 +696,7 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 				view := memorySegmentView{
 					ID:             seg.ID,
 					Status:         string(seg.Status),
+					RetryCount:     seg.RetryCount,
 					Turns:          len(seg.Turns),
 					CloseReason:    seg.CloseReason,
 					PersistedPaths: append([]string(nil), seg.PersistedPaths...),
@@ -690,6 +709,27 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 					view.UpdatedAt = seg.UpdatedAt.Format("2006-01-02 15:04:05")
 				}
 				data.MemorySegments = append(data.MemorySegments, view)
+			}
+
+			pending := s.memoryStore.ListInboxPending(120)
+			data.MemoryPending = make([]memoryPendingView, 0, len(pending))
+			for _, node := range pending {
+				view := memoryPendingView{
+					Path:    node.Path,
+					Title:   node.Title,
+					Summary: "",
+				}
+				if node.Content != nil {
+					view.Summary = node.Content.Summary
+					view.TargetPath = findMemoryRefValue(node.Content.Refs, "target_path")
+					if raw := strings.TrimSpace(findMemoryRefValue(node.Content.Refs, "target_confidence")); raw != "" {
+						view.Confidence = raw
+					}
+				}
+				if !node.UpdatedAt.IsZero() {
+					view.UpdatedAt = node.UpdatedAt.Format("2006-01-02 15:04:05")
+				}
+				data.MemoryPending = append(data.MemoryPending, view)
 			}
 		}
 	} else if section == "llm" {
@@ -1084,6 +1124,56 @@ func (s *Server) handleSettingsScheduleRun(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	s.redirectSettings(w, r, "schedules", fmt.Sprintf("定时任务 %s 已立即执行", taskID), "")
+}
+
+func (s *Server) handleSettingsMemoryInboxReview(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if s.memoryStore == nil {
+		s.redirectSettings(w, r, "memory", "", "memory store unavailable")
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		s.redirectSettings(w, r, "memory", "", "请求参数解析失败")
+		return
+	}
+	path := strings.TrimSpace(r.FormValue("path"))
+	action := strings.TrimSpace(r.FormValue("action"))
+	target, err := s.memoryStore.ReviewInboxCandidate(path, action)
+	if err != nil {
+		s.redirectSettings(w, r, "memory", "", err.Error())
+		return
+	}
+	if strings.EqualFold(action, "reject") {
+		s.redirectSettings(w, r, "memory", "候选记忆已拒绝并移入回收区："+target, "")
+		return
+	}
+	s.redirectSettings(w, r, "memory", "候选记忆已确认并写入："+target, "")
+}
+
+func (s *Server) handleSettingsMemoryMaintenanceRun(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if s.memoryStore == nil {
+		s.redirectSettings(w, r, "memory", "", "memory store unavailable")
+		return
+	}
+	report, err := s.memoryStore.RunMaintenance(time.Now().UTC(), 0, 0)
+	if err != nil {
+		s.redirectSettings(w, r, "memory", "", "维护任务执行失败："+err.Error())
+		return
+	}
+	s.redirectSettings(
+		w,
+		r,
+		"memory",
+		fmt.Sprintf("维护任务完成：retried=%d, cleaned=%d, repaired=%d", report.RetriedSegments, report.RemovedTrashNodes, report.RepairedChildren),
+		"",
+	)
 }
 
 func (s *Server) handleSettingsLLMPromptsSave(w http.ResponseWriter, r *http.Request) {
@@ -1492,6 +1582,137 @@ func (s *Server) handleAPIMemoryDelete(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "moved_to": movedTo})
 }
 
+func (s *Server) handleAPIMemoryInbox(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if s.memoryStore == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "memory store unavailable"})
+		return
+	}
+	limit := 80
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+	items := s.memoryStore.ListInboxPending(limit)
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(map[string]any{"items": items})
+}
+
+func (s *Server) handleAPIMemoryInboxReview(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if s.memoryStore == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "memory store unavailable"})
+		return
+	}
+	var req struct {
+		Path   string `json:"path"`
+		Action string `json:"action"`
+	}
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "invalid request body"})
+		return
+	}
+	target, err := s.memoryStore.ReviewInboxCandidate(req.Path, req.Action)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, memory.ErrNodeNotFound) {
+			status = http.StatusNotFound
+		}
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "target_path": target})
+}
+
+func (s *Server) handleAPIMemoryMaintenanceRun(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if s.memoryStore == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "memory store unavailable"})
+		return
+	}
+	report, err := s.memoryStore.RunMaintenance(time.Now().UTC(), 0, 0)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "report": report})
+}
+
+func (s *Server) handleAPIMemoryRollback(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if s.memoryStore == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "memory store unavailable"})
+		return
+	}
+	var req struct {
+		Path string `json:"path"`
+	}
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "invalid request body"})
+		return
+	}
+	node, err := s.memoryStore.RollbackNode(req.Path)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, memory.ErrNodeNotFound) {
+			status = http.StatusNotFound
+		}
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "node": node})
+}
+
+func (s *Server) handleAPIMemoryAudit(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if s.memoryStore == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "memory store unavailable"})
+		return
+	}
+	limit := 100
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+	entries := s.memoryStore.ListAudits(limit)
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(map[string]any{"items": entries})
+}
+
 func (s *Server) handleAPIChatUpdates(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -1713,6 +1934,19 @@ func buildRecentTaskStatusLines(tasks []scheduler.Task, limit int) []string {
 		out = append(out, line)
 	}
 	return out
+}
+
+func findMemoryRefValue(refs []memory.Ref, kind string) string {
+	kind = strings.ToLower(strings.TrimSpace(kind))
+	if kind == "" {
+		return ""
+	}
+	for _, ref := range refs {
+		if strings.ToLower(strings.TrimSpace(ref.Kind)) == kind {
+			return strings.TrimSpace(ref.Value)
+		}
+	}
+	return ""
 }
 
 func fallbackChatGreeting(now time.Time) string {

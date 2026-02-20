@@ -38,6 +38,8 @@ type Config struct {
 	MemoryMaxSegmentWindow     time.Duration
 	MemoryMaxSegmentMessages   int
 	MemoryWorkerInterval       time.Duration
+	MemoryTrashTTL             time.Duration
+	MemoryFailedRetryAfter     time.Duration
 	LLMLogLimit                int
 	AgentSystemPrompt          string
 	CompressionSystemPrompt    string
@@ -73,6 +75,8 @@ func Load() (Config, error) {
 		MemoryMaxSegmentWindow:     envDuration("AGENT_MEMORY_MAX_SEGMENT_WINDOW", 10*time.Minute),
 		MemoryMaxSegmentMessages:   envInt("AGENT_MEMORY_MAX_SEGMENT_MESSAGES", 8),
 		MemoryWorkerInterval:       envDuration("AGENT_MEMORY_WORKER_INTERVAL", 30*time.Second),
+		MemoryTrashTTL:             envDuration("AGENT_MEMORY_TRASH_TTL", 30*24*time.Hour),
+		MemoryFailedRetryAfter:     envDuration("AGENT_MEMORY_FAILED_RETRY_AFTER", 2*time.Minute),
 		LLMLogLimit:                envInt("APP_LLM_LOG_LIMIT", 500),
 		AgentSystemPrompt: envOrDefault("AGENT_SYSTEM_PROMPT",
 			agentprompt.DefaultSystemPrompt),
@@ -130,6 +134,12 @@ func Load() (Config, error) {
 	}
 	if cfg.MemoryWorkerInterval <= 0 {
 		return Config{}, fmt.Errorf("AGENT_MEMORY_WORKER_INTERVAL must be > 0")
+	}
+	if cfg.MemoryTrashTTL <= 0 {
+		return Config{}, fmt.Errorf("AGENT_MEMORY_TRASH_TTL must be > 0")
+	}
+	if cfg.MemoryFailedRetryAfter <= 0 {
+		return Config{}, fmt.Errorf("AGENT_MEMORY_FAILED_RETRY_AFTER must be > 0")
 	}
 	if cfg.SkillsDir == "" {
 		return Config{}, fmt.Errorf("APP_SKILLS_DIR is required")
