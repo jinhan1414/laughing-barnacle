@@ -286,14 +286,14 @@ func (a *Agent) HandleUserMessage(ctx context.Context, userInput string) (string
 	}
 
 	_, messages := a.store.Snapshot()
-	reply, toolCalls, err := a.generateReply(ctx, messages)
+	reply, toolCalls, usage, err := a.generateReply(ctx, messages)
 	_ = a.store.SetLatestUserToolCalls(toolCalls)
 	if err != nil {
 		return "", err
 	}
 
 	reply = sanitizeLLMReply(reply)
-	a.store.Append("assistant", reply)
+	a.store.AppendAssistant(reply, usage)
 	return reply, nil
 }
 
@@ -316,14 +316,14 @@ func (a *Agent) RetryLastUserMessage(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("no pending user message to retry")
 	}
 
-	reply, toolCalls, err := a.generateReply(ctx, messages)
+	reply, toolCalls, usage, err := a.generateReply(ctx, messages)
 	_ = a.store.SetLatestUserToolCalls(toolCalls)
 	if err != nil {
 		return "", err
 	}
 
 	reply = sanitizeLLMReply(reply)
-	a.store.Append("assistant", reply)
+	a.store.AppendAssistant(reply, usage)
 	return reply, nil
 }
 
@@ -479,7 +479,7 @@ func (a *Agent) compressContext(ctx context.Context, summary string, messages []
 	return resp.Content, nil
 }
 
-func (a *Agent) generateReply(ctx context.Context, messages []conversation.Message) (string, []conversation.ToolCall, error) {
+func (a *Agent) generateReply(ctx context.Context, messages []conversation.Message) (string, []conversation.ToolCall, *conversation.TokenUsage, error) {
 	summary, _ := a.store.Snapshot()
 	systemPrompt, _ := a.resolvePromptsLocked()
 
@@ -581,9 +581,9 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 			Temperature: a.cfg.Temperature,
 		})
 		if err != nil {
-			return "", nil, fmt.Errorf("generate reply failed: %w", err)
+			return "", nil, nil, fmt.Errorf("generate reply failed: %w", err)
 		}
-		return resp.Content, nil, nil
+		return resp.Content, nil, toConversationUsage(resp.Usage), nil
 	}
 
 	maxRounds := a.cfg.MaxToolCallRounds
@@ -591,6 +591,8 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 		maxRounds = 1
 	}
 	executedCalls := make([]conversation.ToolCall, 0)
+	usageTotal := conversation.TokenUsage{}
+	hasUsage := false
 	enforcedEvidence := false
 
 	toolRounds := 0
@@ -603,8 +605,9 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 			Temperature: a.cfg.Temperature,
 		})
 		if err != nil {
-			return "", executedCalls, fmt.Errorf("generate reply failed: %w", err)
+			return "", executedCalls, usageOrNil(usageTotal, hasUsage), fmt.Errorf("generate reply failed: %w", err)
 		}
+		usageTotal, hasUsage = mergeTokenUsage(usageTotal, hasUsage, resp.Usage)
 
 		if len(resp.ToolCalls) == 0 {
 			if requiresToolEvidence && len(executedCalls) == 0 {
@@ -616,9 +619,9 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 					})
 					continue
 				}
-				return "", executedCalls, fmt.Errorf("需要先调用工具获取实时数据后再回答")
+				return "", executedCalls, usageOrNil(usageTotal, hasUsage), fmt.Errorf("需要先调用工具获取实时数据后再回答")
 			}
-			return resp.Content, executedCalls, nil
+			return resp.Content, executedCalls, usageOrNil(usageTotal, hasUsage), nil
 		}
 		if toolRounds >= maxRounds {
 			requestMessages = append(requestMessages, llm.Message{
@@ -632,12 +635,13 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 				Temperature: a.cfg.Temperature,
 			})
 			if finalErr != nil {
-				return "", executedCalls, fmt.Errorf("generate reply failed: %w", finalErr)
+				return "", executedCalls, usageOrNil(usageTotal, hasUsage), fmt.Errorf("generate reply failed: %w", finalErr)
 			}
+			usageTotal, hasUsage = mergeTokenUsage(usageTotal, hasUsage, finalResp.Usage)
 			if strings.TrimSpace(finalResp.Content) == "" {
-				return "", executedCalls, fmt.Errorf("tool call rounds exceeded %d", maxRounds)
+				return "", executedCalls, usageOrNil(usageTotal, hasUsage), fmt.Errorf("tool call rounds exceeded %d", maxRounds)
 			}
-			return finalResp.Content, executedCalls, nil
+			return finalResp.Content, executedCalls, usageOrNil(usageTotal, hasUsage), nil
 		}
 		toolRounds++
 
@@ -1304,6 +1308,47 @@ func parsePositiveInt(v any) (int, bool) {
 	default:
 		return 0, false
 	}
+}
+
+func toConversationUsage(usage llm.TokenUsage) *conversation.TokenUsage {
+	normalized, hasUsage := mergeTokenUsage(conversation.TokenUsage{}, false, usage)
+	if !hasUsage {
+		return nil
+	}
+	return &normalized
+}
+
+func mergeTokenUsage(total conversation.TokenUsage, hasUsage bool, usage llm.TokenUsage) (conversation.TokenUsage, bool) {
+	prompt := usage.PromptTokens
+	completion := usage.CompletionTokens
+	all := usage.TotalTokens
+	if prompt < 0 {
+		prompt = 0
+	}
+	if completion < 0 {
+		completion = 0
+	}
+	if all < 0 {
+		all = 0
+	}
+	if all == 0 {
+		all = prompt + completion
+	}
+	if prompt == 0 && completion == 0 && all == 0 {
+		return total, hasUsage
+	}
+	total.PromptTokens += prompt
+	total.CompletionTokens += completion
+	total.TotalTokens += all
+	return total, true
+}
+
+func usageOrNil(total conversation.TokenUsage, hasUsage bool) *conversation.TokenUsage {
+	if !hasUsage {
+		return nil
+	}
+	out := total
+	return &out
 }
 
 func (a *Agent) applyNightEvolvedSkills(skills []evolvedSkill) int {

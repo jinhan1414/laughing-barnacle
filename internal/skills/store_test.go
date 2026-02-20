@@ -96,6 +96,37 @@ func TestBuiltinScheduleConfigMaintainerRequiresSkillValidation(t *testing.T) {
 	}
 }
 
+func TestBuiltinConfigMaintainersPreferAutonomousExecution(t *testing.T) {
+	targetIDs := map[string]bool{
+		"mcp-config-maintainer":      false,
+		"skills-config-maintainer":   false,
+		"schedule-config-maintainer": false,
+	}
+
+	for _, builtin := range builtinSkills {
+		id := strings.TrimSpace(builtin.ID)
+		_, needCheck := targetIDs[id]
+		if !needCheck {
+			continue
+		}
+		targetIDs[id] = true
+
+		prompt := strings.TrimSpace(builtin.Prompt)
+		if !strings.Contains(prompt, "默认自主闭环") {
+			t.Fatalf("%s should explicitly require autonomous execution", id)
+		}
+		if strings.Contains(prompt, "未确认不得写入") {
+			t.Fatalf("%s should not require mandatory confirmation before every write", id)
+		}
+	}
+
+	for id, found := range targetIDs {
+		if !found {
+			t.Fatalf("expected builtin skill %s", id)
+		}
+	}
+}
+
 func TestStoreUpsertAndReload(t *testing.T) {
 	root := t.TempDir()
 	store, err := NewStore(filepath.Join(root, "skills"), filepath.Join(root, "skills_state.json"))
@@ -276,8 +307,11 @@ func TestStoreHasBuiltinConfigSkills(t *testing.T) {
 	if !strings.Contains(mcpSkill.Prompt, "/api/mcp/services") {
 		t.Fatalf("builtin mcp skill prompt mismatch: %q", mcpSkill.Prompt)
 	}
-	if !strings.Contains(mcpSkill.Prompt, "未确认不得写入") {
-		t.Fatalf("builtin mcp skill should require user confirmation, got: %q", mcpSkill.Prompt)
+	if !strings.Contains(mcpSkill.Prompt, "默认自主闭环") {
+		t.Fatalf("builtin mcp skill should prefer autonomous execution, got: %q", mcpSkill.Prompt)
+	}
+	if strings.Contains(mcpSkill.Prompt, "未确认不得写入") {
+		t.Fatalf("builtin mcp skill should no longer require mandatory confirmation, got: %q", mcpSkill.Prompt)
 	}
 
 	skillsSkill, ok := findByID("skills-config-maintainer")
@@ -296,8 +330,11 @@ func TestStoreHasBuiltinConfigSkills(t *testing.T) {
 	if !strings.Contains(skillsSkill.Prompt, "/api/skills/catalog/search") {
 		t.Fatalf("builtin skills skill should include catalog search endpoint, got: %q", skillsSkill.Prompt)
 	}
-	if !strings.Contains(skillsSkill.Prompt, "未确认不得执行安装或删除") {
-		t.Fatalf("builtin skills skill should require user confirmation, got: %q", skillsSkill.Prompt)
+	if !strings.Contains(skillsSkill.Prompt, "默认自主闭环") {
+		t.Fatalf("builtin skills skill should prefer autonomous execution, got: %q", skillsSkill.Prompt)
+	}
+	if strings.Contains(skillsSkill.Prompt, "未确认不得执行安装或删除") {
+		t.Fatalf("builtin skills skill should no longer require mandatory confirmation, got: %q", skillsSkill.Prompt)
 	}
 
 	scheduleSkill, ok := findByID("schedule-config-maintainer")
@@ -319,8 +356,11 @@ func TestStoreHasBuiltinConfigSkills(t *testing.T) {
 	if !strings.Contains(scheduleSkill.Prompt, "/settings/schedules/run") {
 		t.Fatalf("builtin schedule skill should include run endpoint, got: %q", scheduleSkill.Prompt)
 	}
-	if !strings.Contains(scheduleSkill.Prompt, "未确认不得写入") {
-		t.Fatalf("builtin schedule skill should require user confirmation, got: %q", scheduleSkill.Prompt)
+	if !strings.Contains(scheduleSkill.Prompt, "默认自主闭环") {
+		t.Fatalf("builtin schedule skill should prefer autonomous execution, got: %q", scheduleSkill.Prompt)
+	}
+	if strings.Contains(scheduleSkill.Prompt, "未确认不得写入") {
+		t.Fatalf("builtin schedule skill should no longer require mandatory confirmation, got: %q", scheduleSkill.Prompt)
 	}
 
 	archiveSkill, ok := findByID("context-archive-recall")

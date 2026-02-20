@@ -33,7 +33,7 @@ func TestClientChat(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"pong"}}]}`))
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"pong"}}],"usage":{"prompt_tokens":12,"completion_tokens":3,"total_tokens":15}}`))
 	}))
 	defer ts.Close()
 
@@ -58,6 +58,9 @@ func TestClientChat(t *testing.T) {
 	}
 	if resp.Content != "pong" {
 		t.Fatalf("unexpected response content: %s", resp.Content)
+	}
+	if resp.Usage.TotalTokens != 15 || resp.Usage.PromptTokens != 12 || resp.Usage.CompletionTokens != 3 {
+		t.Fatalf("unexpected usage: %+v", resp.Usage)
 	}
 
 	if capturedRequest["model"] != "mock-model" {

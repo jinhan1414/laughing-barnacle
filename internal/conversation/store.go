@@ -29,12 +29,19 @@ type Event struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+type TokenUsage struct {
+	PromptTokens     int `json:"prompt_tokens,omitempty"`
+	CompletionTokens int `json:"completion_tokens,omitempty"`
+	TotalTokens      int `json:"total_tokens,omitempty"`
+}
+
 // Message is one conversation record kept in memory.
 type Message struct {
-	Role      string     `json:"role"`
-	Content   string     `json:"content"`
-	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
-	CreatedAt time.Time  `json:"created_at"`
+	Role      string      `json:"role"`
+	Content   string      `json:"content"`
+	ToolCalls []ToolCall  `json:"tool_calls,omitempty"`
+	Usage     *TokenUsage `json:"usage,omitempty"`
+	CreatedAt time.Time   `json:"created_at"`
 }
 
 type payload struct {
@@ -143,12 +150,21 @@ func NewStoreWithFile(path string) (*Store, error) {
 }
 
 func (s *Store) Append(role, content string) {
+	s.AppendWithUsage(role, content, nil)
+}
+
+func (s *Store) AppendAssistant(content string, usage *TokenUsage) {
+	s.AppendWithUsage("assistant", content, usage)
+}
+
+func (s *Store) AppendWithUsage(role, content string, usage *TokenUsage) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	s.messages = append(s.messages, Message{
 		Role:      role,
 		Content:   content,
+		Usage:     normalizeTokenUsage(usage),
 		CreatedAt: time.Now(),
 	})
 	_ = s.persistLocked()
@@ -638,6 +654,7 @@ func cloneMessages(in []Message) []Message {
 	for i := range in {
 		out[i] = in[i]
 		out[i].ToolCalls = cloneToolCalls(in[i].ToolCalls)
+		out[i].Usage = normalizeTokenUsage(in[i].Usage)
 	}
 	return out
 }
@@ -707,6 +724,24 @@ func normalizeEvents(in []Event) []Event {
 	return out
 }
 
+func normalizeTokenUsage(in *TokenUsage) *TokenUsage {
+	if in == nil {
+		return nil
+	}
+	usage := TokenUsage{
+		PromptTokens:     max(0, in.PromptTokens),
+		CompletionTokens: max(0, in.CompletionTokens),
+		TotalTokens:      max(0, in.TotalTokens),
+	}
+	if usage.TotalTokens == 0 {
+		usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
+	}
+	if usage.PromptTokens == 0 && usage.CompletionTokens == 0 && usage.TotalTokens == 0 {
+		return nil
+	}
+	return &usage
+}
+
 func normalizeArchiveText(text string, maxRunes int) string {
 	text = strings.ReplaceAll(strings.TrimSpace(text), "\n", " ")
 	text = strings.Join(strings.Fields(text), " ")
@@ -741,6 +776,13 @@ func trimRunesString(input string, max int) string {
 
 func minInt(a, b int) int {
 	if a < b {
+		return a
+	}
+	return b
+}
+
+func max(a, b int) int {
+	if a > b {
 		return a
 	}
 	return b

@@ -66,6 +66,48 @@ func TestSetLatestUserToolCalls_RequiresPendingUserMessage(t *testing.T) {
 	}
 }
 
+func TestStoreAppendAssistantUsage_PersistsAndReloads(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "conversation.db")
+	store, err := NewStoreWithFile(path)
+	if err != nil {
+		t.Fatalf("NewStoreWithFile error: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	store.Append("user", "hello")
+	store.AppendAssistant("reply", &TokenUsage{
+		PromptTokens:     120,
+		CompletionTokens: 30,
+		TotalTokens:      150,
+	})
+
+	_, messages := store.Snapshot()
+	if len(messages) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(messages))
+	}
+	if messages[1].Usage == nil {
+		t.Fatalf("expected assistant usage")
+	}
+	if messages[1].Usage.TotalTokens != 150 {
+		t.Fatalf("unexpected usage total: %+v", messages[1].Usage)
+	}
+
+	_ = store.Close()
+	reloaded, err := NewStoreWithFile(path)
+	if err != nil {
+		t.Fatalf("reload store error: %v", err)
+	}
+	t.Cleanup(func() { _ = reloaded.Close() })
+
+	_, reloadedMessages := reloaded.Snapshot()
+	if len(reloadedMessages) != 2 {
+		t.Fatalf("expected 2 messages after reload, got %d", len(reloadedMessages))
+	}
+	if reloadedMessages[1].Usage == nil || reloadedMessages[1].Usage.TotalTokens != 150 {
+		t.Fatalf("unexpected reloaded usage: %+v", reloadedMessages[1].Usage)
+	}
+}
+
 func TestStoreReset_ClearsAndPersistsAllState(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "conversation.db")
 	store, err := NewStoreWithFile(path)

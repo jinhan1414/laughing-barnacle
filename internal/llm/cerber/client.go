@@ -85,6 +85,11 @@ type chatResponsePayload struct {
 			ToolCalls []llm.ToolCall `json:"tool_calls"`
 		} `json:"message"`
 	} `json:"choices"`
+	Usage struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
 }
 
 func (c *Client) Chat(ctx context.Context, req llm.ChatRequest) (llm.ChatResponse, error) {
@@ -223,6 +228,7 @@ func (c *Client) chatOnce(ctx context.Context, payloadBytes []byte) (llm.ChatRes
 	return llm.ChatResponse{
 		Content:     content,
 		ToolCalls:   toolCalls,
+		Usage:       normalizeTokenUsage(parsed.Usage.PromptTokens, parsed.Usage.CompletionTokens, parsed.Usage.TotalTokens),
 		RawResponse: string(respBody),
 	}, respBody, httpResp.StatusCode, 0, nil
 }
@@ -336,4 +342,24 @@ func extractTextFromPart(item any) string {
 		return ""
 	}
 	return text
+}
+
+func normalizeTokenUsage(promptTokens, completionTokens, totalTokens int) llm.TokenUsage {
+	if promptTokens < 0 {
+		promptTokens = 0
+	}
+	if completionTokens < 0 {
+		completionTokens = 0
+	}
+	if totalTokens < 0 {
+		totalTokens = 0
+	}
+	if totalTokens == 0 {
+		totalTokens = promptTokens + completionTokens
+	}
+	return llm.TokenUsage{
+		PromptTokens:     promptTokens,
+		CompletionTokens: completionTokens,
+		TotalTokens:      totalTokens,
+	}
 }

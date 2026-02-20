@@ -33,6 +33,13 @@ type ToolFunctionCall struct {
 	Arguments string `json:"arguments"`
 }
 
+// TokenUsage captures prompt/completion token accounting for one response.
+type TokenUsage struct {
+	PromptTokens     int `json:"prompt_tokens,omitempty"`
+	CompletionTokens int `json:"completion_tokens,omitempty"`
+	TotalTokens      int `json:"total_tokens,omitempty"`
+}
+
 // ChatRequest represents one non-streaming completion request.
 type ChatRequest struct {
 	Purpose     string           `json:"-"`
@@ -46,6 +53,7 @@ type ChatRequest struct {
 type ChatResponse struct {
 	Content     string
 	ToolCalls   []ToolCall
+	Usage       TokenUsage
 	RawResponse string
 }
 

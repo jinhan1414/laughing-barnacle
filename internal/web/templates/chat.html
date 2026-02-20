@@ -36,6 +36,7 @@
               <div class="rounded-2xl rounded-br-md bg-[#95ec69] px-3 py-2 text-[15px] leading-6 text-slate-900 shadow-[0_1px_1px_rgba(0,0,0,0.08)]">
                 <div class="js-chat-content whitespace-pre-wrap break-words transition-[max-height] duration-200">{{.Content}}</div>
                 <button type="button" class="js-chat-toggle mt-1 hidden text-[12px] font-medium text-emerald-700">展开</button>
+                <div class="mt-1 text-[11px] text-emerald-800/80">Tokens: {{if .Usage}}总 {{.Usage.TotalTokens}} | 输 {{.Usage.PromptTokens}} | 出 {{.Usage.CompletionTokens}}{{else}}-{{end}}</div>
               </div>
               {{if .ToolCalls}}
               <div class="mt-2 space-y-2">
@@ -63,6 +64,7 @@
             <div class="max-w-[78%] rounded-2xl rounded-bl-md border border-slate-200 bg-white px-3 py-2 text-[15px] leading-6 text-slate-900 shadow-[0_1px_1px_rgba(0,0,0,0.08)]">
               <div class="js-chat-content whitespace-pre-wrap break-words transition-[max-height] duration-200">{{.Content}}</div>
               <button type="button" class="js-chat-toggle mt-1 hidden text-[12px] font-medium text-slate-600">展开</button>
+              <div class="mt-1 text-[11px] text-slate-500">Tokens: {{if .Usage}}总 {{.Usage.TotalTokens}} | 输 {{.Usage.PromptTokens}} | 出 {{.Usage.CompletionTokens}}{{else}}-{{end}}</div>
             </div>
           </article>
           {{else if eq .Kind "event"}}
@@ -71,6 +73,7 @@
               <summary class="cursor-pointer list-none font-medium text-slate-500">已压缩上下文，点击展开摘要</summary>
               <div class="mt-1 js-chat-content whitespace-pre-wrap break-words transition-[max-height] duration-200">{{.Content}}</div>
               <button type="button" class="js-chat-toggle mt-1 hidden text-[11px] font-medium text-slate-500">展开</button>
+              <div class="mt-1 text-[11px] text-slate-500">Tokens: -</div>
             </details>
           </article>
           {{end}}
@@ -275,7 +278,7 @@
         }
       ];
 
-      function appendAssistantMessage(content, createdAtUs) {
+      function appendAssistantMessage(content, createdAtUs, usage) {
         var text = (content || "").trim();
         if (!text) {
           return;
@@ -305,11 +308,41 @@
         contentNode.textContent = text;
         bubble.appendChild(contentNode);
 
+        var usageNode = document.createElement("div");
+        usageNode.className = "mt-1 text-[11px] text-slate-500";
+        usageNode.textContent = formatUsageLabel(usage);
+        bubble.appendChild(usageNode);
+
         article.appendChild(avatar);
         article.appendChild(bubble);
         container.appendChild(article);
         updateMessageCursor(createdAtUs, createdAtMs);
         container.scrollTop = container.scrollHeight;
+      }
+
+      function formatUsageLabel(usage) {
+        if (!usage) {
+          return "Tokens: -";
+        }
+        var total = parseInt(usage.total_tokens, 10);
+        var prompt = parseInt(usage.prompt_tokens, 10);
+        var completion = parseInt(usage.completion_tokens, 10);
+        if (isNaN(total) || total < 0) {
+          total = 0;
+        }
+        if (isNaN(prompt) || prompt < 0) {
+          prompt = 0;
+        }
+        if (isNaN(completion) || completion < 0) {
+          completion = 0;
+        }
+        if (total === 0) {
+          total = prompt + completion;
+        }
+        if (total === 0 && prompt === 0 && completion === 0) {
+          return "Tokens: -";
+        }
+        return "Tokens: 总 " + total + " | 输 " + prompt + " | 出 " + completion;
       }
 
       function appendEventMessage(content, createdAtUs) {
@@ -554,7 +587,7 @@
                 continue;
               }
               if (item.kind === "assistant") {
-                appendAssistantMessage(item.content, item.created_at_us);
+                appendAssistantMessage(item.content, item.created_at_us, item.usage || null);
                 continue;
               }
               if (item.kind === "event") {
@@ -593,7 +626,7 @@
             if (!payload || !payload.created || !payload.content) {
               return;
             }
-            appendAssistantMessage(payload.content, Date.now() * 1000);
+            appendAssistantMessage(payload.content, Date.now() * 1000, null);
           })
           .catch(function () {
             // No-op: greeting is best-effort.

@@ -60,6 +60,7 @@ type chatTimelineItem struct {
 	Kind           string
 	Content        string
 	ToolCalls      []conversation.ToolCall
+	Usage          *conversation.TokenUsage
 	CreatedAt      time.Time
 	ShowTimestamp  bool
 	TimestampLabel string
@@ -210,9 +211,16 @@ type apiProjectIndexItem struct {
 }
 
 type apiChatUpdate struct {
-	Kind        string `json:"kind"`
-	Content     string `json:"content"`
-	CreatedAtUS int64  `json:"created_at_us"`
+	Kind        string         `json:"kind"`
+	Content     string         `json:"content"`
+	CreatedAtUS int64          `json:"created_at_us"`
+	Usage       *apiTokenUsage `json:"usage,omitempty"`
+}
+
+type apiTokenUsage struct {
+	PromptTokens     int `json:"prompt_tokens,omitempty"`
+	CompletionTokens int `json:"completion_tokens,omitempty"`
+	TotalTokens      int `json:"total_tokens,omitempty"`
 }
 
 type apiChatToolRunRequest struct {
@@ -406,6 +414,7 @@ func buildChatTimeline(messages []conversation.Message, events []conversation.Ev
 				Kind:      kind,
 				Content:   msg.Content,
 				ToolCalls: msg.ToolCalls,
+				Usage:     msg.Usage,
 				CreatedAt: msg.CreatedAt,
 			},
 			seq: seq,
@@ -1477,6 +1486,7 @@ func (s *Server) handleAPIChatUpdates(w http.ResponseWriter, r *http.Request) {
 			Kind:        item.Kind,
 			Content:     item.Content,
 			CreatedAtUS: createdAtUS,
+			Usage:       toAPITokenUsage(item.Usage),
 		})
 	}
 
@@ -1484,6 +1494,20 @@ func (s *Server) handleAPIChatUpdates(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"updates": updates,
 	})
+}
+
+func toAPITokenUsage(usage *conversation.TokenUsage) *apiTokenUsage {
+	if usage == nil {
+		return nil
+	}
+	if usage.PromptTokens == 0 && usage.CompletionTokens == 0 && usage.TotalTokens == 0 {
+		return nil
+	}
+	return &apiTokenUsage{
+		PromptTokens:     usage.PromptTokens,
+		CompletionTokens: usage.CompletionTokens,
+		TotalTokens:      usage.TotalTokens,
+	}
 }
 
 func (s *Server) handleAPIChatToolRun(w http.ResponseWriter, r *http.Request) {

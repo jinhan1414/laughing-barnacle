@@ -15,7 +15,11 @@ func TestHandleAPIChatUpdates_ReturnsIncrementalAssistantAndEvents(t *testing.T)
 	convStore := conversation.NewStore()
 	convStore.Append("user", "u1")
 	time.Sleep(2 * time.Millisecond)
-	convStore.Append("assistant", "a1")
+	convStore.AppendAssistant("a1", &conversation.TokenUsage{
+		PromptTokens:     50,
+		CompletionTokens: 10,
+		TotalTokens:      60,
+	})
 	time.Sleep(2 * time.Millisecond)
 	convStore.AppendEvent("context_compression", "c1")
 
@@ -38,6 +42,9 @@ func TestHandleAPIChatUpdates_ReturnsIncrementalAssistantAndEvents(t *testing.T)
 	}
 	if payload.Updates[0].Kind != "assistant" || payload.Updates[0].Content != "a1" {
 		t.Fatalf("unexpected first update: %+v", payload.Updates[0])
+	}
+	if payload.Updates[0].Usage == nil || payload.Updates[0].Usage.TotalTokens != 60 {
+		t.Fatalf("unexpected usage in first update: %+v", payload.Updates[0].Usage)
 	}
 	if payload.Updates[1].Kind != "event" || payload.Updates[1].Content != "c1" {
 		t.Fatalf("unexpected second update: %+v", payload.Updates[1])

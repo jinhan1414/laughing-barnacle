@@ -19,6 +19,7 @@ type mockLLM struct {
 	calls     []llm.ChatRequest
 	responses map[string][]string
 	toolCalls map[string][][]llm.ToolCall
+	usages    map[string][]llm.TokenUsage
 	errors    map[string][]error
 }
 
@@ -46,8 +47,13 @@ func (m *mockLLM) Chat(_ context.Context, req llm.ChatRequest) (llm.ChatResponse
 		toolCalls = tcQueue[0]
 		m.toolCalls[req.Purpose] = tcQueue[1:]
 	}
+	var usage llm.TokenUsage
+	if usageQueue := m.usages[req.Purpose]; len(usageQueue) > 0 {
+		usage = usageQueue[0]
+		m.usages[req.Purpose] = usageQueue[1:]
+	}
 
-	return llm.ChatResponse{Content: out, ToolCalls: toolCalls}, nil
+	return llm.ChatResponse{Content: out, ToolCalls: toolCalls, Usage: usage}, nil
 }
 
 type mockTools struct {
@@ -320,6 +326,10 @@ func TestHandleUserMessage_WithoutCompression(t *testing.T) {
 	store := conversation.NewStore()
 	fakeLLM := &mockLLM{responses: map[string][]string{
 		"chat_reply": {"ok"},
+	}, usages: map[string][]llm.TokenUsage{
+		"chat_reply": {
+			{PromptTokens: 10, CompletionTokens: 2, TotalTokens: 12},
+		},
 	}}
 
 	agentSvc := New(Config{
@@ -344,6 +354,10 @@ func TestHandleUserMessage_WithoutCompression(t *testing.T) {
 	if len(fakeLLM.calls) != 1 || fakeLLM.calls[0].Purpose != "chat_reply" {
 		t.Fatalf("unexpected calls: %+v", fakeLLM.calls)
 	}
+	_, messages := store.Snapshot()
+	if len(messages) != 2 || messages[1].Usage == nil || messages[1].Usage.TotalTokens != 12 {
+		t.Fatalf("expected assistant usage=12, got %+v", messages)
+	}
 }
 
 func TestHandleUserMessage_WithToolCalls(t *testing.T) {
@@ -351,6 +365,12 @@ func TestHandleUserMessage_WithToolCalls(t *testing.T) {
 	fakeLLM := &mockLLM{
 		responses: map[string][]string{
 			"chat_reply": {"", "weather ready"},
+		},
+		usages: map[string][]llm.TokenUsage{
+			"chat_reply": {
+				{PromptTokens: 100, CompletionTokens: 20, TotalTokens: 120},
+				{PromptTokens: 80, CompletionTokens: 30, TotalTokens: 110},
+			},
 		},
 		toolCalls: map[string][][]llm.ToolCall{
 			"chat_reply": {
@@ -432,6 +452,12 @@ func TestHandleUserMessage_WithToolCalls(t *testing.T) {
 	}
 	if messages[0].ToolCalls[0].Name != "weather__query" {
 		t.Fatalf("unexpected attached tool name: %s", messages[0].ToolCalls[0].Name)
+	}
+	if messages[1].Usage == nil {
+		t.Fatalf("expected assistant usage in messages")
+	}
+	if messages[1].Usage.PromptTokens != 180 || messages[1].Usage.CompletionTokens != 50 || messages[1].Usage.TotalTokens != 230 {
+		t.Fatalf("unexpected aggregated usage: %+v", messages[1].Usage)
 	}
 }
 

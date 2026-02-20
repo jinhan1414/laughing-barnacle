@@ -43,10 +43,11 @@ var builtinSkills = []Skill{
 		Description: "当用户要求新增/修改/删除/启停 MCP 服务时使用",
 		Prompt: strings.TrimSpace(
 			"先查现状：用 linux__bash 执行 curl -s http://127.0.0.1:8080/api/mcp/services。\n" +
-				"任何写操作前必须先输出“变更计划”（新增/修改/删除/启停的目标与参数），并等待用户明确确认（例如：确认新增、确认修改、确认删除）。\n" +
+				"默认自主闭环：当用户目标已明确时，直接完成查询→写入→校验，不要求用户二次确认。\n" +
+				"仅在关键参数缺失、权限不足或删除操作存在歧义时才向用户追问。\n" +
 				"新增/更新：POST /settings/mcp/save，字段 name/transport/endpoint 或 command/args_json/enabled。\n" +
 				"删除：POST /settings/mcp/delete(id)；启停：POST /settings/mcp/toggle(id,enabled)。\n" +
-				"每次改后再次查询 /api/mcp/services，向用户汇报新增/更新/删除 diff。规则：先查后改，未确认不得写入，stdio 必填 command，参数不确定先问。",
+				"每次改后再次查询 /api/mcp/services，向用户汇报新增/更新/删除 diff。规则：先查后改，stdio 必填 command，参数不确定先问。",
 		),
 		Enabled: true,
 		Source:  builtinSkillSource,
@@ -58,11 +59,12 @@ var builtinSkills = []Skill{
 		Prompt: strings.TrimSpace(
 			"先查现状：用 linux__bash 执行 curl -s http://127.0.0.1:8080/api/skills。\n" +
 				"先搜索候选：GET /api/skills/catalog/search?q=<需求关键词>&limit=8，做模糊匹配并给出候选技能列表。\n" +
-				"先让用户选定目标 skills.sh 链接并明确确认（例如：确认安装 <url>），未确认不得执行安装或删除。\n" +
+				"默认自主闭环：当用户已明确目标 skill 或链接时，直接执行安装/新增/启停/删除并校验结果，不要求用户二次确认。\n" +
+				"仅在目标不明确、存在重名冲突或删除对象不唯一时才向用户追问。\n" +
 				"skills.sh 安装：POST /settings/skills/install(skills_sh_url)。\n" +
 				"手动新增/更新：POST /settings/skills/save(name,description,prompt,enabled=on)。\n" +
 				"启停：POST /settings/skills/toggle(id,enabled)；删除：POST /settings/skills/delete(id)。\n" +
-				"每次改后再次查询 /api/skills 并汇报 diff 与最终启用状态。规则：先查后改，未确认不得写入。",
+				"每次改后再次查询 /api/skills 并汇报 diff 与最终启用状态。规则：先查后改。",
 		),
 		Enabled: true,
 		Source:  builtinSkillSource,
@@ -112,16 +114,17 @@ var builtinSkills = []Skill{
 		Prompt: strings.TrimSpace(
 			"先查现状：用 linux__bash 执行 curl -s http://127.0.0.1:8080/api/schedules。\n" +
 				"创建/修改前先用 linux__bash 执行 curl -s http://127.0.0.1:8080/api/skills，确认 action 中的 skill_id 存在且已启用。\n" +
-				"若 skill 不存在：在用户确认后，先创建任务 skill（POST /settings/skills/save(name,description,prompt,enabled=on)），再重新查询 /api/skills 获取实际 skill_id，然后再写入定时任务 action=skill:<skill_id>。\n" +
-				"若 skill 已存在但未启用：在用户确认后先启用（POST /settings/skills/toggle(id,enabled=true)），再写入定时任务。\n" +
+				"若 skill 不存在：直接创建任务 skill（POST /settings/skills/save(name,description,prompt,enabled=on)），再重新查询 /api/skills 获取实际 skill_id，然后写入定时任务 action=skill:<skill_id>。\n" +
+				"若 skill 已存在但未启用：直接先启用（POST /settings/skills/toggle(id,enabled=true)），再写入定时任务。\n" +
 				"禁止写入引用不存在或未启用 skill 的 action。\n" +
-				"任何写操作前必须先输出“变更计划”（任务 id、action、cron、启停状态），并等待用户明确确认（例如：确认修改 morning-planning 为 0 9 * * *）。\n" +
+				"默认自主闭环：当用户时间和提醒目标已明确时，直接完成创建/修改并校验，不要求用户额外确认。\n" +
+				"仅在 cron 时间、目标动作或提醒文案缺失时才向用户追问。\n" +
 				"新增/更新：POST /settings/schedules/save(id,name,description,action,cron_expr,enabled=on)。\n" +
 				"启停：POST /settings/schedules/toggle(id,enabled)。\n" +
 				"立即执行：POST /settings/schedules/run(id)。\n" +
 				"action 默认使用 skill:<skill_id>（例如 skill:morning-planning）。\n" +
 				"Cron 规则使用 5 段：分 时 日 月 周（例如 30 8 * * *）。\n" +
-				"每次改后再次查询 /api/schedules 并汇报 diff 与最终生效配置。规则：先查后改，未确认不得写入。",
+				"每次改后再次查询 /api/schedules 并汇报 diff 与最终生效配置。规则：先查后改。",
 		),
 		Enabled: true,
 		Source:  builtinSkillSource,
