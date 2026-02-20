@@ -446,11 +446,16 @@ func (a *Agent) compressContext(ctx context.Context, summary string, messages []
 func (a *Agent) generateReply(ctx context.Context, messages []conversation.Message) (string, []conversation.ToolCall, error) {
 	summary, _ := a.store.Snapshot()
 	systemPrompt, _ := a.resolvePromptsLocked()
+	now := a.nowFn()
 
 	requestMessages := make([]llm.Message, 0, 2+len(messages))
 	requestMessages = append(requestMessages, llm.Message{
 		Role:    "system",
 		Content: systemPrompt,
+	})
+	requestMessages = append(requestMessages, llm.Message{
+		Role:    "system",
+		Content: buildCurrentTimeContextPrompt(now),
 	})
 	responseStylePrompt := "回答策略：默认简洁直答（3-6 行）。仅当用户明确要求“详细/方案/步骤/复盘/计划/总结”时再展开，避免无关模板、表格和冗长铺垫。"
 	builtinToolDefs := []llm.ToolDefinition{linuxBashToolDefinition()}
@@ -1896,4 +1901,18 @@ func safeOrEmpty(v string) string {
 		return "(无)"
 	}
 	return v
+}
+
+func buildCurrentTimeContextPrompt(now time.Time) string {
+	now = now.Round(0)
+	zoneName, _ := now.Zone()
+	zoneName = strings.TrimSpace(zoneName)
+	if zoneName == "" {
+		zoneName = "Local"
+	}
+	return "时间基准（用于相对时间换算）：当前时间 " +
+		now.Format("2006-01-02 15:04:05 -07:00") +
+		"（Unix 秒: " + strconv.FormatInt(now.Unix(), 10) +
+		"，时区: " + zoneName +
+		"）。凡涉及“今天/昨天/最近N天/本周/本月”等时间范围，必须以此为准计算后再查询。"
 }
