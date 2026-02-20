@@ -70,8 +70,11 @@ type mockSkills struct {
 	upserts    []evolvedSkill
 }
 
-type mockProjects struct {
+type mockMemory struct {
 	indexLines []string
+	appends    int
+	lastUser   string
+	lastReply  string
 }
 
 func (m *mockSkills) ListEnabledSkillIndex() []string {
@@ -102,11 +105,18 @@ func (m *mockSkills) UpsertAutoSkill(name, prompt string) error {
 	return nil
 }
 
-func (m *mockProjects) ListProjectIndex() []string {
+func (m *mockMemory) ListIndexLines(_ int) []string {
 	if m == nil {
 		return nil
 	}
 	return append([]string(nil), m.indexLines...)
+}
+
+func (m *mockMemory) AppendTurn(user, assistant string, _ []conversation.ToolCall, _ time.Time) error {
+	m.appends++
+	m.lastUser = strings.TrimSpace(user)
+	m.lastReply = strings.TrimSpace(assistant)
+	return nil
 }
 
 type mockPromptProvider struct {
@@ -1160,7 +1170,7 @@ func TestHandleUserMessage_SkillIndexInjectionIncludesAllLines(t *testing.T) {
 	}
 }
 
-func TestHandleUserMessage_ProjectIndexInjectionIncludesReadHint(t *testing.T) {
+func TestHandleUserMessage_MemoryIndexInjectionIncludesReadHint(t *testing.T) {
 	store := conversation.NewStore()
 	fakeLLM := &mockLLM{responses: map[string][]string{
 		"chat_reply": {"ok"},
@@ -1177,9 +1187,9 @@ func TestHandleUserMessage_ProjectIndexInjectionIncludesReadHint(t *testing.T) {
 		SystemPrompt:               "system",
 		CompressionSystemPrompt:    "compressor",
 	}, store, fakeLLM, nil)
-	agentSvc.SetProjectProvider(&mockProjects{
+	agentSvc.SetMemoryProvider(&mockMemory{
 		indexLines: []string{
-			"project_id=pay-refactor | name=支付重构 | status=进行中 | summary=灰度中",
+			"path=/projects/pay-refactor/overview | title=支付重构 | summary=灰度中 | rev=3",
 		},
 	})
 
@@ -1196,19 +1206,19 @@ func TestHandleUserMessage_ProjectIndexInjectionIncludesReadHint(t *testing.T) {
 
 	content := ""
 	for _, msg := range fakeLLM.calls[0].Messages {
-		if msg.Role == "system" && strings.Contains(msg.Content, "项目记忆索引（结构化）") {
+		if msg.Role == "system" && strings.Contains(msg.Content, "MemoryFS 记忆索引（渐进式披露）") {
 			content = msg.Content
 			break
 		}
 	}
 	if strings.TrimSpace(content) == "" {
-		t.Fatalf("expected injected project index message")
+		t.Fatalf("expected injected memory index message")
 	}
-	if !strings.Contains(content, "/api/projects/read?id=<project_id>") {
-		t.Fatalf("expected project read hint, got %q", content)
+	if !strings.Contains(content, "/api/memory/read?path=<path>") {
+		t.Fatalf("expected memory read hint, got %q", content)
 	}
-	if !strings.Contains(content, "project_id=pay-refactor") {
-		t.Fatalf("expected project index line, got %q", content)
+	if !strings.Contains(content, "path=/projects/pay-refactor/overview") {
+		t.Fatalf("expected memory index line, got %q", content)
 	}
 }
 

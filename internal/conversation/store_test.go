@@ -142,7 +142,7 @@ func TestStoreReset_ClearsAndPersistsAllState(t *testing.T) {
 	}
 }
 
-func TestSetSummaryAndTrim_CreatesArchiveAndSectionLookup(t *testing.T) {
+func TestSetSummaryAndTrim_TrimMessagesWithoutArchiveIndex(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "conversation.db")
 	store, err := NewStoreWithFile(path)
 	if err != nil {
@@ -159,28 +159,8 @@ func TestSetSummaryAndTrim_CreatesArchiveAndSectionLookup(t *testing.T) {
 	if len(messages) != 1 {
 		t.Fatalf("expected 1 kept message after trim, got %d", len(messages))
 	}
-	if !strings.Contains(summary, archiveIndexBeginTag) {
-		t.Fatalf("expected archive index block in summary, got %q", summary)
-	}
-
-	_, refs := splitSummaryArchiveRefs(summary)
-	if len(refs) == 0 {
-		t.Fatalf("expected at least one archive ref in summary")
-	}
-	index, err := store.ReadArchiveIndex(refs[0].ID)
-	if err != nil {
-		t.Fatalf("ReadArchiveIndex error: %v", err)
-	}
-	if len(index.Sections) == 0 {
-		t.Fatalf("expected archive sections in index")
-	}
-
-	section, err := store.ReadArchiveSection(refs[0].ID, index.Sections[0].ID)
-	if err != nil {
-		t.Fatalf("ReadArchiveSection error: %v", err)
-	}
-	if strings.TrimSpace(section.Content) == "" {
-		t.Fatalf("expected non-empty section content")
+	if strings.Contains(summary, archiveIndexBeginTag) {
+		t.Fatalf("expected no archive index block in summary, got %q", summary)
 	}
 }
 

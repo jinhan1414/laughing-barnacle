@@ -227,12 +227,7 @@ func (s *Store) SetSummaryAndTrim(summary string, keepRecent int) {
 		return
 	}
 
-	trimmed := cloneMessages(s.messages[:len(s.messages)-keepRecent])
 	s.messages = append([]Message(nil), s.messages[len(s.messages)-keepRecent:]...)
-
-	if ref, err := s.createArchiveLocked(trimmed); err == nil {
-		summary = appendArchiveRefToSummary(summary, ref)
-	}
 	s.summary = summary
 	_ = s.persistLocked()
 }

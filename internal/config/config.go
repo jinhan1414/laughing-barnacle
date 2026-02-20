@@ -15,7 +15,7 @@ type Config struct {
 	SkillsDir                  string
 	SkillsStateFile            string
 	ConversationFile           string
-	ProjectsFile               string
+	MemoryFile                 string
 	LLMLogFile                 string
 	CerberBaseURL              string
 	CerberAPIKey               string
@@ -34,6 +34,10 @@ type Config struct {
 	KeepRecentAfterCompression int
 	MaxCompressionLoopsPerTurn int
 	MaxToolCallRounds          int
+	MemoryIdleWindow           time.Duration
+	MemoryMaxSegmentWindow     time.Duration
+	MemoryMaxSegmentMessages   int
+	MemoryWorkerInterval       time.Duration
 	LLMLogLimit                int
 	AgentSystemPrompt          string
 	CompressionSystemPrompt    string
@@ -46,7 +50,7 @@ func Load() (Config, error) {
 		SkillsDir:                  envOrDefault("APP_SKILLS_DIR", "./data/skills"),
 		SkillsStateFile:            envOrDefault("APP_SKILLS_STATE_FILE", "./data/skills_state.json"),
 		ConversationFile:           envOrDefault("APP_CONVERSATION_FILE", "./data/conversation.json"),
-		ProjectsFile:               envOrDefault("APP_PROJECTS_FILE", "./data/projects.db"),
+		MemoryFile:                 envOrDefault("APP_MEMORY_FILE", "./data/memory.db"),
 		LLMLogFile:                 envOrDefault("APP_LLM_LOG_FILE", "./data/llm_logs.json"),
 		CerberBaseURL:              envOrDefault("CERBER_BASE_URL", "https://api.cerber.ai"),
 		CerberAPIKey:               os.Getenv("CERBER_API_KEY"),
@@ -65,6 +69,10 @@ func Load() (Config, error) {
 		KeepRecentAfterCompression: envInt("AGENT_KEEP_RECENT_AFTER_COMPRESSION", 8),
 		MaxCompressionLoopsPerTurn: envInt("AGENT_MAX_COMPRESSION_LOOPS", 3),
 		MaxToolCallRounds:          envInt("AGENT_MAX_TOOL_CALL_ROUNDS", 10),
+		MemoryIdleWindow:           envDuration("AGENT_MEMORY_IDLE_WINDOW", 5*time.Minute),
+		MemoryMaxSegmentWindow:     envDuration("AGENT_MEMORY_MAX_SEGMENT_WINDOW", 10*time.Minute),
+		MemoryMaxSegmentMessages:   envInt("AGENT_MEMORY_MAX_SEGMENT_MESSAGES", 8),
+		MemoryWorkerInterval:       envDuration("AGENT_MEMORY_WORKER_INTERVAL", 30*time.Second),
 		LLMLogLimit:                envInt("APP_LLM_LOG_LIMIT", 500),
 		AgentSystemPrompt: envOrDefault("AGENT_SYSTEM_PROMPT",
 			agentprompt.DefaultSystemPrompt),
@@ -108,8 +116,20 @@ func Load() (Config, error) {
 	if cfg.ConversationFile == "" {
 		return Config{}, fmt.Errorf("APP_CONVERSATION_FILE is required")
 	}
-	if cfg.ProjectsFile == "" {
-		return Config{}, fmt.Errorf("APP_PROJECTS_FILE is required")
+	if cfg.MemoryFile == "" {
+		return Config{}, fmt.Errorf("APP_MEMORY_FILE is required")
+	}
+	if cfg.MemoryIdleWindow <= 0 {
+		return Config{}, fmt.Errorf("AGENT_MEMORY_IDLE_WINDOW must be > 0")
+	}
+	if cfg.MemoryMaxSegmentWindow <= 0 {
+		return Config{}, fmt.Errorf("AGENT_MEMORY_MAX_SEGMENT_WINDOW must be > 0")
+	}
+	if cfg.MemoryMaxSegmentMessages <= 0 {
+		return Config{}, fmt.Errorf("AGENT_MEMORY_MAX_SEGMENT_MESSAGES must be > 0")
+	}
+	if cfg.MemoryWorkerInterval <= 0 {
+		return Config{}, fmt.Errorf("AGENT_MEMORY_WORKER_INTERVAL must be > 0")
 	}
 	if cfg.SkillsDir == "" {
 		return Config{}, fmt.Errorf("APP_SKILLS_DIR is required")

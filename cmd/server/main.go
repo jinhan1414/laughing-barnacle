@@ -16,7 +16,7 @@ import (
 	"laughing-barnacle/internal/llm/cerber"
 	"laughing-barnacle/internal/llmlog"
 	"laughing-barnacle/internal/mcp"
-	"laughing-barnacle/internal/project"
+	"laughing-barnacle/internal/memory"
 	"laughing-barnacle/internal/scheduler"
 	"laughing-barnacle/internal/skills"
 	"laughing-barnacle/internal/web"
@@ -42,11 +42,11 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	projectStore, err := project.NewStoreWithFile(cfg.ProjectsFile)
+	memoryStore, err := memory.NewStoreWithFile(cfg.MemoryFile)
 	if err != nil {
 		return err
 	}
-	defer projectStore.Close()
+	defer memoryStore.Close()
 	skillStore, err := skills.NewStore(cfg.SkillsDir, cfg.SkillsStateFile)
 	if err != nil {
 		return err
@@ -82,10 +82,20 @@ func run() error {
 		EnforceHumanRoutine:        true,
 	}, convStore, llmClient, mcpToolProvider)
 	agentSvc.SetSkillProvider(skillStore)
-	agentSvc.SetProjectProvider(projectStore)
+	agentSvc.SetMemoryProvider(memoryStore)
 	agentSvc.SetPromptProvider(mcpStore)
 	agentSvc.SetPromptUpdater(mcpStore)
 	agentSvc.SetHabitProvider(mcpStore)
+
+	memoryWorker := memory.NewWorker(
+		memoryStore,
+		cfg.MemoryWorkerInterval,
+		cfg.MemoryIdleWindow,
+		cfg.MemoryMaxSegmentWindow,
+		cfg.MemoryMaxSegmentMessages,
+	)
+	memoryWorker.Start()
+	defer memoryWorker.Stop()
 
 	cronScheduler := scheduler.NewEngine(mcpStore, agentSvc, log.Default())
 	if err := cronScheduler.Start(); err != nil {
@@ -96,7 +106,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	webServer.SetProjectStore(projectStore)
+	webServer.SetMemoryStore(memoryStore)
 
 	mux := http.NewServeMux()
 	webServer.RegisterRoutes(mux)

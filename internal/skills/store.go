@@ -135,8 +135,8 @@ var builtinSkills = []Skill{
 		Description: "当历史摘要信息不足，需要回看被压缩原文片段时使用",
 		Prompt: strings.TrimSpace(
 			"仅在当前摘要无法支撑回答时触发，且必须按需最小化读取。\n" +
-				"步骤 1：先通过 linux__bash 执行 curl -s \"http://127.0.0.1:8080/api/context/archive/index?archive_id=<archive_id>\" 读取归档索引（标题与分节）。\n" +
-				"步骤 2：根据问题只选择必要 section_id，再执行 curl -s \"http://127.0.0.1:8080/api/context/archive/section?archive_id=<archive_id>&section_id=<section_id>\" 拉取具体分节。\n" +
+				"步骤 1：先通过 linux__bash 执行 curl -s \"http://127.0.0.1:8080/api/memory/read?path=/conversation/archive/<segment_id>/index\" 读取归档索引（标题与分节）。\n" +
+				"步骤 2：根据问题只选择必要 section_id，再执行 curl -s \"http://127.0.0.1:8080/api/memory/section?path=/conversation/archive/<segment_id>/index&section_id=<section_id>\" 拉取具体分节。\n" +
 				"禁止一次性拉取全部归档正文；禁止把整段历史原文回填进提示词。\n" +
 				"拉取后只提炼与当前问题直接相关的事实、约束和时间点，再继续回答。",
 		),
@@ -149,12 +149,12 @@ var builtinSkills = []Skill{
 		Description: "当用户更新项目进展、风险、里程碑或决策时使用",
 		Prompt: strings.TrimSpace(
 			"目标：维护结构化项目记忆，服务单用户长期演进。\n" +
-				"先查项目索引：用 linux__bash 执行 curl -s http://127.0.0.1:8080/api/projects/index。\n" +
-				"必要时按需读取详情：curl -s \"http://127.0.0.1:8080/api/projects/read?id=<project_id>\"。\n" +
+				"先查项目目录索引：用 linux__bash 执行 curl -s \"http://127.0.0.1:8080/api/memory/index?path=/projects\"。\n" +
+				"必要时按需读取详情：curl -s \"http://127.0.0.1:8080/api/memory/read?path=/projects/<project_id>/overview\"。\n" +
 				"仅当当前对话存在明确项目变更时写入；信息不确定时禁止写入。\n" +
-				"写入接口：POST /api/projects/upsert，字段支持 id/name/goal/status/summary/key_facts/milestones/risks/todos/decisions。\n" +
-				"list 字段可用 JSON 字符串数组或换行文本；优先小步更新，不要一次性重写全部项目。\n" +
-				"写入后再次读取 /api/projects/index 或 /api/projects/read?id=<project_id> 做结果校验，再向用户汇报“已记录哪些变化”。",
+				"写入接口：POST /api/memory/upsert，path 采用 /projects/<project_id>/overview|milestones|risks|decisions。\n" +
+				"facts/sections 支持结构化增量写入；优先小步更新，不要一次性重写全部项目。\n" +
+				"写入后再次读取 /api/memory/read?path=<path> 做结果校验，再向用户汇报“已记录哪些变化”。",
 		),
 		Enabled: true,
 		Source:  builtinSkillSource,

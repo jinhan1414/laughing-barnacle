@@ -373,10 +373,10 @@ func TestStoreHasBuiltinConfigSkills(t *testing.T) {
 	if archiveSkill.Source != "builtin" {
 		t.Fatalf("builtin archive recall skill source mismatch: %q", archiveSkill.Source)
 	}
-	if !strings.Contains(archiveSkill.Prompt, "/api/context/archive/index") {
+	if !strings.Contains(archiveSkill.Prompt, "/api/memory/read?path=/conversation/archive/") {
 		t.Fatalf("builtin archive recall skill should include archive index endpoint, got: %q", archiveSkill.Prompt)
 	}
-	if !strings.Contains(archiveSkill.Prompt, "/api/context/archive/section") {
+	if !strings.Contains(archiveSkill.Prompt, "/api/memory/section?path=/conversation/archive/") {
 		t.Fatalf("builtin archive recall skill should include archive section endpoint, got: %q", archiveSkill.Prompt)
 	}
 	if !strings.Contains(archiveSkill.Prompt, "禁止一次性拉取全部归档正文") {
@@ -393,13 +393,13 @@ func TestStoreHasBuiltinConfigSkills(t *testing.T) {
 	if projectSkill.Source != "builtin" {
 		t.Fatalf("builtin project maintainer skill source mismatch: %q", projectSkill.Source)
 	}
-	if !strings.Contains(projectSkill.Prompt, "/api/projects") {
-		t.Fatalf("builtin project maintainer should include /api/projects endpoint, got: %q", projectSkill.Prompt)
+	if !strings.Contains(projectSkill.Prompt, "/api/memory/index?path=/projects") {
+		t.Fatalf("builtin project maintainer should include memory index endpoint, got: %q", projectSkill.Prompt)
 	}
-	if !strings.Contains(projectSkill.Prompt, "/api/projects/index") {
-		t.Fatalf("builtin project maintainer should include /api/projects/index endpoint, got: %q", projectSkill.Prompt)
+	if !strings.Contains(projectSkill.Prompt, "/api/memory/read?path=/projects/") {
+		t.Fatalf("builtin project maintainer should include memory read endpoint, got: %q", projectSkill.Prompt)
 	}
-	if !strings.Contains(projectSkill.Prompt, "/api/projects/upsert") {
+	if !strings.Contains(projectSkill.Prompt, "/api/memory/upsert") {
 		t.Fatalf("builtin project maintainer should include upsert endpoint, got: %q", projectSkill.Prompt)
 	}
 	if !strings.Contains(projectSkill.Prompt, "信息不确定时禁止写入") {

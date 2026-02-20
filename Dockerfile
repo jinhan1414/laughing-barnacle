@@ -58,7 +58,7 @@ ENV APP_SETTINGS_FILE=/data/settings.json
 ENV APP_SKILLS_DIR=/data/skills
 ENV APP_SKILLS_STATE_FILE=/data/skills_state.json
 ENV APP_CONVERSATION_FILE=/data/conversation.json
-ENV APP_PROJECTS_FILE=/data/projects.db
+ENV APP_MEMORY_FILE=/data/memory.db
 ENV APP_LLM_LOG_FILE=/data/llm_logs.json
 EXPOSE 8080
 VOLUME ["/data"]

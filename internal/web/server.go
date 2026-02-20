@@ -19,7 +19,7 @@ import (
 	"laughing-barnacle/internal/conversation"
 	"laughing-barnacle/internal/llmlog"
 	"laughing-barnacle/internal/mcp"
-	"laughing-barnacle/internal/project"
+	"laughing-barnacle/internal/memory"
 	"laughing-barnacle/internal/routine"
 	"laughing-barnacle/internal/scheduler"
 	"laughing-barnacle/internal/skills"
@@ -29,15 +29,15 @@ import (
 var embeddedTemplates embed.FS
 
 type Server struct {
-	agent        *agent.Agent
-	convStore    *conversation.Store
-	logStore     *llmlog.Store
-	mcpStore     *mcp.Store
-	mcpTools     *mcp.ToolProvider
-	skillStore   *skills.Store
-	projectStore *project.Store
-	scheduler    ScheduleReloader
-	tmpl         *template.Template
+	agent       *agent.Agent
+	convStore   *conversation.Store
+	logStore    *llmlog.Store
+	mcpStore    *mcp.Store
+	mcpTools    *mcp.ToolProvider
+	skillStore  *skills.Store
+	memoryStore *memory.Store
+	scheduler   ScheduleReloader
+	tmpl        *template.Template
 }
 
 type ScheduleReloader interface {
@@ -99,15 +99,16 @@ type mcpServiceToolView struct {
 }
 
 type settingsPageData struct {
-	ActiveSection string
-	Sections      []settingsSection
-	Services      []mcpServiceView
-	Skills        []skillView
-	Projects      []projectView
-	Schedules     []scheduledTaskView
-	AgentPrompts  agentPromptsView
-	Success       string
-	Error         string
+	ActiveSection  string
+	Sections       []settingsSection
+	Services       []mcpServiceView
+	Skills         []skillView
+	MemoryNodes    []memoryNodeView
+	MemorySegments []memorySegmentView
+	Schedules      []scheduledTaskView
+	AgentPrompts   agentPromptsView
+	Success        string
+	Error          string
 }
 
 type skillView struct {
@@ -120,18 +121,25 @@ type skillView struct {
 	UpdatedAt   string
 }
 
-type projectView struct {
-	ID         string
-	Name       string
-	Goal       string
-	Status     string
+type memoryNodeView struct {
+	Path       string
+	Title      string
+	Type       string
+	SchemaKind string
 	Summary    string
-	KeyFacts   []string
-	Milestones []string
-	Risks      []string
-	Todos      []string
-	Decisions  []string
+	Revision   int64
 	UpdatedAt  string
+}
+
+type memorySegmentView struct {
+	ID             string
+	Status         string
+	Turns          int
+	CloseReason    string
+	LastUserAt     string
+	UpdatedAt      string
+	PersistedPaths []string
+	Error          string
 }
 
 type agentPromptsView struct {
@@ -187,27 +195,13 @@ type apiScheduledTask struct {
 	UpdatedAt   time.Time `json:"updated_at,omitempty"`
 }
 
-type apiProject struct {
-	ID         string    `json:"id"`
-	Name       string    `json:"name"`
-	Goal       string    `json:"goal,omitempty"`
-	Status     string    `json:"status,omitempty"`
-	Summary    string    `json:"summary,omitempty"`
-	KeyFacts   []string  `json:"key_facts,omitempty"`
-	Milestones []string  `json:"milestones,omitempty"`
-	Risks      []string  `json:"risks,omitempty"`
-	Todos      []string  `json:"todos,omitempty"`
-	Decisions  []string  `json:"decisions,omitempty"`
-	CreatedAt  time.Time `json:"created_at,omitempty"`
-	UpdatedAt  time.Time `json:"updated_at,omitempty"`
-}
-
-type apiProjectIndexItem struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Status    string    `json:"status,omitempty"`
-	Summary   string    `json:"summary,omitempty"`
-	UpdatedAt time.Time `json:"updated_at,omitempty"`
+type apiMemoryIndexItem struct {
+	Path      string          `json:"path"`
+	Title     string          `json:"title"`
+	Type      memory.NodeType `json:"type"`
+	Summary   string          `json:"summary,omitempty"`
+	Revision  int64           `json:"revision"`
+	UpdatedAt time.Time       `json:"updated_at,omitempty"`
 }
 
 type apiChatUpdate struct {
@@ -271,8 +265,8 @@ func NewServer(
 	}, nil
 }
 
-func (s *Server) SetProjectStore(store *project.Store) {
-	s.projectStore = store
+func (s *Server) SetMemoryStore(store *memory.Store) {
+	s.memoryStore = store
 }
 
 func (s *Server) RegisterRoutes(mux *http.ServeMux) {
@@ -305,14 +299,14 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/skills/read", s.handleAPISkillRead)
 	mux.HandleFunc("/api/skills/catalog/search", s.handleAPISkillsCatalogSearch)
 	mux.HandleFunc("/api/schedules", s.handleAPISchedules)
-	mux.HandleFunc("/api/projects", s.handleAPIProjects)
-	mux.HandleFunc("/api/projects/index", s.handleAPIProjects)
-	mux.HandleFunc("/api/projects/read", s.handleAPIProjectRead)
-	mux.HandleFunc("/api/projects/upsert", s.handleAPIProjectUpsert)
+	mux.HandleFunc("/api/memory/index", s.handleAPIMemoryIndex)
+	mux.HandleFunc("/api/memory/read", s.handleAPIMemoryRead)
+	mux.HandleFunc("/api/memory/section", s.handleAPIMemorySection)
+	mux.HandleFunc("/api/memory/upsert", s.handleAPIMemoryUpsert)
+	mux.HandleFunc("/api/memory/move", s.handleAPIMemoryMove)
+	mux.HandleFunc("/api/memory/delete", s.handleAPIMemoryDelete)
 	mux.HandleFunc("/api/chat/updates", s.handleAPIChatUpdates)
 	mux.HandleFunc("/api/chat/tools/run", s.handleAPIChatToolRun)
-	mux.HandleFunc("/api/context/archive/index", s.handleAPIContextArchiveIndex)
-	mux.HandleFunc("/api/context/archive/section", s.handleAPIContextArchiveSection)
 	mux.HandleFunc("/healthz", s.handleHealthz)
 }
 
@@ -585,7 +579,7 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 	if section == "" {
 		section = "mcp"
 	}
-	if section != "mcp" && section != "llm" && section != "security" && section != "skills" && section != "schedules" && section != "projects" {
+	if section != "mcp" && section != "llm" && section != "security" && section != "skills" && section != "schedules" && section != "memory" {
 		section = "mcp"
 	}
 
@@ -593,7 +587,7 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 		ActiveSection: section,
 		Sections: []settingsSection{
 			{Key: "mcp", Title: "MCP 服务", Description: "管理 Agent 可用的 MCP 工具服务"},
-			{Key: "projects", Title: "项目记忆", Description: "查看数字分身维护的结构化项目信息"},
+			{Key: "memory", Title: "记忆模块", Description: "可视化查看 MemoryFS 命名空间、节点与沉淀分段"},
 			{Key: "schedules", Title: "定时任务", Description: "统一管理系统 Cron 定时任务"},
 			{Key: "llm", Title: "提示词策略", Description: "配置 Agent 系统提示词与压缩提示词"},
 			{Key: "security", Title: "安全策略", Description: "预留：权限与审计配置"},
@@ -657,29 +651,46 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 			}
 			data.Skills = append(data.Skills, view)
 		}
-	} else if section == "projects" {
-		allProjects := []project.Project(nil)
-		if s.projectStore != nil {
-			allProjects = s.projectStore.ListProjects()
-		}
-		data.Projects = make([]projectView, 0, len(allProjects))
-		for _, item := range allProjects {
-			view := projectView{
-				ID:         item.ID,
-				Name:       item.Name,
-				Goal:       item.Goal,
-				Status:     item.Status,
-				Summary:    item.Summary,
-				KeyFacts:   append([]string(nil), item.KeyFacts...),
-				Milestones: append([]string(nil), item.Milestones...),
-				Risks:      append([]string(nil), item.Risks...),
-				Todos:      append([]string(nil), item.Todos...),
-				Decisions:  append([]string(nil), item.Decisions...),
+	} else if section == "memory" {
+		if s.memoryStore != nil {
+			allNodes := s.memoryStore.ListNodes(300)
+			data.MemoryNodes = make([]memoryNodeView, 0, len(allNodes))
+			for _, item := range allNodes {
+				view := memoryNodeView{
+					Path:       item.Path,
+					Title:      item.Title,
+					Type:       string(item.Type),
+					SchemaKind: item.SchemaKind,
+					Revision:   item.Revision,
+				}
+				if item.Type == memory.NodeTypeFile && item.Content != nil {
+					view.Summary = item.Content.Summary
+				}
+				if !item.UpdatedAt.IsZero() {
+					view.UpdatedAt = item.UpdatedAt.Format("2006-01-02 15:04:05")
+				}
+				data.MemoryNodes = append(data.MemoryNodes, view)
 			}
-			if !item.UpdatedAt.IsZero() {
-				view.UpdatedAt = item.UpdatedAt.Format("2006-01-02 15:04:05")
+
+			segments := s.memoryStore.ListSegments(80)
+			data.MemorySegments = make([]memorySegmentView, 0, len(segments))
+			for _, seg := range segments {
+				view := memorySegmentView{
+					ID:             seg.ID,
+					Status:         string(seg.Status),
+					Turns:          len(seg.Turns),
+					CloseReason:    seg.CloseReason,
+					PersistedPaths: append([]string(nil), seg.PersistedPaths...),
+					Error:          seg.Error,
+				}
+				if !seg.LastUserAt.IsZero() {
+					view.LastUserAt = seg.LastUserAt.Format("2006-01-02 15:04:05")
+				}
+				if !seg.UpdatedAt.IsZero() {
+					view.UpdatedAt = seg.UpdatedAt.Format("2006-01-02 15:04:05")
+				}
+				data.MemorySegments = append(data.MemorySegments, view)
 			}
-			data.Projects = append(data.Projects, view)
 		}
 	} else if section == "llm" {
 		cfg := s.mcpStore.GetAgentPromptConfig()
@@ -1244,208 +1255,241 @@ func (s *Server) handleAPISchedules(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) handleAPIProjects(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleAPIMemoryIndex(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	if s.projectStore == nil {
+	if s.memoryStore == nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"error": "project store unavailable",
-		})
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "memory store unavailable"})
 		return
 	}
-
-	projects := s.projectStore.ListProjects()
-	items := make([]apiProjectIndexItem, 0, len(projects))
-	for _, item := range projects {
-		items = append(items, toAPIProjectIndex(item))
+	path := strings.TrimSpace(r.URL.Query().Get("path"))
+	if path == "" {
+		path = "/"
+	}
+	items, err := s.memoryStore.ListIndex(path)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, memory.ErrNodeNotFound) {
+			status = http.StatusNotFound
+		}
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
+		return
+	}
+	respItems := make([]apiMemoryIndexItem, 0, len(items))
+	for _, item := range items {
+		respItems = append(respItems, apiMemoryIndexItem{
+			Path:      item.Path,
+			Title:     item.Title,
+			Type:      item.Type,
+			Summary:   item.Summary,
+			Revision:  item.Revision,
+			UpdatedAt: item.UpdatedAt,
+		})
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"projects": items,
+		"path":  path,
+		"items": respItems,
 	})
 }
 
-func (s *Server) handleAPIProjectRead(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleAPIMemoryRead(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	if s.projectStore == nil {
+	if s.memoryStore == nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"error": "project store unavailable",
-		})
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "memory store unavailable"})
 		return
 	}
-
-	id := strings.TrimSpace(r.URL.Query().Get("id"))
-	if id == "" {
+	path := strings.TrimSpace(r.URL.Query().Get("path"))
+	if path == "" {
 		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"error": "query parameter id is required",
-		})
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "query parameter path is required"})
 		return
 	}
-	item, ok := s.projectStore.ReadProject(id)
-	if !ok {
-		w.WriteHeader(http.StatusNotFound)
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"error": "project not found",
-		})
+	node, err := s.memoryStore.ReadNode(path)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, memory.ErrNodeNotFound) {
+			status = http.StatusNotFound
+		}
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
 		return
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_ = json.NewEncoder(w).Encode(toAPIProject(item))
+	_ = json.NewEncoder(w).Encode(node)
 }
 
-func (s *Server) handleAPIProjectUpsert(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleAPIMemorySection(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if s.memoryStore == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "memory store unavailable"})
+		return
+	}
+	path := strings.TrimSpace(r.URL.Query().Get("path"))
+	sectionID := strings.TrimSpace(r.URL.Query().Get("section_id"))
+	if path == "" || sectionID == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "query parameter path and section_id are required"})
+		return
+	}
+	section, err := s.memoryStore.ReadSection(path, sectionID)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, memory.ErrNodeNotFound) || errors.Is(err, memory.ErrSectionNotFound) {
+			status = http.StatusNotFound
+		}
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"path":    path,
+		"section": section,
+	})
+}
+
+func (s *Server) handleAPIMemoryUpsert(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	if s.projectStore == nil {
+	if s.memoryStore == nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"error": "project store unavailable",
-		})
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "memory store unavailable"})
 		return
 	}
-
-	input, err := parseProjectUpsertRequest(r)
-	if err != nil {
+	var req struct {
+		Mode             string           `json:"mode"`
+		Path             string           `json:"path"`
+		Title            string           `json:"title"`
+		Type             memory.NodeType  `json:"type"`
+		SchemaKind       string           `json:"schema_kind"`
+		SchemaVersion    int              `json:"schema_version"`
+		Tags             []string         `json:"tags"`
+		Source           string           `json:"source"`
+		Confidence       float64          `json:"confidence"`
+		Summary          string           `json:"summary"`
+		Facts            []string         `json:"facts"`
+		Sections         []memory.Section `json:"sections"`
+		Refs             []memory.Ref     `json:"refs"`
+		ExpectedRevision int64            `json:"expected_revision"`
+	}
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"error": err.Error(),
-		})
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "invalid request body"})
 		return
 	}
-	saved, err := s.projectStore.UpsertProject(input)
+	node, err := s.memoryStore.UpsertNode(memory.UpsertRequest{
+		Mode:             req.Mode,
+		Path:             req.Path,
+		Title:            req.Title,
+		Type:             req.Type,
+		SchemaKind:       req.SchemaKind,
+		SchemaVersion:    req.SchemaVersion,
+		Tags:             req.Tags,
+		Source:           req.Source,
+		Confidence:       req.Confidence,
+		Summary:          req.Summary,
+		Facts:            req.Facts,
+		Sections:         req.Sections,
+		Refs:             req.Refs,
+		ExpectedRevision: req.ExpectedRevision,
+	})
 	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"error": err.Error(),
-		})
+		status := http.StatusBadRequest
+		if errors.Is(err, memory.ErrRevisionConflict) {
+			status = http.StatusConflict
+		}
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
 		return
 	}
-
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"project": toAPIProject(saved),
-	})
+	_ = json.NewEncoder(w).Encode(map[string]any{"node": node})
 }
 
-func toAPIProject(item project.Project) apiProject {
-	return apiProject{
-		ID:         item.ID,
-		Name:       item.Name,
-		Goal:       item.Goal,
-		Status:     item.Status,
-		Summary:    item.Summary,
-		KeyFacts:   append([]string(nil), item.KeyFacts...),
-		Milestones: append([]string(nil), item.Milestones...),
-		Risks:      append([]string(nil), item.Risks...),
-		Todos:      append([]string(nil), item.Todos...),
-		Decisions:  append([]string(nil), item.Decisions...),
-		CreatedAt:  item.CreatedAt,
-		UpdatedAt:  item.UpdatedAt,
+func (s *Server) handleAPIMemoryMove(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
 	}
+	if s.memoryStore == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "memory store unavailable"})
+		return
+	}
+	var req struct {
+		FromPath         string `json:"from_path"`
+		ToPath           string `json:"to_path"`
+		ExpectedRevision int64  `json:"expected_revision"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "invalid request body"})
+		return
+	}
+	if err := s.memoryStore.MoveNode(req.FromPath, req.ToPath, req.ExpectedRevision); err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, memory.ErrNodeNotFound) {
+			status = http.StatusNotFound
+		} else if errors.Is(err, memory.ErrRevisionConflict) {
+			status = http.StatusConflict
+		}
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 }
 
-func toAPIProjectIndex(item project.Project) apiProjectIndexItem {
-	return apiProjectIndexItem{
-		ID:        item.ID,
-		Name:      item.Name,
-		Status:    item.Status,
-		Summary:   item.Summary,
-		UpdatedAt: item.UpdatedAt,
+func (s *Server) handleAPIMemoryDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
 	}
-}
-
-func parseProjectUpsertRequest(r *http.Request) (project.Project, error) {
-	contentType := strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Type")))
-	if strings.Contains(contentType, "application/json") {
-		var req struct {
-			ID         string   `json:"id"`
-			Name       string   `json:"name"`
-			Goal       string   `json:"goal"`
-			Status     string   `json:"status"`
-			Summary    string   `json:"summary"`
-			KeyFacts   []string `json:"key_facts"`
-			Milestones []string `json:"milestones"`
-			Risks      []string `json:"risks"`
-			Todos      []string `json:"todos"`
-			Decisions  []string `json:"decisions"`
+	if s.memoryStore == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "memory store unavailable"})
+		return
+	}
+	var req struct {
+		Path string `json:"path"`
+		Mode string `json:"mode"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "invalid request body"})
+		return
+	}
+	soft := strings.ToLower(strings.TrimSpace(req.Mode)) != "hard"
+	movedTo, err := s.memoryStore.DeleteNode(req.Path, soft)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, memory.ErrNodeNotFound) {
+			status = http.StatusNotFound
 		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			return project.Project{}, fmt.Errorf("invalid json body")
-		}
-		return project.Project{
-			ID:         strings.TrimSpace(req.ID),
-			Name:       strings.TrimSpace(req.Name),
-			Goal:       strings.TrimSpace(req.Goal),
-			Status:     strings.TrimSpace(req.Status),
-			Summary:    strings.TrimSpace(req.Summary),
-			KeyFacts:   append([]string(nil), req.KeyFacts...),
-			Milestones: append([]string(nil), req.Milestones...),
-			Risks:      append([]string(nil), req.Risks...),
-			Todos:      append([]string(nil), req.Todos...),
-			Decisions:  append([]string(nil), req.Decisions...),
-		}, nil
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
+		return
 	}
-
-	if err := r.ParseForm(); err != nil {
-		return project.Project{}, fmt.Errorf("invalid form body")
-	}
-	return project.Project{
-		ID:         strings.TrimSpace(r.FormValue("id")),
-		Name:       strings.TrimSpace(r.FormValue("name")),
-		Goal:       strings.TrimSpace(r.FormValue("goal")),
-		Status:     strings.TrimSpace(r.FormValue("status")),
-		Summary:    strings.TrimSpace(r.FormValue("summary")),
-		KeyFacts:   parseProjectListField(r.FormValue("key_facts")),
-		Milestones: parseProjectListField(r.FormValue("milestones")),
-		Risks:      parseProjectListField(r.FormValue("risks")),
-		Todos:      parseProjectListField(r.FormValue("todos")),
-		Decisions:  parseProjectListField(r.FormValue("decisions")),
-	}, nil
-}
-
-func parseProjectListField(raw string) []string {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return nil
-	}
-
-	if strings.HasPrefix(raw, "[") {
-		var arr []string
-		if err := json.Unmarshal([]byte(raw), &arr); err == nil {
-			return arr
-		}
-	}
-
-	parts := strings.FieldsFunc(raw, func(r rune) bool {
-		switch r {
-		case '\n', '\r', ';', '|', '，', '、':
-			return true
-		default:
-			return false
-		}
-	})
-	if len(parts) == 1 && strings.Contains(raw, ",") {
-		parts = strings.Split(raw, ",")
-	}
-	out := make([]string, 0, len(parts))
-	for _, item := range parts {
-		item = strings.TrimSpace(item)
-		if item == "" {
-			continue
-		}
-		out = append(out, item)
-	}
-	return out
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "moved_to": movedTo})
 }
 
 func (s *Server) handleAPIChatUpdates(w http.ResponseWriter, r *http.Request) {
@@ -1580,57 +1624,6 @@ func (s *Server) handleAPIChatToolRun(w http.ResponseWriter, r *http.Request) {
 			"error": fmt.Sprintf("unknown chat tool: %s", tool),
 		})
 	}
-}
-
-func (s *Server) handleAPIContextArchiveIndex(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-	archiveID := strings.TrimSpace(r.URL.Query().Get("archive_id"))
-	if archiveID == "" {
-		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]any{"error": "query parameter archive_id is required"})
-		return
-	}
-	index, err := s.convStore.ReadArchiveIndex(archiveID)
-	if err != nil {
-		status := http.StatusBadRequest
-		if errors.Is(err, conversation.ErrArchiveNotFound) {
-			status = http.StatusNotFound
-		}
-		w.WriteHeader(status)
-		_ = json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
-		return
-	}
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_ = json.NewEncoder(w).Encode(index)
-}
-
-func (s *Server) handleAPIContextArchiveSection(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-	archiveID := strings.TrimSpace(r.URL.Query().Get("archive_id"))
-	sectionID := strings.TrimSpace(r.URL.Query().Get("section_id"))
-	if archiveID == "" || sectionID == "" {
-		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]any{"error": "query parameter archive_id and section_id are required"})
-		return
-	}
-	section, err := s.convStore.ReadArchiveSection(archiveID, sectionID)
-	if err != nil {
-		status := http.StatusBadRequest
-		if errors.Is(err, conversation.ErrArchiveNotFound) || errors.Is(err, conversation.ErrArchiveSectionNotFound) {
-			status = http.StatusNotFound
-		}
-		w.WriteHeader(status)
-		_ = json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
-		return
-	}
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_ = json.NewEncoder(w).Encode(section)
 }
 
 func (s *Server) redirectSettings(w http.ResponseWriter, r *http.Request, section, success, failure string) {

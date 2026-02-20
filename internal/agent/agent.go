@@ -46,8 +46,9 @@ type SkillProvider interface {
 	ReadEnabledSkillPrompt(skillID string) (string, bool)
 }
 
-type ProjectProvider interface {
-	ListProjectIndex() []string
+type MemoryProvider interface {
+	ListIndexLines(limit int) []string
+	AppendTurn(user, assistant string, toolCalls []conversation.ToolCall, now time.Time) error
 }
 
 type AutoSkillWriter interface {
@@ -103,11 +104,12 @@ var (
 		"/api/skills/catalog/search",
 		"/api/schedules",
 		"/api/mcp/services",
-		"/api/projects",
-		"/api/projects/index",
-		"/api/projects/read",
-		"/api/context/archive/index",
-		"/api/context/archive/section",
+		"/api/memory/index",
+		"/api/memory/read",
+		"/api/memory/section",
+		"/api/memory/upsert",
+		"/api/memory/move",
+		"/api/memory/delete",
 		"/settings/skills/save",
 		"/settings/skills/install",
 		"/settings/skills/toggle",
@@ -119,7 +121,6 @@ var (
 		"/settings/mcp/save",
 		"/settings/mcp/toggle",
 		"/settings/mcp/delete",
-		"/api/projects/upsert",
 	}
 	runLinuxBashFn = runLinuxBash
 )
@@ -151,17 +152,17 @@ type ChatGreetingInput struct {
 }
 
 type Agent struct {
-	cfg      Config
-	llm      llm.Client
-	tools    ToolProvider
-	skills   SkillProvider
-	projects ProjectProvider
-	prompts  PromptProvider
-	updater  PromptUpdater
-	habits   HabitProvider
-	store    *conversation.Store
-	nowFn    func() time.Time
-	mu       sync.Mutex
+	cfg     Config
+	llm     llm.Client
+	tools   ToolProvider
+	skills  SkillProvider
+	memory  MemoryProvider
+	prompts PromptProvider
+	updater PromptUpdater
+	habits  HabitProvider
+	store   *conversation.Store
+	nowFn   func() time.Time
+	mu      sync.Mutex
 }
 
 func New(cfg Config, store *conversation.Store, llmClient llm.Client, tools ToolProvider) *Agent {
@@ -180,10 +181,10 @@ func (a *Agent) SetSkillProvider(provider SkillProvider) {
 	a.skills = provider
 }
 
-func (a *Agent) SetProjectProvider(provider ProjectProvider) {
+func (a *Agent) SetMemoryProvider(provider MemoryProvider) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.projects = provider
+	a.memory = provider
 }
 
 func (a *Agent) SetPromptProvider(provider PromptProvider) {
@@ -305,6 +306,18 @@ func (a *Agent) appendScheduledTaskFailureLocked(action string, runErr error) {
 	a.store.Append("assistant", "【定时任务执行失败】\n任务："+action+"\n状态：失败\n原因："+trimRunes(errText, 180))
 }
 
+func (a *Agent) appendTurnToMemoryLocked(userText, assistantText string, toolCalls []conversation.ToolCall) {
+	if a == nil || a.memory == nil {
+		return
+	}
+	userText = strings.TrimSpace(userText)
+	assistantText = strings.TrimSpace(assistantText)
+	if userText == "" && assistantText == "" {
+		return
+	}
+	_ = a.memory.AppendTurn(userText, assistantText, toolCalls, a.nowFn().UTC())
+}
+
 // HandleUserMessage processes one user turn, updating shared conversation state.
 func (a *Agent) HandleUserMessage(ctx context.Context, userInput string) (string, error) {
 	text := strings.TrimSpace(userInput)
@@ -330,6 +343,7 @@ func (a *Agent) HandleUserMessage(ctx context.Context, userInput string) (string
 
 	reply = sanitizeLLMReply(reply)
 	a.store.AppendAssistant(reply, usage)
+	a.appendTurnToMemoryLocked(text, reply, toolCalls)
 	return reply, nil
 }
 
@@ -358,8 +372,10 @@ func (a *Agent) RetryLastUserMessage(ctx context.Context) (string, error) {
 		return "", err
 	}
 
+	pendingUser := strings.TrimSpace(messages[len(messages)-1].Content)
 	reply = sanitizeLLMReply(reply)
 	a.store.AppendAssistant(reply, usage)
+	a.appendTurnToMemoryLocked(pendingUser, reply, toolCalls)
 	return reply, nil
 }
 
@@ -527,7 +543,7 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 	responseStylePrompt := "回答策略：默认简洁直答（3-6 行）。仅当用户明确要求“详细/方案/步骤/复盘/计划/总结”时再展开，避免无关模板、表格和冗长铺垫。"
 	builtinToolDefs := []llm.ToolDefinition{linuxBashToolDefinition()}
 	skillIndexPrompt := ""
-	projectIndexPrompt := ""
+	memoryIndexPrompt := ""
 	if a.skills != nil {
 		allSkillIndex := a.skills.ListEnabledSkillIndex()
 		if len(allSkillIndex) > 0 {
@@ -556,24 +572,26 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 			}
 		}
 	}
-	if a.projects != nil {
-		projectIndex := a.projects.ListProjectIndex()
-		if len(projectIndex) > 0 {
+	if a.memory != nil {
+		memoryIndex := a.memory.ListIndexLines(20)
+		if len(memoryIndex) > 0 {
 			var b strings.Builder
-			b.WriteString(fmt.Sprintf("项目记忆索引（结构化）：共 %d 条。\n", len(projectIndex)))
-			b.WriteString("如需项目详情，仅在必要时通过 linux__bash 执行：curl -s \"http://127.0.0.1:8080/api/projects/read?id=<project_id>\"。\n")
-			for i, line := range projectIndex {
+			b.WriteString(fmt.Sprintf("MemoryFS 记忆索引（渐进式披露）：共 %d 条。\n", len(memoryIndex)))
+			b.WriteString("读取规则：先读索引，再按需读取文件摘要和分节，禁止一次性拉取全文。\n")
+			b.WriteString("按需读取：curl -s \"http://127.0.0.1:8080/api/memory/read?path=<path>\"。\n")
+			b.WriteString("按需分节：curl -s \"http://127.0.0.1:8080/api/memory/section?path=<path>&section_id=<id>\"。\n")
+			for i, line := range memoryIndex {
 				line = trimRunes(strings.TrimSpace(line), maxSingleSkillPromptRunes)
 				if line == "" {
 					continue
 				}
 				b.WriteString(fmt.Sprintf("%d. %s\n", i+1, line))
 			}
-			projectIndexPrompt = strings.TrimSpace(b.String())
-			if projectIndexPrompt != "" {
+			memoryIndexPrompt = strings.TrimSpace(b.String())
+			if memoryIndexPrompt != "" {
 				requestMessages = append(requestMessages, llm.Message{
 					Role:    "system",
-					Content: projectIndexPrompt,
+					Content: memoryIndexPrompt,
 				})
 			}
 		}
@@ -582,7 +600,7 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 		Role:    "system",
 		Content: responseStylePrompt,
 	})
-	summary = pruneSummaryOverlap(summary, systemPrompt, skillIndexPrompt, projectIndexPrompt, responseStylePrompt)
+	summary = pruneSummaryOverlap(summary, systemPrompt, skillIndexPrompt, memoryIndexPrompt, responseStylePrompt)
 	if strings.TrimSpace(summary) != "" {
 		requestMessages = append(requestMessages, llm.Message{
 			Role:    "system",
@@ -2234,7 +2252,7 @@ func shouldRequireRuntimeToolEvidence(userInput string) bool {
 		return false
 	}
 
-	domainHits := []string{"定时任务", "schedule", "cron", "mcp", "skill", "服务配置", "api/schedules", "api/skills"}
+	domainHits := []string{"定时任务", "schedule", "cron", "mcp", "skill", "memory", "记忆", "服务配置", "api/schedules", "api/skills", "api/memory"}
 	hasDomain := false
 	for _, token := range domainHits {
 		if strings.Contains(text, token) {
@@ -2414,7 +2432,7 @@ func isLikelyMutationCommand(command string) bool {
 	if strings.Contains(command, "/settings/") {
 		return true
 	}
-	if strings.Contains(command, "/api/projects/upsert") {
+	if strings.Contains(command, "/api/memory/upsert") || strings.Contains(command, "/api/memory/move") || strings.Contains(command, "/api/memory/delete") {
 		return true
 	}
 	return false
@@ -2429,7 +2447,9 @@ func isLikelyReadbackCommand(command string) bool {
 		"/api/skills",
 		"/api/schedules",
 		"/api/mcp/services",
-		"/api/projects",
+		"/api/memory/index",
+		"/api/memory/read",
+		"/api/memory/section",
 	}
 	for _, path := range readPaths {
 		if strings.Contains(command, path) {

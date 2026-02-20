@@ -9,7 +9,7 @@
 - 支持 MCP `streamable_http` / `sse` / `stdio` 三种连接类型
 - 支持按 MCP 服务内单工具启用/禁用
 - 支持在设置页配置 Agent Skills（可启用/禁用的系统级技能指令）
-- 支持结构化项目记忆存储（供 Skill 主动维护项目目标、里程碑、风险、待办、决策）
+- 支持统一 MemoryFS 记忆存储（命名空间/目录/文件/分节）
 - 支持在设置页配置 Agent 系统提示词与压缩提示词（保存后即时生效）
 - 内置两个配置维护 Skill：`mcp-config-maintainer`、`skills-config-maintainer`
 - `skills-config-maintainer` 支持通过 `skills.sh` 检索候选技能并做模糊匹配（`/api/skills/catalog/search`）
@@ -19,7 +19,7 @@
 - 独立日志页展示每次真实 LLM 输入/输出
 - 独立设置页管理 MCP 服务与 Skills
 - 提供 API 供数字分身通过 `bash` 查询与检索：`/api/mcp/services`、`/api/skills`、`/api/skills/catalog/search`
-- 提供项目记忆 API：`/api/projects`（索引）/`/api/projects/index`（索引别名）、`/api/projects/read`、`/api/projects/upsert`
+- 提供记忆 API：`/api/memory/index`、`/api/memory/read`、`/api/memory/section`、`/api/memory/upsert`、`/api/memory/move`、`/api/memory/delete`
 - 非流式输出
 
 ## 目录结构
@@ -30,7 +30,7 @@
 - `internal/llm`: LLM 抽象
 - `internal/llm/cerber`: Cerber 客户端
 - `internal/mcp`: MCP 服务配置存储与工具调用
-- `internal/project`: 项目记忆存储（结构化项目数据）
+- `internal/memory`: MemoryFS 统一记忆存储与沉淀 worker
 - `internal/llmlog`: LLM 调用日志内存存储
 - `internal/conversation`: 全局对话存储（无 session）
 - `internal/web`: Web 路由与页面模板
@@ -83,7 +83,7 @@ docker run --rm -p 8080:8080 \
 - 容器内默认将 MCP 配置写入 `/data/settings.json`。
 - 容器内默认将 Skill 文件写入 `/data/skills`，状态写入 `/data/skills_state.json`。
 - 容器内默认将会话历史写入 `/data/conversation.json`。
-- 容器内默认将项目记忆写入 `/data/projects.db`。
+- 容器内默认将记忆库写入 `/data/memory.db`。
 - 容器内默认将 LLM 调用日志写入 `/data/llm_logs.json`。
 - 通过 `-v $(pwd)/data:/data`（或命名卷）可在容器重建后保留配置。
 - 若不挂载卷，配置与日志只在该容器生命周期内有效。
@@ -135,7 +135,7 @@ docker run --rm -p 8080:8080 \
 - `APP_SKILLS_DIR`: Skill 文件夹路径（目录内每个 Skill 以 `SKILL.md` 存储）
 - `APP_SKILLS_STATE_FILE`: Skill 状态文件路径（启用状态、来源、更新时间）
 - `APP_CONVERSATION_FILE`: 对话历史持久化文件路径
-- `APP_PROJECTS_FILE`: 项目记忆持久化文件路径（bbolt）
+- `APP_MEMORY_FILE`: 记忆持久化文件路径（bbolt）
 - `APP_LLM_LOG_FILE`: LLM 调用日志持久化文件路径
 - `CERBER_BASE_URL`: Cerber 服务地址
 - `CERBER_API_KEY`: Cerber API Key（必填）
