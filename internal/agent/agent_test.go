@@ -738,13 +738,22 @@ func TestRetryLastUserMessage_ReplaysToolCallsFromPendingUserMessage(t *testing.
 	}
 }
 
-func TestHandleUserMessage_RequiresToolEvidenceForRuntimeScheduleQuery(t *testing.T) {
+func TestHandleUserMessage_UsesTwoPhaseExecutionForRuntimeScheduleQuery(t *testing.T) {
 	store := conversation.NewStore()
 	fakeLLM := &mockLLM{
 		responses: map[string][]string{
-			"chat_reply": {"当前有 2 个定时任务。", "已经查好了。"},
+			"chat_action_plan": {`{"actions":[{"command":"curl -s http://127.0.0.1:8080/api/schedules"}]}`},
+			"chat_reply":       {"当前有 2 个定时任务。"},
 		},
 	}
+	prevRunLinuxBashFn := runLinuxBashFn
+	runLinuxBashFn = func(_ context.Context, req linuxBashRequest) (string, error) {
+		if strings.TrimSpace(req.Command) != "curl -s http://127.0.0.1:8080/api/schedules" {
+			t.Fatalf("unexpected command: %q", req.Command)
+		}
+		return "exit_code: 0\nshell: bash\nstdout:\n{\"schedules\":[]}\nstderr:\n(无)", nil
+	}
+	t.Cleanup(func() { runLinuxBashFn = prevRunLinuxBashFn })
 
 	agentSvc := New(Config{
 		Model:                      "test-model",
@@ -758,20 +767,23 @@ func TestHandleUserMessage_RequiresToolEvidenceForRuntimeScheduleQuery(t *testin
 		CompressionSystemPrompt:    "compressor",
 	}, store, fakeLLM, nil)
 
-	_, err := agentSvc.HandleUserMessage(context.Background(), "有哪些定时任务")
-	if err == nil {
-		t.Fatalf("expected runtime-evidence error")
+	reply, err := agentSvc.HandleUserMessage(context.Background(), "有哪些定时任务")
+	if err != nil {
+		t.Fatalf("HandleUserMessage error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "需要先调用工具") {
-		t.Fatalf("unexpected error: %v", err)
+	if strings.TrimSpace(reply) == "" {
+		t.Fatalf("expected non-empty reply")
 	}
 	if len(fakeLLM.calls) != 2 {
-		t.Fatalf("expected two llm calls due evidence enforcement, got %d", len(fakeLLM.calls))
+		t.Fatalf("expected two llm calls (plan + reply), got %d", len(fakeLLM.calls))
 	}
 
 	_, messages := store.Snapshot()
-	if len(messages) != 1 || messages[0].Role != "user" {
-		t.Fatalf("expected only pending user message, got %+v", messages)
+	if len(messages) != 2 || messages[0].Role != "user" || messages[1].Role != "assistant" {
+		t.Fatalf("unexpected messages: %+v", messages)
+	}
+	if len(messages[0].ToolCalls) != 1 || messages[0].ToolCalls[0].Name != builtinLinuxBashToolName {
+		t.Fatalf("expected one persisted two-phase tool call, got %+v", messages[0].ToolCalls)
 	}
 }
 
@@ -839,6 +851,7 @@ func TestHandleUserMessage_RewritesUnverifiedSuccessClaim(t *testing.T) {
 	store := conversation.NewStore()
 	fakeLLM := &mockLLM{
 		responses: map[string][]string{
+			"chat_action_plan": {`{"actions":[]}`},
 			"chat_reply": {
 				"已成功创建 reminder Skill。",
 				"我还没完成创建；需要先执行写入并回读校验。",
@@ -865,8 +878,32 @@ func TestHandleUserMessage_RewritesUnverifiedSuccessClaim(t *testing.T) {
 	if strings.Contains(reply, "已成功创建") {
 		t.Fatalf("reply should be corrected, got %q", reply)
 	}
-	if len(fakeLLM.calls) != 2 {
-		t.Fatalf("expected 2 llm calls due correction loop, got %d", len(fakeLLM.calls))
+	if len(fakeLLM.calls) != 3 {
+		t.Fatalf("expected 3 llm calls (plan + reply + rewrite), got %d", len(fakeLLM.calls))
+	}
+}
+
+func TestShouldUseTwoPhaseExecution(t *testing.T) {
+	if !shouldUseTwoPhaseExecution("每天8点55提醒我打上班卡，5点32提醒我打下班卡") {
+		t.Fatalf("expected reminder request to enable two-phase execution")
+	}
+	if shouldUseTwoPhaseExecution("今天天气怎么样") {
+		t.Fatalf("weather query should not enable two-phase execution")
+	}
+}
+
+func TestValidateTwoPhaseCommand(t *testing.T) {
+	if _, err := validateTwoPhaseCommand("curl -s http://127.0.0.1:8080/api/schedules"); err != nil {
+		t.Fatalf("expected read command valid, got %v", err)
+	}
+	if _, err := validateTwoPhaseCommand("curl -s -X POST http://127.0.0.1:8080/settings/skills/save"); err != nil {
+		t.Fatalf("expected write command valid, got %v", err)
+	}
+	if _, err := validateTwoPhaseCommand("curl -s http://example.com"); err == nil {
+		t.Fatalf("expected invalid host rejected")
+	}
+	if _, err := validateTwoPhaseCommand("curl -s -X POST http://127.0.0.1:8080/api/unknown"); err == nil {
+		t.Fatalf("expected unknown path rejected")
 	}
 }
 

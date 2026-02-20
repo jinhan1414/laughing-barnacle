@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -58,6 +59,14 @@ type evolvedSkill struct {
 	Prompt string
 }
 
+type twoPhaseAction struct {
+	Command string `json:"command"`
+}
+
+type twoPhasePlan struct {
+	Actions []twoPhaseAction `json:"actions"`
+}
+
 const (
 	maxInjectedSkillPrompts    = 4
 	maxSingleSkillPromptRunes  = 220
@@ -80,12 +89,39 @@ const (
 	maxReplayHistoryToolCalls  = 2
 	maxAssistantReplyRunes     = 2200
 	runtimeDateContextMarker   = "[[RUNTIME_DATE_CONTEXT]]"
+	maxTwoPhasePlanActions     = 8
 )
 
 var (
 	skillTokenPattern         = regexp.MustCompile(`[\p{Han}]{2,8}|[a-zA-Z][a-zA-Z0-9_-]{2,}`)
 	comparableStripPattern    = regexp.MustCompile(`[[:space:][:punct:]，。！？；：、“”‘’（）【】《》·]+`)
 	numberedListPrefixPattern = regexp.MustCompile(`^\d+[.)、]\s*`)
+	twoPhaseURLPattern        = regexp.MustCompile(`https?://127\.0\.0\.1:8080[^\s"'` + "`" + `]+`)
+	twoPhaseAllowedPaths      = []string{
+		"/api/skills",
+		"/api/skills/read",
+		"/api/skills/catalog/search",
+		"/api/schedules",
+		"/api/mcp/services",
+		"/api/projects",
+		"/api/projects/index",
+		"/api/projects/read",
+		"/api/context/archive/index",
+		"/api/context/archive/section",
+		"/settings/skills/save",
+		"/settings/skills/install",
+		"/settings/skills/toggle",
+		"/settings/skills/delete",
+		"/settings/schedules/save",
+		"/settings/schedules/toggle",
+		"/settings/schedules/run",
+		"/settings/schedules/delete",
+		"/settings/mcp/save",
+		"/settings/mcp/toggle",
+		"/settings/mcp/delete",
+		"/api/projects/upsert",
+	}
+	runLinuxBashFn = runLinuxBash
 )
 
 type PromptProvider interface {
@@ -563,6 +599,9 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 		Role:    "user",
 		Content: buildCurrentDateUserContextPrompt(a.nowFn()),
 	})
+	if shouldUseTwoPhaseExecution(latestUserInput) {
+		return a.generateReplyWithTwoPhaseExecution(ctx, requestMessages)
+	}
 
 	toolDefs := make([]llm.ToolDefinition, 0, len(builtinToolDefs)+4)
 	toolDefs = append(toolDefs, builtinToolDefs...)
@@ -703,6 +742,271 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 	}
 }
 
+func (a *Agent) generateReplyWithTwoPhaseExecution(
+	ctx context.Context,
+	requestMessages []llm.Message,
+) (string, []conversation.ToolCall, *conversation.TokenUsage, error) {
+	usageTotal := conversation.TokenUsage{}
+	hasUsage := false
+
+	plan, planUsage, err := a.planTwoPhaseActions(ctx, requestMessages)
+	usageTotal, hasUsage = mergeTokenUsage(usageTotal, hasUsage, planUsage)
+	if err != nil {
+		return "", nil, usageOrNil(usageTotal, hasUsage), err
+	}
+
+	executedCalls, err := a.executeTwoPhaseActions(ctx, plan.Actions)
+	if err != nil {
+		return "", executedCalls, usageOrNil(usageTotal, hasUsage), err
+	}
+
+	report := buildTwoPhaseExecutionReport(executedCalls)
+	finalMessages := append([]llm.Message(nil), requestMessages...)
+	finalMessages = append(finalMessages,
+		llm.Message{
+			Role: "system",
+			Content: "你现在处于两阶段执行的回复阶段。只能基于“执行报告”给出结论。" +
+				"禁止声称未在报告中验证通过的执行成功。",
+		},
+		llm.Message{
+			Role:    "system",
+			Content: "执行报告（按动作顺序）：\n" + report,
+		},
+	)
+	finalResp, err := a.llm.Chat(ctx, llm.ChatRequest{
+		Purpose:     "chat_reply",
+		Model:       a.cfg.Model,
+		Messages:    finalMessages,
+		Temperature: a.cfg.Temperature,
+	})
+	if err != nil {
+		return "", executedCalls, usageOrNil(usageTotal, hasUsage), fmt.Errorf("generate reply failed: %w", err)
+	}
+	usageTotal, hasUsage = mergeTokenUsage(usageTotal, hasUsage, finalResp.Usage)
+
+	if needsExecutionClaimCorrection(finalResp.Content, executedCalls) {
+		retryMessages := append(finalMessages, llm.Message{
+			Role: "system",
+			Content: "你的上一条回复仍包含未验证结论。请仅基于执行报告重写，" +
+				"如果未完成，明确说明“尚未完成/需继续执行”。",
+		})
+		retryResp, retryErr := a.llm.Chat(ctx, llm.ChatRequest{
+			Purpose:     "chat_reply",
+			Model:       a.cfg.Model,
+			Messages:    retryMessages,
+			Temperature: a.cfg.Temperature,
+		})
+		if retryErr != nil {
+			return "", executedCalls, usageOrNil(usageTotal, hasUsage), fmt.Errorf("generate reply failed: %w", retryErr)
+		}
+		usageTotal, hasUsage = mergeTokenUsage(usageTotal, hasUsage, retryResp.Usage)
+		if needsExecutionClaimCorrection(retryResp.Content, executedCalls) {
+			return "", executedCalls, usageOrNil(usageTotal, hasUsage), fmt.Errorf("回答包含未验证的执行成功结论，请继续执行并回读后再回答")
+		}
+		return retryResp.Content, executedCalls, usageOrNil(usageTotal, hasUsage), nil
+	}
+
+	return finalResp.Content, executedCalls, usageOrNil(usageTotal, hasUsage), nil
+}
+
+func (a *Agent) planTwoPhaseActions(ctx context.Context, requestMessages []llm.Message) (twoPhasePlan, llm.TokenUsage, error) {
+	planMessages := append([]llm.Message(nil), requestMessages...)
+	planMessages = append(planMessages,
+		llm.Message{
+			Role: "system",
+			Content: "你现在处于两阶段执行的“计划阶段”。仅输出 JSON，不要输出解释文字。" +
+				"JSON 结构：{\"actions\":[{\"command\":\"<bash command>\"}]}。" +
+				"command 仅允许 curl 访问 http://127.0.0.1:8080 的白名单接口；最多 8 条；优先最小动作集并包含写后回读校验。",
+		},
+		llm.Message{
+			Role:    "user",
+			Content: "请输出可执行动作计划。若无需执行任何动作，也必须输出 {\"actions\":[]}。",
+		},
+	)
+
+	enforceJSON := false
+	for attempt := 0; attempt < 2; attempt++ {
+		msgs := planMessages
+		if enforceJSON {
+			msgs = append(msgs, llm.Message{
+				Role:    "system",
+				Content: "上一条输出不合法。请仅输出 JSON 对象，且必须包含 actions 数组字段。",
+			})
+		}
+		resp, err := a.llm.Chat(ctx, llm.ChatRequest{
+			Purpose:     "chat_action_plan",
+			Model:       a.cfg.Model,
+			Messages:    msgs,
+			Temperature: 0,
+		})
+		if err != nil {
+			return twoPhasePlan{}, llm.TokenUsage{}, fmt.Errorf("plan actions failed: %w", err)
+		}
+		plan, parseErr := parseTwoPhasePlan(resp.Content)
+		if parseErr == nil {
+			return plan, resp.Usage, nil
+		}
+		enforceJSON = true
+	}
+	return twoPhasePlan{}, llm.TokenUsage{}, fmt.Errorf("action plan parse failed")
+}
+
+func parseTwoPhasePlan(content string) (twoPhasePlan, error) {
+	trimmed := strings.TrimSpace(content)
+	if trimmed == "" {
+		return twoPhasePlan{}, fmt.Errorf("empty action plan")
+	}
+
+	var plan twoPhasePlan
+	if err := json.Unmarshal([]byte(extractJSONObject(trimmed)), &plan); err == nil {
+		plan.Actions = normalizeTwoPhaseActions(plan.Actions)
+		if len(plan.Actions) > maxTwoPhasePlanActions {
+			plan.Actions = plan.Actions[:maxTwoPhasePlanActions]
+		}
+		return plan, nil
+	}
+
+	var fallback struct {
+		Commands []string `json:"commands"`
+	}
+	if err := json.Unmarshal([]byte(extractJSONObject(trimmed)), &fallback); err == nil {
+		for _, command := range fallback.Commands {
+			plan.Actions = append(plan.Actions, twoPhaseAction{Command: strings.TrimSpace(command)})
+		}
+		plan.Actions = normalizeTwoPhaseActions(plan.Actions)
+		if len(plan.Actions) > maxTwoPhasePlanActions {
+			plan.Actions = plan.Actions[:maxTwoPhasePlanActions]
+		}
+		return plan, nil
+	}
+	return twoPhasePlan{}, fmt.Errorf("invalid action plan")
+}
+
+func normalizeTwoPhaseActions(actions []twoPhaseAction) []twoPhaseAction {
+	if len(actions) == 0 {
+		return nil
+	}
+	out := make([]twoPhaseAction, 0, len(actions))
+	for _, action := range actions {
+		command := strings.TrimSpace(action.Command)
+		if command == "" {
+			continue
+		}
+		out = append(out, twoPhaseAction{Command: command})
+	}
+	return out
+}
+
+func (a *Agent) executeTwoPhaseActions(ctx context.Context, actions []twoPhaseAction) ([]conversation.ToolCall, error) {
+	if len(actions) == 0 {
+		return nil, nil
+	}
+	executed := make([]conversation.ToolCall, 0, len(actions))
+	for i, action := range actions {
+		command := strings.TrimSpace(action.Command)
+		isWrite, err := validateTwoPhaseCommand(command)
+		record := conversation.ToolCall{
+			ID:        fmt.Sprintf("two_phase_%d", i+1),
+			Name:      builtinLinuxBashToolName,
+			Arguments: fmt.Sprintf("{\"command\":%q}", command),
+			CreatedAt: a.nowFn(),
+		}
+		if err != nil {
+			record.Error = err.Error()
+			record.Result = "tool execution error: " + err.Error()
+			executed = append(executed, record)
+			return executed, fmt.Errorf("invalid action command: %w", err)
+		}
+
+		result, runErr := runLinuxBashFn(ctx, linuxBashRequest{
+			Command:    command,
+			TimeoutSec: defaultBashTimeoutSeconds,
+		})
+		record.Result = strings.TrimSpace(trimRunes(result, maxContextMessageRunes))
+		if runErr != nil {
+			record.Error = runErr.Error()
+		}
+		executed = append(executed, record)
+
+		if runErr != nil {
+			return executed, fmt.Errorf("execute action failed: %w", runErr)
+		}
+		if isWrite {
+			if exitCode, ok := parseToolExitCode(record.Result); ok && exitCode != 0 {
+				return executed, fmt.Errorf("write action returned non-zero exit code: %d", exitCode)
+			}
+		}
+	}
+	return executed, nil
+}
+
+func validateTwoPhaseCommand(command string) (isWrite bool, err error) {
+	raw := strings.TrimSpace(command)
+	if raw == "" {
+		return false, fmt.Errorf("command is required")
+	}
+	lower := strings.ToLower(raw)
+	if !strings.HasPrefix(lower, "curl ") {
+		return false, fmt.Errorf("only curl command is allowed")
+	}
+	for _, forbidden := range []string{"&&", "||", ";", "|", "`", "$(", "\n", "\r"} {
+		if strings.Contains(lower, forbidden) {
+			return false, fmt.Errorf("forbidden shell token in command")
+		}
+	}
+
+	urlText := twoPhaseURLPattern.FindString(lower)
+	if strings.TrimSpace(urlText) == "" {
+		return false, fmt.Errorf("command must target http://127.0.0.1:8080")
+	}
+	parsed, parseErr := url.Parse(urlText)
+	if parseErr != nil {
+		return false, fmt.Errorf("invalid command url")
+	}
+	path := strings.TrimSpace(parsed.Path)
+	if path == "" {
+		path = "/"
+	}
+	allowed := false
+	for _, prefix := range twoPhaseAllowedPaths {
+		if strings.HasPrefix(path, prefix) {
+			allowed = true
+			break
+		}
+	}
+	if !allowed {
+		return false, fmt.Errorf("path %s is not in allowed list", path)
+	}
+
+	isWrite = isLikelyMutationCommand(lower)
+	if isWrite {
+		if !strings.Contains(lower, "-x post") && !strings.Contains(lower, "--request post") {
+			return false, fmt.Errorf("write command must explicitly use POST")
+		}
+	}
+	return isWrite, nil
+}
+
+func buildTwoPhaseExecutionReport(executedCalls []conversation.ToolCall) string {
+	if len(executedCalls) == 0 {
+		return "(无执行记录)"
+	}
+	var b strings.Builder
+	for i, call := range executedCalls {
+		status := "ok"
+		if toolCallFailed(call) {
+			status = "failed"
+		}
+		b.WriteString(fmt.Sprintf("%d) status=%s\n", i+1, status))
+		b.WriteString("command_args: " + safeOrEmpty(trimRunes(call.Arguments, 300)) + "\n")
+		b.WriteString("result: " + safeOrEmpty(trimRunes(call.Result, 500)) + "\n")
+		if strings.TrimSpace(call.Error) != "" {
+			b.WriteString("error: " + trimRunes(call.Error, 240) + "\n")
+		}
+	}
+	return strings.TrimSpace(b.String())
+}
+
 func renderConversation(messages []conversation.Message) string {
 	var b strings.Builder
 	for i, msg := range messages {
@@ -750,7 +1054,7 @@ func (a *Agent) callBuiltinTool(ctx context.Context, call llm.ToolCall) (result 
 		if err != nil {
 			return "", err, true
 		}
-		out, err := runLinuxBash(ctx, req)
+		out, err := runLinuxBashFn(ctx, req)
 		return out, err, true
 	default:
 		return "", nil, false
@@ -1953,6 +2257,41 @@ func shouldRequireRuntimeToolEvidence(userInput string) bool {
 		}
 	}
 	return false
+}
+
+func shouldUseTwoPhaseExecution(userInput string) bool {
+	text := strings.ToLower(strings.TrimSpace(userInput))
+	if text == "" {
+		return false
+	}
+	if shouldRequireRuntimeToolEvidence(text) {
+		return true
+	}
+
+	scheduleDomain := []string{
+		"提醒", "打卡", "定时", "每天", "每周", "上班卡", "下班卡",
+	}
+	hasDomain := false
+	for _, token := range scheduleDomain {
+		if strings.Contains(text, token) {
+			hasDomain = true
+			break
+		}
+	}
+	if !hasDomain {
+		return false
+	}
+
+	actionHints := []string{
+		"设置", "安排", "配置", "新增", "创建", "修改", "更新", "启用", "禁用", "删除",
+	}
+	for _, token := range actionHints {
+		if strings.Contains(text, token) {
+			return true
+		}
+	}
+	// 对“每天/每周 + 提醒”这类自然语句，默认启用两阶段执行。
+	return strings.Contains(text, "提醒")
 }
 
 func needsExecutionClaimCorrection(reply string, executedCalls []conversation.ToolCall) bool {
