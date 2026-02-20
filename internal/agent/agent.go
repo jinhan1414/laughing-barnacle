@@ -463,6 +463,9 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 			var b strings.Builder
 			b.WriteString(fmt.Sprintf("已启用技能索引（渐进式披露）：共 %d 条。\n", len(allSkillIndex)))
 			b.WriteString("如需技能详情，仅在必要时通过 linux__bash 执行：curl -s \"http://127.0.0.1:8080/api/skills/read?id=<skill_id>\"。\n")
+			b.WriteString("Skill 调用规则：每轮先按用户请求语义判断是否命中某个 skill_id；一旦命中，无需用户点名，先读取该 skill 详情再执行。\n")
+			b.WriteString("为节省上下文，单轮默认只读取 1 个最相关技能；若仍不足，再按需补充读取。\n")
+			b.WriteString("若未命中或技能不适用，再按普通问答流程回复。\n")
 
 			injectCandidates := compactSkillIndexByIDs(allSkillIndex, nil)
 			injected := 0

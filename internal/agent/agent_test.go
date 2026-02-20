@@ -672,6 +672,12 @@ func TestHandleUserMessage_IncludesSkillIndexForProgressiveDisclosure(t *testing
 	if !strings.Contains(content, "/api/skills/read?id=<skill_id>") {
 		t.Fatalf("expected bash curl read hint, got %q", content)
 	}
+	if !strings.Contains(content, "无需用户点名") {
+		t.Fatalf("expected proactive skill trigger hint, got %q", content)
+	}
+	if !strings.Contains(content, "单轮默认只读取 1 个最相关技能") {
+		t.Fatalf("expected token-saving skill read strategy, got %q", content)
+	}
 	if strings.Contains(content, "本轮高相关候选") {
 		t.Fatalf("unexpected related-skill hint for unrelated query, got %q", content)
 	}
