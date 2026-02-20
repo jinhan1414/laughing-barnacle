@@ -244,7 +244,9 @@ func (a *Agent) CompressContextNow(ctx context.Context) (string, bool, error) {
 		return "", false, nil
 	}
 
-	compressed, err := a.applyCompressionLocked(ctx, summary, messages)
+	// Manual compression is expected to aggressively reduce request context.
+	// Keep recent messages only for autonomous compression path.
+	compressed, err := a.applyCompressionWithKeepLocked(ctx, summary, messages, 0)
 	if err != nil {
 		return "", false, err
 	}
@@ -413,6 +415,10 @@ func (a *Agent) autonomousCompressionLoop(ctx context.Context) error {
 }
 
 func (a *Agent) applyCompressionLocked(ctx context.Context, summary string, messages []conversation.Message) (string, error) {
+	return a.applyCompressionWithKeepLocked(ctx, summary, messages, a.cfg.KeepRecentAfterCompression)
+}
+
+func (a *Agent) applyCompressionWithKeepLocked(ctx context.Context, summary string, messages []conversation.Message, keepRecent int) (string, error) {
 	compressed, err := a.compressContext(ctx, summary, messages)
 	if err != nil {
 		return "", err
@@ -420,7 +426,7 @@ func (a *Agent) applyCompressionLocked(ctx context.Context, summary string, mess
 	compressed = strings.TrimSpace(compressed)
 	systemPrompt, _ := a.resolvePromptsLocked()
 	compressed = pruneSummaryOverlap(compressed, systemPrompt)
-	a.store.SetSummaryAndTrim(compressed, a.cfg.KeepRecentAfterCompression)
+	a.store.SetSummaryAndTrim(compressed, keepRecent)
 	if compressed != "" {
 		a.store.AppendEvent("context_compression", compressed)
 	}

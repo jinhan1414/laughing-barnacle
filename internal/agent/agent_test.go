@@ -274,8 +274,8 @@ func TestCompressContextNow_ForcesCompressionWithoutThreshold(t *testing.T) {
 	if currentSummary != "manual-summary" {
 		t.Fatalf("unexpected store summary: %q", currentSummary)
 	}
-	if len(messages) != 1 || strings.TrimSpace(messages[0].Content) != "old answer" {
-		t.Fatalf("unexpected messages after manual compression: %+v", messages)
+	if len(messages) != 0 {
+		t.Fatalf("expected no remaining messages after manual compression, got %+v", messages)
 	}
 	if len(events) != 1 || strings.TrimSpace(events[0].Type) != "context_compression" {
 		t.Fatalf("expected one context_compression event, got %+v", events)
