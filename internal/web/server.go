@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"io"
 	"net/http"
 	"net/url"
 	"sort"
@@ -214,6 +215,17 @@ type apiChatUpdate struct {
 	CreatedAtUS int64  `json:"created_at_us"`
 }
 
+type apiChatToolRunRequest struct {
+	Tool string `json:"tool"`
+}
+
+type apiChatToolRunResponse struct {
+	OK         bool   `json:"ok"`
+	Tool       string `json:"tool"`
+	Compressed bool   `json:"compressed"`
+	Message    string `json:"message"`
+}
+
 type chatGreetResponse struct {
 	Created bool   `json:"created"`
 	Content string `json:"content,omitempty"`
@@ -290,6 +302,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/projects/read", s.handleAPIProjectRead)
 	mux.HandleFunc("/api/projects/upsert", s.handleAPIProjectUpsert)
 	mux.HandleFunc("/api/chat/updates", s.handleAPIChatUpdates)
+	mux.HandleFunc("/api/chat/tools/run", s.handleAPIChatToolRun)
 	mux.HandleFunc("/api/context/archive/index", s.handleAPIContextArchiveIndex)
 	mux.HandleFunc("/api/context/archive/section", s.handleAPIContextArchiveSection)
 	mux.HandleFunc("/healthz", s.handleHealthz)
@@ -1471,6 +1484,78 @@ func (s *Server) handleAPIChatUpdates(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"updates": updates,
 	})
+}
+
+func (s *Server) handleAPIChatToolRun(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	if s.agent == nil || s.convStore == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error": "chat tool unavailable",
+		})
+		return
+	}
+
+	var req apiChatToolRunRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error": "invalid request body",
+		})
+		return
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error": "invalid request body",
+		})
+		return
+	}
+
+	tool := strings.TrimSpace(req.Tool)
+	if tool == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error": "tool is required",
+		})
+		return
+	}
+
+	switch tool {
+	case "context_compress":
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
+		defer cancel()
+
+		_, compressed, err := s.agent.CompressContextNow(ctx)
+		if err != nil {
+			w.WriteHeader(http.StatusBadGateway)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"error": "run context compress failed: " + err.Error(),
+			})
+			return
+		}
+		message := "当前没有可压缩的上下文"
+		if compressed {
+			message = "已触发上下文压缩"
+		}
+		_ = json.NewEncoder(w).Encode(apiChatToolRunResponse{
+			OK:         true,
+			Tool:       tool,
+			Compressed: compressed,
+			Message:    message,
+		})
+	default:
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error": fmt.Sprintf("unknown chat tool: %s", tool),
+		})
+	}
 }
 
 func (s *Server) handleAPIContextArchiveIndex(w http.ResponseWriter, r *http.Request) {

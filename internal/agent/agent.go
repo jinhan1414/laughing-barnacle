@@ -230,6 +230,27 @@ func (a *Agent) RunScheduledTask(ctx context.Context, action string) error {
 	return nil
 }
 
+// CompressContextNow forces one context compression pass regardless of thresholds.
+func (a *Agent) CompressContextNow(ctx context.Context) (string, bool, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if a.store == nil {
+		return "", false, fmt.Errorf("conversation store not initialized")
+	}
+
+	summary, messages := a.store.Snapshot()
+	if strings.TrimSpace(summary) == "" && len(messages) == 0 {
+		return "", false, nil
+	}
+
+	compressed, err := a.applyCompressionLocked(ctx, summary, messages)
+	if err != nil {
+		return "", false, err
+	}
+	return compressed, true, nil
+}
+
 func (a *Agent) appendScheduledTaskFailureLocked(action string, runErr error) {
 	if a == nil || a.store == nil || runErr == nil {
 		return
@@ -383,20 +404,27 @@ func (a *Agent) autonomousCompressionLoop(ctx context.Context) error {
 			return nil
 		}
 
-		compressed, err := a.compressContext(ctx, summary, messages)
-		if err != nil {
+		if _, err := a.applyCompressionLocked(ctx, summary, messages); err != nil {
 			return err
-		}
-		compressed = strings.TrimSpace(compressed)
-		systemPrompt, _ := a.resolvePromptsLocked()
-		compressed = pruneSummaryOverlap(compressed, systemPrompt)
-		a.store.SetSummaryAndTrim(compressed, a.cfg.KeepRecentAfterCompression)
-		if compressed != "" {
-			a.store.AppendEvent("context_compression", compressed)
 		}
 	}
 
 	return nil
+}
+
+func (a *Agent) applyCompressionLocked(ctx context.Context, summary string, messages []conversation.Message) (string, error) {
+	compressed, err := a.compressContext(ctx, summary, messages)
+	if err != nil {
+		return "", err
+	}
+	compressed = strings.TrimSpace(compressed)
+	systemPrompt, _ := a.resolvePromptsLocked()
+	compressed = pruneSummaryOverlap(compressed, systemPrompt)
+	a.store.SetSummaryAndTrim(compressed, a.cfg.KeepRecentAfterCompression)
+	if compressed != "" {
+		a.store.AppendEvent("context_compression", compressed)
+	}
+	return compressed, nil
 }
 
 func (a *Agent) shouldCompress(summary string, messages []conversation.Message) bool {

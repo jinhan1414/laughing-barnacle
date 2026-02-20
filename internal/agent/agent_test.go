@@ -235,6 +235,87 @@ func TestHandleUserMessage_WithAutoCompression(t *testing.T) {
 	}
 }
 
+func TestCompressContextNow_ForcesCompressionWithoutThreshold(t *testing.T) {
+	store := conversation.NewStore()
+	store.Append("user", "old question")
+	store.Append("assistant", "old answer")
+
+	fakeLLM := &mockLLM{responses: map[string][]string{
+		"compress_context": {"manual-summary"},
+	}}
+
+	agentSvc := New(Config{
+		Model:                      "test-model",
+		MaxRecentMessages:          10,
+		CompressionTriggerMessages: 99,
+		CompressionTriggerChars:    99999,
+		KeepRecentAfterCompression: 1,
+		MaxCompressionLoopsPerTurn: 1,
+		MaxToolCallRounds:          2,
+		SystemPrompt:               "system",
+		CompressionSystemPrompt:    "compressor",
+	}, store, fakeLLM, nil)
+
+	summary, compressed, err := agentSvc.CompressContextNow(context.Background())
+	if err != nil {
+		t.Fatalf("CompressContextNow error: %v", err)
+	}
+	if !compressed {
+		t.Fatalf("expected compressed=true")
+	}
+	if summary != "manual-summary" {
+		t.Fatalf("unexpected summary return: %q", summary)
+	}
+	if len(fakeLLM.calls) != 1 || fakeLLM.calls[0].Purpose != "compress_context" {
+		t.Fatalf("expected exactly one compress_context call, got %+v", fakeLLM.calls)
+	}
+
+	currentSummary, messages, events := store.SnapshotWithEvents()
+	if currentSummary != "manual-summary" {
+		t.Fatalf("unexpected store summary: %q", currentSummary)
+	}
+	if len(messages) != 1 || strings.TrimSpace(messages[0].Content) != "old answer" {
+		t.Fatalf("unexpected messages after manual compression: %+v", messages)
+	}
+	if len(events) != 1 || strings.TrimSpace(events[0].Type) != "context_compression" {
+		t.Fatalf("expected one context_compression event, got %+v", events)
+	}
+}
+
+func TestCompressContextNow_NoConversationNoop(t *testing.T) {
+	store := conversation.NewStore()
+
+	fakeLLM := &mockLLM{responses: map[string][]string{
+		"compress_context": {"manual-summary"},
+	}}
+
+	agentSvc := New(Config{
+		Model:                      "test-model",
+		MaxRecentMessages:          10,
+		CompressionTriggerMessages: 1,
+		CompressionTriggerChars:    1,
+		KeepRecentAfterCompression: 1,
+		MaxCompressionLoopsPerTurn: 1,
+		MaxToolCallRounds:          2,
+		SystemPrompt:               "system",
+		CompressionSystemPrompt:    "compressor",
+	}, store, fakeLLM, nil)
+
+	summary, compressed, err := agentSvc.CompressContextNow(context.Background())
+	if err != nil {
+		t.Fatalf("CompressContextNow error: %v", err)
+	}
+	if compressed {
+		t.Fatalf("expected compressed=false")
+	}
+	if summary != "" {
+		t.Fatalf("expected empty summary, got %q", summary)
+	}
+	if len(fakeLLM.calls) != 0 {
+		t.Fatalf("expected no llm calls, got %d", len(fakeLLM.calls))
+	}
+}
+
 func TestHandleUserMessage_WithoutCompression(t *testing.T) {
 	store := conversation.NewStore()
 	fakeLLM := &mockLLM{responses: map[string][]string{

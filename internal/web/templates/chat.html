@@ -92,13 +92,18 @@
     </section>
 
     <footer class="sticky bottom-0 z-20 border-t border-slate-300 bg-[#f7f7f7] px-2 py-2">
+      <div id="chat-tool-panel" class="mb-2 hidden rounded-2xl border border-slate-200 bg-white/95 p-2 shadow-sm">
+        <div id="chat-tool-list" class="grid grid-cols-4 gap-2"></div>
+      </div>
       <form id="chat-form" action="/chat/send" method="post" class="flex items-end gap-2">
+        <button id="chat-tool-toggle" type="button" aria-label="展开工具栏" class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-300 bg-white text-lg font-semibold text-slate-600 active:scale-[0.99]">＋</button>
         <textarea id="chat-input" name="message" placeholder="输入消息" required class="max-h-28 min-h-10 flex-1 resize-none rounded-xl border-slate-300 bg-white px-3 py-2 text-[15px] leading-6 text-slate-900 placeholder:text-slate-400 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100">{{.Draft}}</textarea>
         <button id="chat-submit" type="submit" class="inline-flex h-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500 px-4 text-sm font-semibold text-white active:scale-[0.99]">
           <span id="chat-submit-label">发送</span>
           <span id="chat-submit-spinner" class="ml-1 hidden h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/60 border-t-white"></span>
         </button>
       </form>
+      <div id="chat-tool-status" class="mt-2 hidden rounded-lg border px-2 py-1 text-[12px]"></div>
       <div id="chat-processing" class="mt-2 hidden items-center gap-2 px-1 text-[12px] text-slate-500">
         <span class="h-2 w-2 animate-pulse rounded-full bg-emerald-500"></span>
         <span>AI 正在处理消息...</span>
@@ -253,8 +258,22 @@
       var submitLabel = document.getElementById("chat-submit-label");
       var submitSpinner = document.getElementById("chat-submit-spinner");
       var processing = document.getElementById("chat-processing");
+      var toolToggleBtn = document.getElementById("chat-tool-toggle");
+      var toolPanel = document.getElementById("chat-tool-panel");
+      var toolList = document.getElementById("chat-tool-list");
+      var toolStatus = document.getElementById("chat-tool-status");
       var submitting = false;
+      var toolRunning = false;
       var userInteracted = false;
+      var toolStatusTimer = 0;
+      var chatTools = [
+        {
+          id: "context_compress",
+          label: "压缩上下文",
+          icon: "压",
+          endpoint: "/api/chat/tools/run"
+        }
+      ];
 
       function appendAssistantMessage(content, createdAtUs) {
         var text = (content || "").trim();
@@ -330,6 +349,140 @@
         container.scrollTop = container.scrollHeight;
       }
 
+      function setToolStatus(text, isError) {
+        if (!toolStatus) {
+          return;
+        }
+        if (toolStatusTimer) {
+          window.clearTimeout(toolStatusTimer);
+          toolStatusTimer = 0;
+        }
+        var message = (text || "").trim();
+        if (!message) {
+          toolStatus.classList.add("hidden");
+          return;
+        }
+        toolStatus.textContent = message;
+        toolStatus.classList.remove("hidden");
+        if (isError) {
+          toolStatus.className = "mt-2 rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-[12px] text-rose-700";
+        } else {
+          toolStatus.className = "mt-2 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1 text-[12px] text-emerald-700";
+        }
+        toolStatusTimer = window.setTimeout(function () {
+          toolStatus.classList.add("hidden");
+          toolStatus.textContent = "";
+        }, 3600);
+      }
+
+      function setToolButtonsDisabled(disabled) {
+        if (!toolList) {
+          return;
+        }
+        var buttons = toolList.querySelectorAll("button[data-chat-tool]");
+        for (var i = 0; i < buttons.length; i++) {
+          buttons[i].disabled = !!disabled;
+          if (disabled) {
+            buttons[i].classList.add("opacity-60");
+          } else {
+            buttons[i].classList.remove("opacity-60");
+          }
+        }
+      }
+
+      function runChatTool(tool) {
+        if (!tool || !window.fetch || submitting || toolRunning) {
+          return;
+        }
+        userInteracted = true;
+        toolRunning = true;
+        setToolButtonsDisabled(true);
+        setToolStatus("工具执行中...", false);
+
+        fetch(tool.endpoint, {
+          method: "POST",
+          headers: {
+            "Accept": "application/json",
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ tool: tool.id })
+        })
+          .then(function (resp) {
+            return resp.json().catch(function () {
+              return {};
+            }).then(function (payload) {
+              return {
+                ok: resp.ok,
+                payload: payload || {}
+              };
+            });
+          })
+          .then(function (result) {
+            if (!result.ok) {
+              throw new Error((result.payload && result.payload.error) ? result.payload.error : "工具执行失败");
+            }
+            var message = result.payload.message || "工具执行完成";
+            setToolStatus(message, false);
+            if (result.payload.compressed) {
+              window.setTimeout(pollChatUpdates, 200);
+              window.setTimeout(pollChatUpdates, 1200);
+            }
+          })
+          .catch(function (err) {
+            var errMsg = (err && err.message) ? err.message : "工具执行失败";
+            setToolStatus(errMsg, true);
+          })
+          .finally(function () {
+            toolRunning = false;
+            setToolButtonsDisabled(false);
+          });
+      }
+
+      if (toolToggleBtn && toolPanel && toolList) {
+        for (var toolIndex = 0; toolIndex < chatTools.length; toolIndex++) {
+          var tool = chatTools[toolIndex];
+          if (!tool || !tool.id) {
+            continue;
+          }
+          var button = document.createElement("button");
+          button.type = "button";
+          button.setAttribute("data-chat-tool", tool.id);
+          button.className = "inline-flex min-h-16 flex-col items-center justify-center rounded-xl border border-slate-200 bg-slate-50 px-1 text-slate-700 active:scale-[0.98]";
+
+          var icon = document.createElement("span");
+          icon.className = "inline-flex h-7 w-7 items-center justify-center rounded-full bg-white text-[13px] font-semibold text-slate-700 shadow-sm";
+          icon.textContent = tool.icon || "工";
+
+          var label = document.createElement("span");
+          label.className = "mt-1 text-[11px] leading-4";
+          label.textContent = tool.label || tool.id;
+
+          button.appendChild(icon);
+          button.appendChild(label);
+          button.addEventListener("click", function (event) {
+            var target = event.currentTarget;
+            var toolID = target ? target.getAttribute("data-chat-tool") : "";
+            if (!toolID) {
+              return;
+            }
+            var selectedTool = null;
+            for (var idx = 0; idx < chatTools.length; idx++) {
+              if (chatTools[idx].id === toolID) {
+                selectedTool = chatTools[idx];
+                break;
+              }
+            }
+            runChatTool(selectedTool);
+          });
+          toolList.appendChild(button);
+        }
+
+        toolToggleBtn.addEventListener("click", function () {
+          userInteracted = true;
+          toolPanel.classList.toggle("hidden");
+        });
+      }
+
       if (form && input && submitBtn) {
         if ((input.value || "").trim()) {
           userInteracted = true;
@@ -339,12 +492,18 @@
             userInteracted = true;
           }
         });
-        form.addEventListener("submit", function () {
+        form.addEventListener("submit", function (event) {
           if (submitting) {
+            return;
+          }
+          if (toolRunning) {
+            event.preventDefault();
+            setToolStatus("工具执行中，请稍后发送消息", true);
             return;
           }
           var message = (input.value || "").trim();
           if (!message) {
+            event.preventDefault();
             return;
           }
 
