@@ -1005,7 +1005,7 @@ func TestHandleUserMessage_IncludesCurrentTimeContextPrompt(t *testing.T) {
 	}
 }
 
-func TestHandleUserMessage_IncludesPreciseCurrentTimeContextPromptForHourlyRange(t *testing.T) {
+func TestHandleUserMessage_AlwaysInjectsCurrentDateContextPrompt(t *testing.T) {
 	store := conversation.NewStore()
 	fakeLLM := &mockLLM{responses: map[string][]string{
 		"chat_reply": {"ok"},
@@ -1025,7 +1025,7 @@ func TestHandleUserMessage_IncludesPreciseCurrentTimeContextPromptForHourlyRange
 	fixedNow := time.Date(2026, 2, 18, 10, 30, 45, 0, time.FixedZone("CST", 8*3600))
 	agentSvc.nowFn = func() time.Time { return fixedNow }
 
-	reply, err := agentSvc.HandleUserMessage(context.Background(), "查一下最近24小时数据")
+	reply, err := agentSvc.HandleUserMessage(context.Background(), "hello")
 	if err != nil {
 		t.Fatalf("HandleUserMessage error: %v", err)
 	}
@@ -1042,15 +1042,15 @@ func TestHandleUserMessage_IncludesPreciseCurrentTimeContextPromptForHourlyRange
 			continue
 		}
 		found = true
-		if !strings.Contains(msg.Content, "2026-02-18 10:30:45 +08:00") {
-			t.Fatalf("expected fixed precise time in prompt, got %q", msg.Content)
+		if !strings.Contains(msg.Content, "当前日期 2026-02-18") {
+			t.Fatalf("expected current date in prompt, got %q", msg.Content)
 		}
-		if !strings.Contains(msg.Content, fmt.Sprintf("Unix 秒: %d", fixedNow.Unix())) {
-			t.Fatalf("expected unix seconds in prompt, got %q", msg.Content)
+		if strings.Contains(msg.Content, "Unix 秒:") {
+			t.Fatalf("date-level context should avoid unix timestamp for cache stability, got %q", msg.Content)
 		}
 	}
 	if !found {
-		t.Fatalf("expected precise current-time system prompt to be injected")
+		t.Fatalf("expected current-date system prompt to be injected")
 	}
 }
 

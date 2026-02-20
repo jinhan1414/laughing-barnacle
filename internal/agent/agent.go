@@ -84,8 +84,6 @@ var (
 	skillTokenPattern         = regexp.MustCompile(`[\p{Han}]{2,8}|[a-zA-Z][a-zA-Z0-9_-]{2,}`)
 	comparableStripPattern    = regexp.MustCompile(`[[:space:][:punct:]，。！？；：、“”‘’（）【】《》·]+`)
 	numberedListPrefixPattern = regexp.MustCompile(`^\d+[.)、]\s*`)
-	relativeTimeRangePattern  = regexp.MustCompile(`\d+\s*(天|日|周|星期|月|年|小时|分钟|秒|day|days|week|weeks|month|months|hour|hours|min|minute|minutes)`)
-	preciseTimeRangePattern   = regexp.MustCompile(`\d+\s*(小时|分钟|秒|hour|hours|min|minute|minutes|second|seconds)`)
 )
 
 type PromptProvider interface {
@@ -521,15 +519,10 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 	requestMessages = appendHistoryMessagesWithToolCalls(requestMessages, recentMessages)
 	latestUserInput := latestUserMessageText(recentMessages)
 	requiresToolEvidence := shouldRequireRuntimeToolEvidence(latestUserInput)
-	if shouldInjectCurrentTimeContext(latestUserInput) {
-		requestMessages = append(requestMessages, llm.Message{
-			Role: "system",
-			Content: buildCurrentTimeContextPrompt(
-				a.nowFn(),
-				shouldUsePreciseCurrentTime(latestUserInput),
-			),
-		})
-	}
+	requestMessages = append(requestMessages, llm.Message{
+		Role:    "system",
+		Content: buildCurrentDateContextPrompt(a.nowFn()),
+	})
 
 	toolDefs := make([]llm.ToolDefinition, 0, len(builtinToolDefs)+4)
 	toolDefs = append(toolDefs, builtinToolDefs...)
@@ -1910,58 +1903,15 @@ func safeOrEmpty(v string) string {
 	return v
 }
 
-func buildCurrentTimeContextPrompt(now time.Time, precise bool) string {
+func buildCurrentDateContextPrompt(now time.Time) string {
 	now = now.Round(0)
 	zoneName, _ := now.Zone()
 	zoneName = strings.TrimSpace(zoneName)
 	if zoneName == "" {
 		zoneName = "Local"
 	}
-	if !precise {
-		return "时间基准（用于相对时间换算）：当前日期 " +
-			now.Format("2006-01-02") +
-			"（时区: " + zoneName +
-			"）。凡涉及“今天/昨天/最近N天/本周/本月”等时间范围，必须以此为准计算后再查询。"
-	}
-	return "时间基准（用于相对时间换算）：当前时间 " +
-		now.Format("2006-01-02 15:04:05 -07:00") +
-		"（Unix 秒: " + strconv.FormatInt(now.Unix(), 10) +
-		"，时区: " + zoneName +
-		"）。凡涉及“今天/昨天/最近N天/本周/本月”等时间范围，必须以此为准计算后再查询。"
-}
-
-func shouldInjectCurrentTimeContext(userInput string) bool {
-	text := strings.ToLower(strings.TrimSpace(userInput))
-	if text == "" {
-		return false
-	}
-
-	keywords := []string{
-		"今天", "昨天", "明天", "本周", "上周", "下周", "本月", "上月", "下月",
-		"最近", "近", "过去", "截至", "到目前", "当前时间", "现在", "now", "today", "yesterday",
-	}
-	for _, token := range keywords {
-		if strings.Contains(text, token) {
-			return true
-		}
-	}
-	return relativeTimeRangePattern.MatchString(text)
-}
-
-func shouldUsePreciseCurrentTime(userInput string) bool {
-	text := strings.ToLower(strings.TrimSpace(userInput))
-	if text == "" {
-		return false
-	}
-
-	preciseTokens := []string{
-		"小时", "分钟", "秒", "现在", "此刻", "当前时间", "实时", "latest",
-		"hour", "hours", "minute", "minutes", "second", "seconds", "now",
-	}
-	for _, token := range preciseTokens {
-		if strings.Contains(text, token) {
-			return true
-		}
-	}
-	return preciseTimeRangePattern.MatchString(text)
+	return "时间基准（用于相对时间换算）：当前日期 " +
+		now.Format("2006-01-02") +
+		"（时区: " + zoneName +
+		"）。凡涉及“今天/昨天/最近N天/本周/本月”等时间范围，必须以此为准计算后再查询；如需小时/分钟级当前时间，先调用 linux__bash 查询系统时间。"
 }
