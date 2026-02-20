@@ -31,20 +31,13 @@ type AuditEntry struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-type segmentCandidate struct {
-	Name        string
-	TargetPath  string
-	TargetTitle string
-	SchemaKind  string
-	Summary     string
-	Facts       []string
-	Sections    []Section
-	Confidence  float64
-}
-
 func (s *Store) persistSegmentStructuredMemoryLocked(seg Segment) ([]string, error) {
 	if strings.TrimSpace(seg.ID) == "" {
 		return nil, fmt.Errorf("segment id is required")
+	}
+	extracted, err := s.extractSegmentLocked(seg)
+	if err != nil {
+		return nil, err
 	}
 	paths := make([]string, 0, 8)
 
@@ -58,8 +51,8 @@ func (s *Store) persistSegmentStructuredMemoryLocked(seg Segment) ([]string, err
 		SchemaVersion: 1,
 		Source:        "chat",
 		Confidence:    0.88,
-		Summary:       buildSegmentProjectSummary(seg),
-		Facts:         buildSegmentProjectFacts(seg),
+		Summary:       extracted.ProjectSummary,
+		Facts:         extracted.ProjectFacts,
 		Sections:      buildArchiveSections(seg.Turns),
 		Refs: []Ref{
 			{Kind: "segment_id", Value: seg.ID},
@@ -71,7 +64,7 @@ func (s *Store) persistSegmentStructuredMemoryLocked(seg Segment) ([]string, err
 	}
 	paths = append(paths, projectNode.Path)
 
-	for _, candidate := range buildSegmentCandidates(seg) {
+	for _, candidate := range extracted.Candidates {
 		pendingPath := "/inbox/pending/" + seg.ID + "-" + candidate.Name
 		refs := []Ref{
 			{Kind: "target_path", Value: candidate.TargetPath},
@@ -126,7 +119,7 @@ func buildSegmentProjectFacts(seg Segment) []string {
 	return facts
 }
 
-func buildSegmentCandidates(seg Segment) []segmentCandidate {
+func buildSegmentCandidates(seg Segment) []SegmentExtractionCandidate {
 	firstUser, lastUser, lastAssistant, userTurns, assistantTurns, toolCalls, toolErrors := segmentStats(seg)
 	avgUserLen := 0
 	if userTurns > 0 {
@@ -177,7 +170,7 @@ func buildSegmentCandidates(seg Segment) []segmentCandidate {
 		}}
 	}
 
-	return []segmentCandidate{
+	return []SegmentExtractionCandidate{
 		{
 			Name:        "goals",
 			TargetPath:  "/goals/active/" + seg.ID,

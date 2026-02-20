@@ -67,6 +67,12 @@ func run() error {
 		RetryBaseDelay: cfg.CerberRetryBaseDelay,
 		RetryMaxDelay:  cfg.CerberRetryMaxDelay,
 	})
+	if cfg.MemoryExtractionUseLLM {
+		memoryStore.SetSegmentExtractor(
+			memory.NewLLMSegmentExtractor(llmClient, cfg.MemoryExtractionModel, cfg.MemoryExtractionTemperature),
+			cfg.MemoryExtractionFallback,
+		)
+	}
 
 	agentSvc := agent.New(agent.Config{
 		Model:                      cfg.CerberModel,

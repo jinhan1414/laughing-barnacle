@@ -178,6 +178,7 @@ curl -s "http://127.0.0.1:8080/api/memory/section?path=/projects/pay-refactor/ri
    - 生成结构化记忆：
      - 高置信直写：`/projects/session-journal/<segment_id>`
      - 低置信候选：`/inbox/pending/<segment_id>-{profile|preferences|constraints|goals}`
+   - 若启用 `AGENT_MEMORY_EXTRACTION_USE_LLM=true`，优先用 LLM 提取；失败时按 `AGENT_MEMORY_EXTRACTION_FALLBACK` 回退规则提取
 5. 写入后记录 segment 持久化路径（`persisted_paths`）。
 
 后续增强（规划中）：
@@ -219,7 +220,8 @@ curl -s "http://127.0.0.1:8080/api/memory/section?path=/projects/pay-refactor/ri
 2. segment 视图：展示 `status/turns/close_reason/persisted_paths/error`。
 3. inbox 视图：展示待审核候选，支持“确认写入 / 拒绝入回收区”。
 4. 维护入口：支持手动触发一次 maintenance run。
-5. 运营排查顺序：先看 segment 是否 `persisted`，再按 `persisted_paths` 读取节点明细。
+5. 观测面板：展示 `failed_rate/retry_total/pending_count/reviewed_count` 以及 warning 状态。
+6. 运营排查顺序：先看 segment 是否 `persisted`，再按 `persisted_paths` 读取节点明细。
 
 ---
 

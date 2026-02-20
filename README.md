@@ -21,7 +21,7 @@
 - MemoryFS 支持低置信记忆进入 Inbox 审核，确认后写入正式命名空间
 - Memory worker 内置维护任务：失败分段重试、trash 清理、children 索引一致性修复
 - 提供 API 供数字分身通过 `bash` 查询与检索：`/api/mcp/services`、`/api/skills`、`/api/skills/catalog/search`
-- 提供记忆 API：`/api/memory/index`、`/api/memory/read`、`/api/memory/section`、`/api/memory/upsert`、`/api/memory/move`、`/api/memory/delete`、`/api/memory/inbox`、`/api/memory/inbox/review`、`/api/memory/maintenance/run`、`/api/memory/rollback`、`/api/memory/audit`
+- 提供记忆 API：`/api/memory/index`、`/api/memory/read`、`/api/memory/section`、`/api/memory/upsert`、`/api/memory/move`、`/api/memory/delete`、`/api/memory/inbox`、`/api/memory/inbox/review`、`/api/memory/maintenance/run`、`/api/memory/rollback`、`/api/memory/audit`、`/api/memory/metrics`
 - 非流式输出
 
 ## 目录结构
@@ -159,5 +159,9 @@ docker run --rm -p 8080:8080 \
 - `AGENT_MEMORY_WORKER_INTERVAL`: 记忆沉淀 worker 扫描周期（默认 `30s`）
 - `AGENT_MEMORY_TRASH_TTL`: `/inbox/trash` 过期清理周期（默认 `720h`）
 - `AGENT_MEMORY_FAILED_RETRY_AFTER`: failed segment 进入重试的最短等待时间（默认 `2m`）
+- `AGENT_MEMORY_EXTRACTION_USE_LLM`: 是否启用 LLM 结构化提取（默认 `true`）
+- `AGENT_MEMORY_EXTRACTION_FALLBACK`: LLM 提取失败后是否回退规则提取（默认 `true`）
+- `AGENT_MEMORY_EXTRACTION_MODEL`: 记忆提取模型（默认复用 `CERBER_MODEL`）
+- `AGENT_MEMORY_EXTRACTION_TEMPERATURE`: 记忆提取温度（默认 `0`）
 - Agent 提示词统一通过设置页管理（单一来源，可编辑、可重置为内置默认）
 - `APP_LLM_LOG_LIMIT`: 内存日志上限

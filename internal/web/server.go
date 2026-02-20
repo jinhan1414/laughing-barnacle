@@ -103,6 +103,7 @@ type settingsPageData struct {
 	Sections       []settingsSection
 	Services       []mcpServiceView
 	Skills         []skillView
+	MemoryMetrics  memoryMetricsView
 	MemoryNodes    []memoryNodeView
 	MemoryPending  []memoryPendingView
 	MemorySegments []memorySegmentView
@@ -151,6 +152,23 @@ type memoryPendingView struct {
 	Summary    string
 	Confidence string
 	UpdatedAt  string
+}
+
+type memoryMetricsView struct {
+	SegmentTotal      int
+	SegmentOpen       int
+	SegmentClosed     int
+	SegmentProcessing int
+	SegmentPersisted  int
+	SegmentFailed     int
+	FailedRate        string
+	RetryTotal        int
+	PendingCount      int
+	ReviewedCount     int
+	LastPersistedAt   string
+	WarningFailRate   bool
+	WarningPending    bool
+	WarningRetry      bool
 }
 
 type agentPromptsView struct {
@@ -323,6 +341,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/memory/maintenance/run", s.handleAPIMemoryMaintenanceRun)
 	mux.HandleFunc("/api/memory/rollback", s.handleAPIMemoryRollback)
 	mux.HandleFunc("/api/memory/audit", s.handleAPIMemoryAudit)
+	mux.HandleFunc("/api/memory/metrics", s.handleAPIMemoryMetrics)
 	mux.HandleFunc("/api/chat/updates", s.handleAPIChatUpdates)
 	mux.HandleFunc("/api/chat/tools/run", s.handleAPIChatToolRun)
 	mux.HandleFunc("/healthz", s.handleHealthz)
@@ -671,6 +690,26 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 		}
 	} else if section == "memory" {
 		if s.memoryStore != nil {
+			metrics := s.memoryStore.GetMetrics()
+			data.MemoryMetrics = memoryMetricsView{
+				SegmentTotal:      metrics.SegmentTotal,
+				SegmentOpen:       metrics.SegmentOpen,
+				SegmentClosed:     metrics.SegmentClosed,
+				SegmentProcessing: metrics.SegmentProcessing,
+				SegmentPersisted:  metrics.SegmentPersisted,
+				SegmentFailed:     metrics.SegmentFailed,
+				FailedRate:        fmt.Sprintf("%.1f%%", metrics.FailedRate*100),
+				RetryTotal:        metrics.RetryTotal,
+				PendingCount:      metrics.PendingCount,
+				ReviewedCount:     metrics.ReviewedCount,
+				WarningFailRate:   metrics.WarningFailRate,
+				WarningPending:    metrics.WarningPending,
+				WarningRetry:      metrics.WarningRetry,
+			}
+			if !metrics.LastPersistedAt.IsZero() {
+				data.MemoryMetrics.LastPersistedAt = metrics.LastPersistedAt.Format("2006-01-02 15:04:05")
+			}
+
 			allNodes := s.memoryStore.ListNodes(300)
 			data.MemoryNodes = make([]memoryNodeView, 0, len(allNodes))
 			for _, item := range allNodes {
@@ -1711,6 +1750,21 @@ func (s *Server) handleAPIMemoryAudit(w http.ResponseWriter, r *http.Request) {
 	entries := s.memoryStore.ListAudits(limit)
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(map[string]any{"items": entries})
+}
+
+func (s *Server) handleAPIMemoryMetrics(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if s.memoryStore == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "memory store unavailable"})
+		return
+	}
+	metrics := s.memoryStore.GetMetrics()
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(map[string]any{"metrics": metrics})
 }
 
 func (s *Server) handleAPIChatUpdates(w http.ResponseWriter, r *http.Request) {

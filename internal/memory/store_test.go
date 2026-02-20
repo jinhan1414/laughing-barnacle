@@ -1,11 +1,24 @@
 package memory
 
 import (
+	"context"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+type stubExtractor struct {
+	extraction SegmentExtraction
+	err        error
+}
+
+func (s stubExtractor) ExtractSegment(_ context.Context, _ Segment) (SegmentExtraction, error) {
+	if s.err != nil {
+		return SegmentExtraction{}, s.err
+	}
+	return s.extraction, nil
+}
 
 func TestStoreUpsertReadAndIndex(t *testing.T) {
 	store, err := NewStoreWithFile(filepath.Join(t.TempDir(), "memory.db"))
@@ -170,5 +183,68 @@ func TestRunMaintenanceRetryAndCleanup(t *testing.T) {
 
 	if _, err := store.ReadNode("/inbox/trash/old-candidate"); err == nil {
 		t.Fatalf("expected old trash node removed")
+	}
+
+	metrics := store.GetMetrics()
+	if metrics.SegmentTotal == 0 {
+		t.Fatalf("expected segment metrics")
+	}
+	if metrics.SegmentPersisted == 0 {
+		t.Fatalf("expected persisted metrics")
+	}
+	if metrics.ReviewedCount == 0 && metrics.PendingCount == 0 {
+		t.Fatalf("expected inbox metrics")
+	}
+}
+
+func TestProcessClosedSegments_ExtractorFallback(t *testing.T) {
+	store, err := NewStoreWithFile(filepath.Join(t.TempDir(), "memory.db"))
+	if err != nil {
+		t.Fatalf("NewStoreWithFile error: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	store.SetSegmentExtractor(stubExtractor{err: context.DeadlineExceeded}, true)
+
+	base := time.Date(2026, 2, 20, 10, 0, 0, 0, time.UTC)
+	if err := store.AppendTurn("需要更新目标", "收到", nil, base); err != nil {
+		t.Fatalf("AppendTurn error: %v", err)
+	}
+	if _, err := store.CloseIdleSegments(base.Add(6*time.Minute), 5*time.Minute, 10*time.Minute, 8); err != nil {
+		t.Fatalf("CloseIdleSegments error: %v", err)
+	}
+	if err := store.ProcessClosedSegments(base.Add(6 * time.Minute)); err != nil {
+		t.Fatalf("ProcessClosedSegments error: %v", err)
+	}
+
+	segments := store.ListSegments(10)
+	if len(segments) == 0 || segments[0].Status != SegmentStatusPersisted {
+		t.Fatalf("expected persisted segment with fallback, got %+v", segments)
+	}
+}
+
+func TestProcessClosedSegments_ExtractorNoFallback(t *testing.T) {
+	store, err := NewStoreWithFile(filepath.Join(t.TempDir(), "memory.db"))
+	if err != nil {
+		t.Fatalf("NewStoreWithFile error: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	store.SetSegmentExtractor(stubExtractor{err: context.DeadlineExceeded}, false)
+
+	base := time.Date(2026, 2, 20, 10, 0, 0, 0, time.UTC)
+	if err := store.AppendTurn("需要更新目标", "收到", nil, base); err != nil {
+		t.Fatalf("AppendTurn error: %v", err)
+	}
+	if _, err := store.CloseIdleSegments(base.Add(6*time.Minute), 5*time.Minute, 10*time.Minute, 8); err != nil {
+		t.Fatalf("CloseIdleSegments error: %v", err)
+	}
+	if err := store.ProcessClosedSegments(base.Add(6 * time.Minute)); err != nil {
+		t.Fatalf("ProcessClosedSegments error: %v", err)
+	}
+
+	segments := store.ListSegments(10)
+	if len(segments) == 0 || segments[0].Status != SegmentStatusFailed {
+		t.Fatalf("expected failed segment without fallback, got %+v", segments)
 	}
 }

@@ -115,6 +115,7 @@ var (
 		"/api/memory/maintenance/run",
 		"/api/memory/rollback",
 		"/api/memory/audit",
+		"/api/memory/metrics",
 		"/settings/skills/save",
 		"/settings/skills/install",
 		"/settings/skills/toggle",

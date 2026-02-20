@@ -168,6 +168,13 @@ func TestHandleAPIMemoryInboxReviewMaintenanceAndAudit(t *testing.T) {
 		t.Fatalf("expected 200, got %d body=%s", auditRec.Code, auditRec.Body.String())
 	}
 
+	metricsReq := httptest.NewRequest(http.MethodGet, "/api/memory/metrics", nil)
+	metricsRec := httptest.NewRecorder()
+	s.handleAPIMemoryMetrics(metricsRec, metricsReq)
+	if metricsRec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", metricsRec.Code, metricsRec.Body.String())
+	}
+
 	rollbackBody := bytes.NewBufferString(`{"path":"/goals/active/seg-demo"}`)
 	rollbackReq := httptest.NewRequest(http.MethodPost, "/api/memory/rollback", rollbackBody)
 	rollbackRec := httptest.NewRecorder()

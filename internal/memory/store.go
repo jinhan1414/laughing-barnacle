@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -136,9 +137,11 @@ type Segment struct {
 }
 
 type Store struct {
-	mu   sync.RWMutex
-	path string
-	db   *bolt.DB
+	mu                 sync.RWMutex
+	path               string
+	db                 *bolt.DB
+	extractor          SegmentExtractor
+	extractionFallback bool
 }
 
 func NewStoreWithFile(path string) (*Store, error) {
@@ -150,12 +153,45 @@ func NewStoreWithFile(path string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open memory db: %w", err)
 	}
-	s := &Store{path: path, db: db}
+	s := &Store{path: path, db: db, extractionFallback: true}
 	if err := s.bootstrap(); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
 	return s, nil
+}
+
+func (s *Store) SetSegmentExtractor(extractor SegmentExtractor, fallback bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.extractor = extractor
+	s.extractionFallback = fallback
+}
+
+func (s *Store) extractSegmentLocked(seg Segment) (SegmentExtraction, error) {
+	rule := buildRuleBasedSegmentExtraction(seg)
+	if s.extractor == nil {
+		return rule, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 18*time.Second)
+	defer cancel()
+	extracted, err := s.extractor.ExtractSegment(ctx, seg)
+	if err != nil {
+		if s.extractionFallback {
+			return rule, nil
+		}
+		return SegmentExtraction{}, err
+	}
+	if strings.TrimSpace(extracted.ProjectSummary) == "" {
+		extracted.ProjectSummary = rule.ProjectSummary
+	}
+	if len(extracted.ProjectFacts) == 0 {
+		extracted.ProjectFacts = rule.ProjectFacts
+	}
+	if len(extracted.Candidates) == 0 {
+		extracted.Candidates = rule.Candidates
+	}
+	return extracted, nil
 }
 
 func (s *Store) Close() error {
