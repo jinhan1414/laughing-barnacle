@@ -32,6 +32,7 @@
 - `/routines`
 - `/conversation/archive`
 - `/inbox`
+- `/inbox/trash`
 
 路径规则：
 
@@ -77,9 +78,9 @@ MemoryFS 节点仅两类：
 
 `open -> closed -> processing -> persisted`
 
-失败分支：
+失败分支（当前实现）：
 
-`processing -> failed -> retrying -> persisted | dead_letter`
+`processing -> failed`
 
 ### 2.3.2 记忆项状态
 
@@ -114,7 +115,6 @@ bucket 规划：
 - `memory_nodes`（path -> node）
 - `memory_children`（dir_path -> child_paths）
 - `memory_segments`（segment_id -> segment）
-- `memory_jobs`（job_id -> job）
 - `memory_meta`（schema/version）
 - `memory_audit`（审计日志）
 
@@ -168,12 +168,15 @@ curl -s "http://127.0.0.1:8080/api/memory/section?path=/projects/pay-refactor/ri
 1. 硬回合完成后，把 turn 工件追加到 `open segment`。
 2. 若用户继续发言，继续合并并重置 idle 计时。
 3. 用户不活跃达到 **5 分钟**，`open -> closed`。
-4. 处理 `closed segment`：
-   - LLM 输出结构化提取 JSON
-   - 服务端做确定性校验
-   - 高置信写正式命名空间
-   - 低置信写 `/inbox`
-5. 写入后记录 `audit`。
+4. 处理 `closed segment`（当前实现）：
+   - 将分段对话写入 `/conversation/archive/<segment_id>/index`
+   - 生成 sections（分节）供按需回读
+5. 写入后记录 segment 持久化路径（`persisted_paths`）。
+
+后续增强（规划中）：
+
+1. 增加结构化提取（高置信写正式命名空间，低置信写 `/inbox`）。
+2. 增加失败重试与 dead-letter 队列。
 
 ## 3.3 软回合结束规则（5 分钟）
 
@@ -200,6 +203,14 @@ curl -s "http://127.0.0.1:8080/api/memory/section?path=/projects/pay-refactor/ri
 3. LLM 再调用 `section(..., s1)`。
 4. 结合 `overview` 读取结果给出结论并附来源。
 5. 本轮结束后先入 `open segment`，等待 5 分钟不活跃再沉淀。
+
+## 3.5 设置页可视化（运维入口）
+
+设置页新增 MemoryFS 视图（`/settings?section=memory`）：
+
+1. 节点视图：展示 `path/type/schema/rev/summary/updated_at`。
+2. segment 视图：展示 `status/turns/close_reason/persisted_paths/error`。
+3. 运营排查顺序：先看 segment 是否 `persisted`，再按 `persisted_paths` 读取节点明细。
 
 ---
 

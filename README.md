@@ -17,7 +17,7 @@
 - Skill 采用文件夹接入模式（`APP_SKILLS_DIR/<skill_id>/SKILL.md`）
 - 会话历史持久化，重启后可恢复聊天记录
 - 独立日志页展示每次真实 LLM 输入/输出
-- 独立设置页管理 MCP 服务与 Skills
+- 独立设置页管理 MCP 服务、Skills 与 MemoryFS 可视化（节点/segment）
 - 提供 API 供数字分身通过 `bash` 查询与检索：`/api/mcp/services`、`/api/skills`、`/api/skills/catalog/search`
 - 提供记忆 API：`/api/memory/index`、`/api/memory/read`、`/api/memory/section`、`/api/memory/upsert`、`/api/memory/move`、`/api/memory/delete`
 - 非流式输出
@@ -151,5 +151,9 @@ docker run --rm -p 8080:8080 \
 - `AGENT_KEEP_RECENT_AFTER_COMPRESSION`: 压缩后保留最近消息条数
 - `AGENT_MAX_COMPRESSION_LOOPS`: 每轮用户请求最大压缩循环次数
 - `AGENT_MAX_TOOL_CALL_ROUNDS`: 单轮对话最大工具调用回合数
+- `AGENT_MEMORY_IDLE_WINDOW`: 记忆分段不活跃关闭窗口（默认 `5m`）
+- `AGENT_MEMORY_MAX_SEGMENT_WINDOW`: 单分段最大持续时间（默认 `10m`）
+- `AGENT_MEMORY_MAX_SEGMENT_MESSAGES`: 单分段最大轮次数（默认 `8`）
+- `AGENT_MEMORY_WORKER_INTERVAL`: 记忆沉淀 worker 扫描周期（默认 `30s`）
 - Agent 提示词统一通过设置页管理（单一来源，可编辑、可重置为内置默认）
 - `APP_LLM_LOG_LIMIT`: 内存日志上限

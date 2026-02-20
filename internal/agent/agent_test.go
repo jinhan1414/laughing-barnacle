@@ -991,7 +991,7 @@ func TestHandleUserMessage_IncludesSkillIndexForProgressiveDisclosure(t *testing
 		if strings.Contains(msg.Content, "内置工具仅有 linux__bash") {
 			t.Fatalf("linux__bash policy text should not be injected as system context, got %q", msg.Content)
 		}
-		if strings.Contains(msg.Content, "/api/context/archive/index") || strings.Contains(msg.Content, "内置技能 archive_recall") {
+		if strings.Contains(msg.Content, "/api/memory/read?path=/conversation/archive") || strings.Contains(msg.Content, "内置技能 archive_recall") {
 			t.Fatalf("archive recall should not be hardcoded in system prompt, got %q", msg.Content)
 		}
 	}
