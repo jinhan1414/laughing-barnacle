@@ -77,6 +77,7 @@ const (
 	maxSummaryForRequestRunes  = 1400
 	maxContextMessageRunes     = 900
 	maxRecentContextRunes      = 4200
+	maxReplayHistoryToolCalls  = 2
 	maxAssistantReplyRunes     = 2200
 	runtimeDateContextMarker   = "[[RUNTIME_DATE_CONTEXT]]"
 )
@@ -554,7 +555,7 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 	}
 
 	recentMessages := trimMessagesForRequest(messages, a.cfg.MaxRecentMessages, maxRecentContextRunes, maxContextMessageRunes)
-	requestMessages = appendHistoryMessagesWithToolCalls(requestMessages, recentMessages)
+	requestMessages = appendHistoryMessagesWithToolCalls(requestMessages, recentMessages, hasPendingUserMessage(recentMessages))
 	latestUserInput := latestUserMessageText(recentMessages)
 	requiresToolEvidence := shouldRequireRuntimeToolEvidence(latestUserInput)
 	requestMessages = removeRuntimeDateContextUserMessages(requestMessages)
@@ -1777,7 +1778,7 @@ func trimMessagesForRequest(
 	return out
 }
 
-func appendHistoryMessagesWithToolCalls(dst []llm.Message, messages []conversation.Message) []llm.Message {
+func appendHistoryMessagesWithToolCalls(dst []llm.Message, messages []conversation.Message, replayToolCalls bool) []llm.Message {
 	if len(messages) == 0 {
 		return dst
 	}
@@ -1788,10 +1789,19 @@ func appendHistoryMessagesWithToolCalls(dst []llm.Message, messages []conversati
 			Role:    msg.Role,
 			Content: msg.Content,
 		})
+		// Only replay history tool traces for retrying the latest pending user turn.
+		if !replayToolCalls || i != len(messages)-1 {
+			continue
+		}
 		if !strings.EqualFold(strings.TrimSpace(msg.Role), "user") || len(msg.ToolCalls) == 0 {
 			continue
 		}
-		for j, call := range msg.ToolCalls {
+		start := 0
+		if len(msg.ToolCalls) > maxReplayHistoryToolCalls {
+			start = len(msg.ToolCalls) - maxReplayHistoryToolCalls
+		}
+		for j := start; j < len(msg.ToolCalls); j++ {
+			call := msg.ToolCalls[j]
 			name := strings.TrimSpace(call.Name)
 			if name == "" {
 				continue
@@ -1838,6 +1848,13 @@ func appendHistoryMessagesWithToolCalls(dst []llm.Message, messages []conversati
 		}
 	}
 	return out
+}
+
+func hasPendingUserMessage(messages []conversation.Message) bool {
+	if len(messages) == 0 {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(messages[len(messages)-1].Role), "user")
 }
 
 func latestUserMessageText(messages []conversation.Message) string {
