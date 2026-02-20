@@ -78,6 +78,7 @@ const (
 	maxContextMessageRunes     = 900
 	maxRecentContextRunes      = 4200
 	maxAssistantReplyRunes     = 2200
+	runtimeDateContextMarker   = "[[RUNTIME_DATE_CONTEXT]]"
 )
 
 var (
@@ -519,9 +520,10 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 	requestMessages = appendHistoryMessagesWithToolCalls(requestMessages, recentMessages)
 	latestUserInput := latestUserMessageText(recentMessages)
 	requiresToolEvidence := shouldRequireRuntimeToolEvidence(latestUserInput)
+	requestMessages = removeRuntimeDateContextUserMessages(requestMessages)
 	requestMessages = append(requestMessages, llm.Message{
-		Role:    "system",
-		Content: buildCurrentDateContextPrompt(a.nowFn()),
+		Role:    "user",
+		Content: buildCurrentDateUserContextPrompt(a.nowFn()),
 	})
 
 	toolDefs := make([]llm.ToolDefinition, 0, len(builtinToolDefs)+4)
@@ -1903,15 +1905,32 @@ func safeOrEmpty(v string) string {
 	return v
 }
 
-func buildCurrentDateContextPrompt(now time.Time) string {
+func buildCurrentDateUserContextPrompt(now time.Time) string {
 	now = now.Round(0)
 	zoneName, _ := now.Zone()
 	zoneName = strings.TrimSpace(zoneName)
 	if zoneName == "" {
 		zoneName = "Local"
 	}
-	return "时间基准（用于相对时间换算）：当前日期 " +
+	return runtimeDateContextMarker + "\n" +
+		"以下是运行时上下文，不是用户新问题：\n" +
+		"时间基准（用于相对时间换算）：当前日期 " +
 		now.Format("2006-01-02") +
 		"（时区: " + zoneName +
 		"）。凡涉及“今天/昨天/最近N天/本周/本月”等时间范围，必须以此为准计算后再查询；如需小时/分钟级当前时间，先调用 linux__bash 查询系统时间。"
+}
+
+func removeRuntimeDateContextUserMessages(messages []llm.Message) []llm.Message {
+	if len(messages) == 0 {
+		return messages
+	}
+	out := make([]llm.Message, 0, len(messages))
+	for _, msg := range messages {
+		if strings.EqualFold(strings.TrimSpace(msg.Role), "user") &&
+			strings.Contains(msg.Content, runtimeDateContextMarker) {
+			continue
+		}
+		out = append(out, msg)
+	}
+	return out
 }

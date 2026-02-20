@@ -986,7 +986,7 @@ func TestHandleUserMessage_IncludesCurrentTimeContextPrompt(t *testing.T) {
 
 	found := false
 	for _, msg := range fakeLLM.calls[0].Messages {
-		if msg.Role != "system" || !strings.Contains(msg.Content, "时间基准（用于相对时间换算）") {
+		if msg.Role != "user" || !strings.Contains(msg.Content, runtimeDateContextMarker) {
 			continue
 		}
 		found = true
@@ -1038,7 +1038,7 @@ func TestHandleUserMessage_AlwaysInjectsCurrentDateContextPrompt(t *testing.T) {
 
 	found := false
 	for _, msg := range fakeLLM.calls[0].Messages {
-		if msg.Role != "system" || !strings.Contains(msg.Content, "时间基准（用于相对时间换算）") {
+		if msg.Role != "user" || !strings.Contains(msg.Content, runtimeDateContextMarker) {
 			continue
 		}
 		found = true
@@ -1051,6 +1051,56 @@ func TestHandleUserMessage_AlwaysInjectsCurrentDateContextPrompt(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("expected current-date system prompt to be injected")
+	}
+}
+
+func TestHandleUserMessage_InjectsOnlyOneRuntimeDateUserContext(t *testing.T) {
+	store := conversation.NewStore()
+	store.Append("user", buildCurrentDateUserContextPrompt(time.Date(2026, 2, 17, 8, 0, 0, 0, time.FixedZone("CST", 8*3600))))
+	store.Append("assistant", "old answer")
+
+	fakeLLM := &mockLLM{responses: map[string][]string{
+		"chat_reply": {"ok"},
+	}}
+
+	agentSvc := New(Config{
+		Model:                      "test-model",
+		MaxRecentMessages:          10,
+		CompressionTriggerMessages: 99,
+		CompressionTriggerChars:    99999,
+		KeepRecentAfterCompression: 1,
+		MaxCompressionLoopsPerTurn: 1,
+		MaxToolCallRounds:          2,
+		SystemPrompt:               "system",
+		CompressionSystemPrompt:    "compressor",
+	}, store, fakeLLM, nil)
+	agentSvc.nowFn = func() time.Time {
+		return time.Date(2026, 2, 18, 10, 30, 45, 0, time.FixedZone("CST", 8*3600))
+	}
+
+	reply, err := agentSvc.HandleUserMessage(context.Background(), "hello")
+	if err != nil {
+		t.Fatalf("HandleUserMessage error: %v", err)
+	}
+	if reply != "ok" {
+		t.Fatalf("unexpected reply: %s", reply)
+	}
+	if len(fakeLLM.calls) != 1 {
+		t.Fatalf("expected one llm call, got %d", len(fakeLLM.calls))
+	}
+
+	count := 0
+	for _, msg := range fakeLLM.calls[0].Messages {
+		if msg.Role != "user" || !strings.Contains(msg.Content, runtimeDateContextMarker) {
+			continue
+		}
+		count++
+		if !strings.Contains(msg.Content, "当前日期 2026-02-18") {
+			t.Fatalf("expected latest runtime date context, got %q", msg.Content)
+		}
+	}
+	if count != 1 {
+		t.Fatalf("expected exactly one runtime date user context, got %d", count)
 	}
 }
 
