@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"laughing-barnacle/internal/conversation"
+	"laughing-barnacle/internal/memory"
 )
 
 func TestBuildChatTimeline_MergeAndSort(t *testing.T) {
@@ -83,5 +84,29 @@ func TestFormatChatTimestamp(t *testing.T) {
 	lastYear := time.Date(2025, 12, 31, 23, 59, 0, 0, loc)
 	if got := formatChatTimestamp(lastYear, now); got != "2025年12月31日 23:59" {
 		t.Fatalf("unexpected cross-year label: %s", got)
+	}
+}
+
+func TestLatestMaintenanceAudit(t *testing.T) {
+	now := time.Now().UTC()
+	entries := []memory.AuditEntry{
+		{ID: "a1", Action: "upsert", CreatedAt: now.Add(-2 * time.Minute)},
+		{ID: "a2", Action: "maintenance", Detail: "retried=1", CreatedAt: now.Add(-3 * time.Minute)},
+		{ID: "a3", Action: "maintenance", Detail: "retried=2", CreatedAt: now.Add(-1 * time.Minute)},
+	}
+
+	entry, ok := latestMaintenanceAudit(entries)
+	if !ok {
+		t.Fatalf("expected to find maintenance entry")
+	}
+	if entry.ID != "a3" {
+		t.Fatalf("expected latest maintenance entry a3, got %s", entry.ID)
+	}
+	if entry.Detail != "retried=2" {
+		t.Fatalf("unexpected maintenance detail: %s", entry.Detail)
+	}
+
+	if _, ok := latestMaintenanceAudit([]memory.AuditEntry{{ID: "b1", Action: "upsert", CreatedAt: now}}); ok {
+		t.Fatalf("expected no maintenance entry")
 	}
 }

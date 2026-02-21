@@ -258,6 +258,7 @@
               <div class="mt-2 text-xs leading-6 text-slate-500">
                 该任务由内置 Worker 周期执行，不在 Cron 列表内单独配置。<br>
                 执行周期: {{.MemoryTask.Interval}} | 不活跃收段: {{.MemoryTask.IdleWindow}} | 最大窗口: {{.MemoryTask.MaxWindow}} | 段消息上限: {{.MemoryTask.MaxMessages}}<br>
+                最近维护执行: {{if .MemoryTask.LastRunAt}}{{.MemoryTask.LastRunAt}}{{else}}-{{end}}{{if .MemoryTask.LastRunDetail}} ({{.MemoryTask.LastRunDetail}}){{end}}<br>
                 segments: {{.MemoryTask.SegmentTotal}} | persisted: {{.MemoryTask.SegmentPersisted}} | failed: {{.MemoryTask.SegmentFailed}} ({{.MemoryTask.FailedRate}}) | pending: {{.MemoryTask.PendingCount}} | retry_total: {{.MemoryTask.RetryTotal}}<br>
                 last_persisted_at: {{if .MemoryTask.LastPersistedAt}}{{.MemoryTask.LastPersistedAt}}{{else}}-{{end}}
               </div>

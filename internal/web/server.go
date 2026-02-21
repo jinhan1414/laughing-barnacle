@@ -193,6 +193,8 @@ type scheduleMemoryMaintenanceView struct {
 	FailedRate       string
 	RetryTotal       int
 	PendingCount     int
+	LastRunAt        string
+	LastRunDetail    string
 	LastPersistedAt  string
 	WarningFailRate  bool
 	WarningPending   bool
@@ -886,6 +888,12 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 				WarningFailRate:  metrics.WarningFailRate,
 				WarningPending:   metrics.WarningPending,
 				WarningRetry:     metrics.WarningRetry,
+			}
+			if maintenanceAudit, ok := latestMaintenanceAudit(s.memoryStore.ListAudits(200)); ok {
+				if !maintenanceAudit.CreatedAt.IsZero() {
+					data.MemoryTask.LastRunAt = maintenanceAudit.CreatedAt.Format("2006-01-02 15:04:05")
+				}
+				data.MemoryTask.LastRunDetail = strings.TrimSpace(maintenanceAudit.Detail)
 			}
 			if !metrics.LastPersistedAt.IsZero() {
 				data.MemoryTask.LastPersistedAt = metrics.LastPersistedAt.Format("2006-01-02 15:04:05")
@@ -2094,6 +2102,21 @@ func findMemoryRefValue(refs []memory.Ref, kind string) string {
 		}
 	}
 	return ""
+}
+
+func latestMaintenanceAudit(entries []memory.AuditEntry) (memory.AuditEntry, bool) {
+	var best memory.AuditEntry
+	found := false
+	for _, entry := range entries {
+		if !strings.EqualFold(strings.TrimSpace(entry.Action), "maintenance") {
+			continue
+		}
+		if !found || entry.CreatedAt.After(best.CreatedAt) || (entry.CreatedAt.Equal(best.CreatedAt) && entry.ID > best.ID) {
+			best = entry
+			found = true
+		}
+	}
+	return best, found
 }
 
 func fallbackChatGreeting(now time.Time) string {

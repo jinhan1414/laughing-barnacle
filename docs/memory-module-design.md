@@ -233,6 +233,20 @@ curl -s "http://127.0.0.1:8080/api/memory/section?path=/projects/pay-refactor/ri
 2. Memory worker 负责“软回合关闭 + 结构化沉淀”。
 3. 定时任务负责“保洁与一致性”，不替代主链路判断。
 
+## 4.1.1 为什么采用 Worker，而不是纯 Cron
+
+1. 软回合结束条件是“用户不活跃 5 分钟”，属于事件超时模型，不是固定时点任务。
+2. 纯 Cron 只能轮询扫描，会引入判定延迟和抖动，无法稳定贴合“最后一次用户输入 + 5 分钟”。
+3. Worker 可以在统一循环中执行三件事：`close idle segment`、`process closed segment`、`maintenance cleanup`，链路更一致。
+4. Cron 仍可保留为保洁兜底（如一致性巡检），但不接管回合结束判定。
+
+当前实现参数映射：
+
+- `AGENT_MEMORY_WORKER_INTERVAL=30s`：worker 轮询间隔
+- `AGENT_MEMORY_IDLE_WINDOW=5m`：不活跃收段阈值
+- `AGENT_MEMORY_MAX_SEGMENT_WINDOW=10m`：单 segment 最大窗口
+- `AGENT_MEMORY_MAX_SEGMENT_MESSAGES=8`：单 segment 消息上限
+
 ## 4.2 定时任务（保洁类）
 
 建议新增任务：
@@ -241,6 +255,12 @@ curl -s "http://127.0.0.1:8080/api/memory/section?path=/projects/pay-refactor/ri
 2. `memory-inbox-digest`：汇总待确认记忆项。
 3. `memory-stale-cleanup`：清理 trash/过期项。
 4. `memory-consistency-check`：巡检孤儿节点、冲突路径、revision 异常。
+
+设置页映射：
+
+1. `定时任务`页展示“内置记忆维护任务”（driver=`memory_worker`），用于可视化 worker 策略与核心指标。
+2. 该卡片支持“立即执行记忆维护任务”（调用 `/settings/memory/maintenance/run`，回跳到 `section=schedules`）。
+3. 卡片展示最近一次维护执行记录（来源 `memory_audit.action=maintenance` 的最新条目）。
 
 ## 4.3 审计与观测
 
