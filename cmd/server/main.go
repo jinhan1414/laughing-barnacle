@@ -115,6 +115,12 @@ func run() error {
 		return err
 	}
 	webServer.SetMemoryStore(memoryStore)
+	webServer.SetMemoryWorkerConfig(
+		cfg.MemoryWorkerInterval,
+		cfg.MemoryIdleWindow,
+		cfg.MemoryMaxSegmentWindow,
+		cfg.MemoryMaxSegmentMessages,
+	)
 
 	mux := http.NewServeMux()
 	webServer.RegisterRoutes(mux)

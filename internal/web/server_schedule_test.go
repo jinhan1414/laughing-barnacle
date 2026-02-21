@@ -87,8 +87,8 @@ func TestHandleAPISchedules(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("decode response error: %v", err)
 	}
-	if len(payload.Schedules) < 2 {
-		t.Fatalf("expected default schedules, got %+v", payload.Schedules)
+	if len(payload.Schedules) != 0 {
+		t.Fatalf("expected no default schedules, got %+v", payload.Schedules)
 	}
 }
 
@@ -183,6 +183,15 @@ func TestHandleSettingsScheduleRun(t *testing.T) {
 	store, err := mcp.NewStore(filepath.Join(t.TempDir(), "settings.json"))
 	if err != nil {
 		t.Fatalf("NewStore error: %v", err)
+	}
+	if err := store.UpsertScheduledTask(scheduler.Task{
+		ID:       "night-reflection-evolution",
+		Name:     "night-reflection-evolution",
+		Action:   routine.ActionNightReflectionEvolution,
+		CronExpr: "0 22 * * *",
+		Enabled:  true,
+	}); err != nil {
+		t.Fatalf("UpsertScheduledTask error: %v", err)
 	}
 
 	convStore := conversation.NewStore()
@@ -314,6 +323,15 @@ func TestHandleSettingsScheduleRun_UsesSchedulerRuntimeWhenAvailable(t *testing.
 	if err != nil {
 		t.Fatalf("NewStore error: %v", err)
 	}
+	if err := store.UpsertScheduledTask(scheduler.Task{
+		ID:       "morning-planning",
+		Name:     "morning-planning",
+		Action:   routine.ActionMorningPlanning,
+		CronExpr: "30 8 * * *",
+		Enabled:  true,
+	}); err != nil {
+		t.Fatalf("UpsertScheduledTask error: %v", err)
+	}
 	runtime := &mockScheduleRuntime{}
 	s := &Server{
 		mcpStore:  store,
@@ -339,6 +357,15 @@ func TestHandleSettingsScheduleDelete(t *testing.T) {
 	store, err := mcp.NewStore(filepath.Join(t.TempDir(), "settings.json"))
 	if err != nil {
 		t.Fatalf("NewStore error: %v", err)
+	}
+	if err := store.UpsertScheduledTask(scheduler.Task{
+		ID:       "morning-planning",
+		Name:     "morning-planning",
+		Action:   routine.ActionMorningPlanning,
+		CronExpr: "30 8 * * *",
+		Enabled:  true,
+	}); err != nil {
+		t.Fatalf("UpsertScheduledTask error: %v", err)
 	}
 	runtime := &mockScheduleRuntime{}
 	s := &Server{

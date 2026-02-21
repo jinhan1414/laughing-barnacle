@@ -29,8 +29,6 @@ const (
 	maxAutoSkillsRetained          = 24
 	maxAutoSkillNameRunes          = 24
 	maxAutoSkillPromptRunes        = 180
-	defaultNightCronExpr           = "30 0 * * *"
-	defaultMorningPlanCronExpr     = "30 8 * * *"
 	maxTaskRunMessageRunes         = 240
 	maxChatGreetingContentRunes    = 240
 )
@@ -103,27 +101,6 @@ func DefaultAgentPromptConfig() AgentPromptConfig {
 	return AgentPromptConfig{
 		SystemPrompt:            strings.TrimSpace(agentprompt.DefaultSystemPrompt),
 		CompressionSystemPrompt: strings.TrimSpace(agentprompt.DefaultCompressionSystemPrompt),
-	}
-}
-
-func defaultScheduledTasks() []scheduler.Task {
-	return []scheduler.Task{
-		{
-			ID:          "night-reflection-evolution",
-			Name:        "夜间复盘与进化",
-			Description: "每天夜间执行一次复盘并尝试自我进化提示词。",
-			Action:      routine.ActionNightReflectionEvolution,
-			CronExpr:    defaultNightCronExpr,
-			Enabled:     true,
-		},
-		{
-			ID:          "morning-planning",
-			Name:        "晨间规划",
-			Description: "每天早晨执行一次任务回顾与今日 Top3 规划。",
-			Action:      routine.ActionMorningPlanning,
-			CronExpr:    defaultMorningPlanCronExpr,
-			Enabled:     true,
-		},
 	}
 }
 
@@ -871,7 +848,7 @@ func (s *Store) load() error {
 		if os.IsNotExist(err) {
 			s.cfg = fileConfig{}
 			s.cfg.Agent.Prompts = DefaultAgentPromptConfig()
-			s.cfg.Agent.Schedules = normalizeScheduledTasks(defaultScheduledTasks())
+			s.cfg.Agent.Schedules = nil
 			return s.persistLocked()
 		}
 		return fmt.Errorf("read settings file: %w", err)
@@ -1363,44 +1340,9 @@ func isAutoSkillID(id string) bool {
 func normalizeAndMergeScheduledTasks(tasks []scheduler.Task) ([]scheduler.Task, bool, error) {
 	merged := normalizeScheduledTasks(tasks)
 	changed := !scheduledTasksEqual(merged, tasks)
-
-	byID := make(map[string]scheduler.Task, len(merged))
-	for _, task := range merged {
-		byID[task.ID] = task
-	}
-	for _, def := range defaultScheduledTasks() {
-		task, ok := byID[def.ID]
-		if !ok {
-			merged = append(merged, def)
-			byID[def.ID] = def
-			changed = true
-			continue
-		}
-		before := task
-		if strings.TrimSpace(task.Name) == "" {
-			task.Name = def.Name
-		}
-		if strings.TrimSpace(task.Description) == "" {
-			task.Description = def.Description
-		}
-		if strings.TrimSpace(task.Action) == "" {
-			task.Action = def.Action
-		}
-		if strings.TrimSpace(task.CronExpr) == "" {
-			task.CronExpr = def.CronExpr
-		}
-		if !scheduledTaskEqual(task, before) {
-			changed = true
-		}
-		byID[def.ID] = task
-	}
-
-	final := make([]scheduler.Task, 0, len(byID))
+	final := make([]scheduler.Task, 0, len(merged))
 	seen := map[string]struct{}{}
 	for _, task := range merged {
-		if resolved, ok := byID[task.ID]; ok {
-			task = resolved
-		}
 		if _, ok := seen[task.ID]; ok {
 			continue
 		}

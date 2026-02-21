@@ -37,7 +37,15 @@ type Server struct {
 	skillStore  *skills.Store
 	memoryStore *memory.Store
 	scheduler   ScheduleReloader
-	tmpl        *template.Template
+	memoryWorkerConfig
+	tmpl *template.Template
+}
+
+type memoryWorkerConfig struct {
+	Interval    time.Duration
+	IdleWindow  time.Duration
+	MaxWindow   time.Duration
+	MaxMessages int
 }
 
 type ScheduleReloader interface {
@@ -103,6 +111,7 @@ type settingsPageData struct {
 	Sections       []settingsSection
 	Services       []mcpServiceView
 	Skills         []skillView
+	MemoryTask     scheduleMemoryMaintenanceView
 	MemoryMetrics  memoryMetricsView
 	MemoryNodes    []memoryNodeView
 	MemoryPending  []memoryPendingView
@@ -169,6 +178,25 @@ type memoryMetricsView struct {
 	WarningFailRate   bool
 	WarningPending    bool
 	WarningRetry      bool
+}
+
+type scheduleMemoryMaintenanceView struct {
+	Available        bool
+	Driver           string
+	Interval         string
+	IdleWindow       string
+	MaxWindow        string
+	MaxMessages      int
+	SegmentTotal     int
+	SegmentPersisted int
+	SegmentFailed    int
+	FailedRate       string
+	RetryTotal       int
+	PendingCount     int
+	LastPersistedAt  string
+	WarningFailRate  bool
+	WarningPending   bool
+	WarningRetry     bool
 }
 
 type agentPromptsView struct {
@@ -264,8 +292,12 @@ type chatGreetResponse struct {
 }
 
 const (
-	chatGreetingCooldown = 30 * time.Minute
-	chatTimestampGap     = 5 * time.Minute
+	chatGreetingCooldown           = 30 * time.Minute
+	chatTimestampGap               = 5 * time.Minute
+	defaultMemoryWorkerInterval    = 30 * time.Second
+	defaultMemoryIdleWindow        = 5 * time.Minute
+	defaultMemoryMaxSegmentWindow  = 10 * time.Minute
+	defaultMemoryMaxSegmentMessage = 8
 )
 
 func NewServer(
@@ -296,6 +328,38 @@ func NewServer(
 
 func (s *Server) SetMemoryStore(store *memory.Store) {
 	s.memoryStore = store
+}
+
+func (s *Server) SetMemoryWorkerConfig(interval, idleWindow, maxWindow time.Duration, maxMessages int) {
+	if interval > 0 {
+		s.Interval = interval
+	}
+	if idleWindow > 0 {
+		s.IdleWindow = idleWindow
+	}
+	if maxWindow > 0 {
+		s.MaxWindow = maxWindow
+	}
+	if maxMessages > 0 {
+		s.MaxMessages = maxMessages
+	}
+}
+
+func (s *Server) memoryWorkerConfigOrDefault() memoryWorkerConfig {
+	cfg := s.memoryWorkerConfig
+	if cfg.Interval <= 0 {
+		cfg.Interval = defaultMemoryWorkerInterval
+	}
+	if cfg.IdleWindow <= 0 {
+		cfg.IdleWindow = defaultMemoryIdleWindow
+	}
+	if cfg.MaxWindow <= 0 {
+		cfg.MaxWindow = defaultMemoryMaxSegmentWindow
+	}
+	if cfg.MaxMessages <= 0 {
+		cfg.MaxMessages = defaultMemoryMaxSegmentMessage
+	}
+	return cfg
 }
 
 func (s *Server) RegisterRoutes(mux *http.ServeMux) {
@@ -803,6 +867,30 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 			}
 			data.Schedules = append(data.Schedules, view)
 		}
+		if s.memoryStore != nil {
+			policy := s.memoryWorkerConfigOrDefault()
+			metrics := s.memoryStore.GetMetrics()
+			data.MemoryTask = scheduleMemoryMaintenanceView{
+				Available:        true,
+				Driver:           "memory_worker",
+				Interval:         policy.Interval.String(),
+				IdleWindow:       policy.IdleWindow.String(),
+				MaxWindow:        policy.MaxWindow.String(),
+				MaxMessages:      policy.MaxMessages,
+				SegmentTotal:     metrics.SegmentTotal,
+				SegmentPersisted: metrics.SegmentPersisted,
+				SegmentFailed:    metrics.SegmentFailed,
+				FailedRate:       fmt.Sprintf("%.1f%%", metrics.FailedRate*100),
+				RetryTotal:       metrics.RetryTotal,
+				PendingCount:     metrics.PendingCount,
+				WarningFailRate:  metrics.WarningFailRate,
+				WarningPending:   metrics.WarningPending,
+				WarningRetry:     metrics.WarningRetry,
+			}
+			if !metrics.LastPersistedAt.IsZero() {
+				data.MemoryTask.LastPersistedAt = metrics.LastPersistedAt.Format("2006-01-02 15:04:05")
+			}
+		}
 	}
 
 	_ = s.tmpl.ExecuteTemplate(w, "settings.html", data)
@@ -1197,19 +1285,24 @@ func (s *Server) handleSettingsMemoryMaintenanceRun(w http.ResponseWriter, r *ht
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
+	_ = r.ParseForm()
+	redirectSection := "memory"
+	if candidate := strings.TrimSpace(r.FormValue("redirect_section")); candidate == "schedules" || candidate == "memory" {
+		redirectSection = candidate
+	}
 	if s.memoryStore == nil {
-		s.redirectSettings(w, r, "memory", "", "memory store unavailable")
+		s.redirectSettings(w, r, redirectSection, "", "memory store unavailable")
 		return
 	}
 	report, err := s.memoryStore.RunMaintenance(time.Now().UTC(), 0, 0)
 	if err != nil {
-		s.redirectSettings(w, r, "memory", "", "维护任务执行失败："+err.Error())
+		s.redirectSettings(w, r, redirectSection, "", "维护任务执行失败："+err.Error())
 		return
 	}
 	s.redirectSettings(
 		w,
 		r,
-		"memory",
+		redirectSection,
 		fmt.Sprintf("维护任务完成：retried=%d, cleaned=%d, repaired=%d", report.RetriedSegments, report.RemovedTrashNodes, report.RepairedChildren),
 		"",
 	)

@@ -666,7 +666,7 @@ func TestStoreLoad_InvalidGreetingTimestampRejected(t *testing.T) {
 	}
 }
 
-func TestStoreDefaultScheduledTasks_PersistedAndValid(t *testing.T) {
+func TestStoreDefaultScheduledTasks_EmptyByDefault(t *testing.T) {
 	settingsPath := filepath.Join(t.TempDir(), "settings.json")
 	store, err := NewStore(settingsPath)
 	if err != nil {
@@ -674,37 +674,20 @@ func TestStoreDefaultScheduledTasks_PersistedAndValid(t *testing.T) {
 	}
 
 	tasks := store.ListScheduledTasks()
-	if len(tasks) < 2 {
-		t.Fatalf("expected default scheduled tasks, got %d", len(tasks))
-	}
-
-	foundMorning := false
-	foundNight := false
-	for _, task := range tasks {
-		switch task.Action {
-		case routine.ActionMorningPlanning:
-			foundMorning = true
-		case routine.ActionNightReflectionEvolution:
-			foundNight = true
-		}
-		if strings.TrimSpace(task.CronExpr) == "" {
-			t.Fatalf("expected cron expression for task %+v", task)
-		}
-	}
-	if !foundMorning || !foundNight {
-		t.Fatalf("expected both morning and night default tasks, got %+v", tasks)
+	if len(tasks) != 0 {
+		t.Fatalf("expected no default scheduled tasks, got %+v", tasks)
 	}
 
 	reloaded, err := NewStore(settingsPath)
 	if err != nil {
 		t.Fatalf("reload store error: %v", err)
 	}
-	if len(reloaded.ListScheduledTasks()) < 2 {
-		t.Fatalf("expected scheduled tasks persisted")
+	if len(reloaded.ListScheduledTasks()) != 0 {
+		t.Fatalf("expected no default scheduled tasks after reload")
 	}
 }
 
-func TestStoreLoad_LegacySettingsWithoutSchedules_AutoFillDefaults(t *testing.T) {
+func TestStoreLoad_LegacySettingsWithoutSchedules_KeepEmpty(t *testing.T) {
 	settingsPath := filepath.Join(t.TempDir(), "settings.json")
 	raw := `{
   "mcp": {
@@ -728,8 +711,8 @@ func TestStoreLoad_LegacySettingsWithoutSchedules_AutoFillDefaults(t *testing.T)
 	}
 
 	tasks := store.ListScheduledTasks()
-	if len(tasks) < 2 {
-		t.Fatalf("expected default scheduled tasks loaded for legacy settings, got %d", len(tasks))
+	if len(tasks) != 0 {
+		t.Fatalf("expected empty schedules for legacy settings, got %+v", tasks)
 	}
 }
 
