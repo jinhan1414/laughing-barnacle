@@ -748,12 +748,26 @@ func TestRetryLastUserMessage_ReplaysToolCallsFromPendingUserMessage(t *testing.
 	}
 }
 
-func TestHandleUserMessage_UsesTwoPhaseExecutionForRuntimeScheduleQuery(t *testing.T) {
+func TestHandleUserMessage_UsesStandardToolExecutionForRuntimeScheduleQuery(t *testing.T) {
 	store := conversation.NewStore()
 	fakeLLM := &mockLLM{
 		responses: map[string][]string{
-			"chat_action_plan": {`{"actions":[{"command":"curl -s http://127.0.0.1:8080/api/schedules"}]}`},
-			"chat_reply":       {"当前有 2 个定时任务。"},
+			"chat_reply": {"先查询任务列表。", "当前有 0 个定时任务。"},
+		},
+		toolCalls: map[string][][]llm.ToolCall{
+			"chat_reply": {
+				{
+					{
+						ID:   "call_sched_1",
+						Type: "function",
+						Function: llm.ToolFunctionCall{
+							Name:      builtinLinuxBashToolName,
+							Arguments: `{"command":"curl -s http://127.0.0.1:8080/api/schedules"}`,
+						},
+					},
+				},
+				nil,
+			},
 		},
 	}
 	prevRunLinuxBashFn := runLinuxBashFn
@@ -785,7 +799,7 @@ func TestHandleUserMessage_UsesTwoPhaseExecutionForRuntimeScheduleQuery(t *testi
 		t.Fatalf("expected non-empty reply")
 	}
 	if len(fakeLLM.calls) != 2 {
-		t.Fatalf("expected two llm calls (plan + reply), got %d", len(fakeLLM.calls))
+		t.Fatalf("expected two llm calls (tool + final reply), got %d", len(fakeLLM.calls))
 	}
 
 	_, messages := store.Snapshot()
@@ -793,7 +807,7 @@ func TestHandleUserMessage_UsesTwoPhaseExecutionForRuntimeScheduleQuery(t *testi
 		t.Fatalf("unexpected messages: %+v", messages)
 	}
 	if len(messages[0].ToolCalls) != 1 || messages[0].ToolCalls[0].Name != builtinLinuxBashToolName {
-		t.Fatalf("expected one persisted two-phase tool call, got %+v", messages[0].ToolCalls)
+		t.Fatalf("expected one persisted tool call, got %+v", messages[0].ToolCalls)
 	}
 }
 
@@ -861,7 +875,6 @@ func TestHandleUserMessage_RewritesUnverifiedSuccessClaim(t *testing.T) {
 	store := conversation.NewStore()
 	fakeLLM := &mockLLM{
 		responses: map[string][]string{
-			"chat_action_plan": {`{"actions":[]}`},
 			"chat_reply": {
 				"已成功创建 reminder Skill。",
 				"我还没完成创建；需要先执行写入并回读校验。",
@@ -888,32 +901,13 @@ func TestHandleUserMessage_RewritesUnverifiedSuccessClaim(t *testing.T) {
 	if strings.Contains(reply, "已成功创建") {
 		t.Fatalf("reply should be corrected, got %q", reply)
 	}
-	if len(fakeLLM.calls) != 3 {
-		t.Fatalf("expected 3 llm calls (plan + reply + rewrite), got %d", len(fakeLLM.calls))
+	if len(fakeLLM.calls) != 2 {
+		t.Fatalf("expected 2 llm calls (reply + rewrite), got %d", len(fakeLLM.calls))
 	}
-}
-
-func TestShouldUseTwoPhaseExecution(t *testing.T) {
-	if !shouldUseTwoPhaseExecution("每天8点55提醒我打上班卡，5点32提醒我打下班卡") {
-		t.Fatalf("expected reminder request to enable two-phase execution")
-	}
-	if shouldUseTwoPhaseExecution("今天天气怎么样") {
-		t.Fatalf("weather query should not enable two-phase execution")
-	}
-}
-
-func TestValidateTwoPhaseCommand(t *testing.T) {
-	if _, err := validateTwoPhaseCommand("curl -s http://127.0.0.1:8080/api/schedules"); err != nil {
-		t.Fatalf("expected read command valid, got %v", err)
-	}
-	if _, err := validateTwoPhaseCommand("curl -s -X POST http://127.0.0.1:8080/settings/skills/save"); err != nil {
-		t.Fatalf("expected write command valid, got %v", err)
-	}
-	if _, err := validateTwoPhaseCommand("curl -s http://example.com"); err == nil {
-		t.Fatalf("expected invalid host rejected")
-	}
-	if _, err := validateTwoPhaseCommand("curl -s -X POST http://127.0.0.1:8080/api/unknown"); err == nil {
-		t.Fatalf("expected unknown path rejected")
+	for _, call := range fakeLLM.calls {
+		if call.Purpose == "chat_action_plan" {
+			t.Fatalf("should not call two-phase action planning in normal flow")
+		}
 	}
 }
 
