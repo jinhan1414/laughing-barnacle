@@ -127,6 +127,85 @@ func TestBuiltinConfigMaintainersPreferAutonomousExecution(t *testing.T) {
 	}
 }
 
+func TestBuiltinConfigMaintainersUseDeterministicCommandContracts(t *testing.T) {
+	findPrompt := func(id string) string {
+		for _, builtin := range builtinSkills {
+			if strings.TrimSpace(builtin.ID) == id {
+				return strings.TrimSpace(builtin.Prompt)
+			}
+		}
+		return ""
+	}
+
+	mcpPrompt := findPrompt("mcp-config-maintainer")
+	if mcpPrompt == "" {
+		t.Fatalf("expected builtin skill mcp-config-maintainer")
+	}
+	if !strings.Contains(mcpPrompt, "命令预算") {
+		t.Fatalf("mcp-config-maintainer should define command budget")
+	}
+	if !strings.Contains(mcpPrompt, "--data-urlencode") {
+		t.Fatalf("mcp-config-maintainer should require form payload commands")
+	}
+	if strings.Contains(mcpPrompt, "&&") {
+		t.Fatalf("mcp-config-maintainer should avoid chained shell tokens")
+	}
+
+	skillsPrompt := findPrompt("skills-config-maintainer")
+	if skillsPrompt == "" {
+		t.Fatalf("expected builtin skill skills-config-maintainer")
+	}
+	if !strings.Contains(skillsPrompt, "命令预算") {
+		t.Fatalf("skills-config-maintainer should define command budget")
+	}
+	if !strings.Contains(skillsPrompt, "--data-urlencode") {
+		t.Fatalf("skills-config-maintainer should require form payload commands")
+	}
+	if strings.Contains(skillsPrompt, "&&") {
+		t.Fatalf("skills-config-maintainer should avoid chained shell tokens")
+	}
+
+	schedulePrompt := findPrompt("schedule-config-maintainer")
+	if schedulePrompt == "" {
+		t.Fatalf("expected builtin skill schedule-config-maintainer")
+	}
+	if !strings.Contains(schedulePrompt, "命令预算") {
+		t.Fatalf("schedule-config-maintainer should define command budget")
+	}
+	if !strings.Contains(schedulePrompt, "action 必须是 skill:<skill_id>") {
+		t.Fatalf("schedule-config-maintainer should pin action format")
+	}
+	if !strings.Contains(schedulePrompt, "普通连字符") {
+		t.Fatalf("schedule-config-maintainer should prevent non-ascii hyphen in skill_id")
+	}
+	if !strings.Contains(schedulePrompt, "--data-urlencode") {
+		t.Fatalf("schedule-config-maintainer should require form payload commands")
+	}
+	if strings.Contains(schedulePrompt, "&&") {
+		t.Fatalf("schedule-config-maintainer should avoid chained shell tokens")
+	}
+}
+
+func TestBuiltinProjectMemoryMaintainerDefinesJSONWriteCommand(t *testing.T) {
+	for _, builtin := range builtinSkills {
+		if strings.TrimSpace(builtin.ID) != "project-memory-maintainer" {
+			continue
+		}
+		prompt := strings.TrimSpace(builtin.Prompt)
+		if !strings.Contains(prompt, "Content-Type: application/json") {
+			t.Fatalf("project-memory-maintainer should require JSON content type")
+		}
+		if !strings.Contains(prompt, "-d '{\"mode\":\"merge\"") {
+			t.Fatalf("project-memory-maintainer should include deterministic upsert body template")
+		}
+		if !strings.Contains(prompt, "命令预算") {
+			t.Fatalf("project-memory-maintainer should define command budget")
+		}
+		return
+	}
+	t.Fatalf("expected builtin project-memory-maintainer skill")
+}
+
 func TestStoreUpsertAndReload(t *testing.T) {
 	root := t.TempDir()
 	store, err := NewStore(filepath.Join(root, "skills"), filepath.Join(root, "skills_state.json"))
