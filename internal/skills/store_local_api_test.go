@@ -36,4 +36,7 @@ func TestSetLocalAPIBaseURL_RewritesBuiltinSkillPrompt(t *testing.T) {
 	if !strings.Contains(prompt, "禁止反斜杠转义引号") {
 		t.Fatalf("expected windows quote escape constraint in schedule skill prompt, got %q", prompt)
 	}
+	if !strings.Contains(prompt, "仅接受 id,name,description,action=skill:<skill_id>,cron_expr,enabled=on") {
+		t.Fatalf("expected required schedule fields in schedule skill prompt, got %q", prompt)
+	}
 }

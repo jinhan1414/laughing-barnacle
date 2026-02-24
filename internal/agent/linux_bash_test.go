@@ -19,3 +19,12 @@ func TestShouldHintCmdCurlQuoteFix(t *testing.T) {
 		t.Fatalf("unexpected hint for success case")
 	}
 }
+
+func TestShouldHintScheduleSaveReadback(t *testing.T) {
+	if !shouldHintScheduleSaveReadback("cmd", 0, "curl -sS -X POST http://127.0.0.1:9080/settings/schedules/save -d \"a=b\"", "") {
+		t.Fatalf("expected readback hint for cmd schedule save with empty stdout")
+	}
+	if shouldHintScheduleSaveReadback("cmd", 0, "curl -sS http://127.0.0.1:9080/api/schedules", "") {
+		t.Fatalf("unexpected readback hint for non-save endpoint")
+	}
+}

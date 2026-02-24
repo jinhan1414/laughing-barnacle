@@ -132,6 +132,14 @@ func runLinuxBash(ctx context.Context, req linuxBashRequest) (string, error) {
 	if shouldHintCmdCurlQuoteFix(shellName, exitCode, req.Command, stderrText) {
 		stderrText = "curl 在 Windows cmd 下可能因引号转义失败；重试请使用 curl -sS \"http://127.0.0.1:9080/...\"（不要写 \\\"）。"
 	}
+	if shouldHintScheduleSaveReadback(shellName, exitCode, req.Command, stdoutText) {
+		hint := "注意：/settings/schedules/save 在该环境通常返回重定向空响应；必须立即回读 GET /api/schedules 以确认是否真正写入成功。"
+		if strings.TrimSpace(stderrText) == "" {
+			stderrText = hint
+		} else {
+			stderrText += "\n" + hint
+		}
+	}
 
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("exit_code: %d\n", exitCode))
@@ -186,6 +194,20 @@ func shouldHintCmdCurlQuoteFix(shellName string, exitCode int, command, stderr s
 		return false
 	}
 	return strings.Contains(strings.ToLower(command), "curl")
+}
+
+func shouldHintScheduleSaveReadback(shellName string, exitCode int, command, stdout string) bool {
+	if shellName != "cmd" || exitCode != 0 {
+		return false
+	}
+	if strings.TrimSpace(stdout) != "" {
+		return false
+	}
+	command = strings.ToLower(strings.TrimSpace(command))
+	if !strings.Contains(command, "curl") {
+		return false
+	}
+	return strings.Contains(command, "/settings/schedules/save")
 }
 
 func preferredShellName() string {

@@ -243,4 +243,7 @@ func TestHandleUserMessage_IncludesToolRuntimeConstraintsPrompt(t *testing.T) {
 	if !strings.Contains(found, "禁止写反斜杠转义引号") {
 		t.Fatalf("expected windows quote escape constraint, got %q", found)
 	}
+	if !strings.Contains(found, "id,name,description,action=skill:<skill_id>,cron_expr,enabled=on") {
+		t.Fatalf("expected required schedule save fields constraint, got %q", found)
+	}
 }
