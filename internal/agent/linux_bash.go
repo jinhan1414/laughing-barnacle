@@ -129,6 +129,9 @@ func runLinuxBash(ctx context.Context, req linuxBashRequest) (string, error) {
 
 	stdoutText := trimRunes(stdout.String(), maxBashStdoutRunes)
 	stderrText := trimRunes(stderr.String(), maxBashStderrRunes)
+	if shouldHintCmdCurlQuoteFix(shellName, exitCode, req.Command, stderrText) {
+		stderrText = "curl 在 Windows cmd 下可能因引号转义失败；重试请使用 curl -sS \"http://127.0.0.1:9080/...\"（不要写 \\\"）。"
+	}
 
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("exit_code: %d\n", exitCode))
@@ -148,7 +151,9 @@ func runLinuxBash(ctx context.Context, req linuxBashRequest) (string, error) {
 }
 
 func buildShellCommand(ctx context.Context, command string) (*exec.Cmd, string, error) {
-	switch preferredShellName() {
+	shellName := preferredShellName()
+	command = normalizeCommandForShell(shellName, command)
+	switch shellName {
 	case "bash":
 		bashPath, _ := exec.LookPath("bash")
 		return exec.CommandContext(ctx, bashPath, "-lc", command), "bash", nil
@@ -161,6 +166,26 @@ func buildShellCommand(ctx context.Context, command string) (*exec.Cmd, string, 
 	default:
 		return nil, "", fmt.Errorf("run shell command: no bash/sh available in current environment")
 	}
+}
+
+func normalizeCommandForShell(shellName, command string) string {
+	command = strings.TrimSpace(command)
+	if shellName != "cmd" {
+		return command
+	}
+	command = strings.ReplaceAll(command, `\"`, `"`)
+	command = strings.ReplaceAll(command, `\'`, `'`)
+	return command
+}
+
+func shouldHintCmdCurlQuoteFix(shellName string, exitCode int, command, stderr string) bool {
+	if shellName != "cmd" || exitCode != 3 {
+		return false
+	}
+	if strings.TrimSpace(stderr) != "" {
+		return false
+	}
+	return strings.Contains(strings.ToLower(command), "curl")
 }
 
 func preferredShellName() string {

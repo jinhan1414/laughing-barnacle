@@ -33,4 +33,7 @@ func TestSetLocalAPIBaseURL_RewritesBuiltinSkillPrompt(t *testing.T) {
 	if !strings.Contains(prompt, "禁止 /api/schedules/list") {
 		t.Fatalf("expected schedules endpoint constraint in schedule skill prompt, got %q", prompt)
 	}
+	if !strings.Contains(prompt, "禁止反斜杠转义引号") {
+		t.Fatalf("expected windows quote escape constraint in schedule skill prompt, got %q", prompt)
+	}
 }

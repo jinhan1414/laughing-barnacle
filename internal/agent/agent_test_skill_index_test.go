@@ -240,4 +240,7 @@ func TestHandleUserMessage_IncludesToolRuntimeConstraintsPrompt(t *testing.T) {
 	if !strings.Contains(found, "/api/schedules/list") {
 		t.Fatalf("expected schedules list endpoint constraint, got %q", found)
 	}
+	if !strings.Contains(found, "禁止写反斜杠转义引号") {
+		t.Fatalf("expected windows quote escape constraint, got %q", found)
+	}
 }
