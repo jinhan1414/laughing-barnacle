@@ -129,6 +129,13 @@ func runLinuxBash(ctx context.Context, req linuxBashRequest) (string, error) {
 
 	stdoutText := trimRunes(stdout.String(), maxBashStdoutRunes)
 	stderrText := trimRunes(stderr.String(), maxBashStderrRunes)
+	if redirectErr := extractRedirectErrorFromCurlHeaders(stdoutText); strings.TrimSpace(redirectErr) != "" {
+		if strings.TrimSpace(stderrText) == "" {
+			stderrText = redirectErr
+		} else {
+			stderrText += "\n" + redirectErr
+		}
+	}
 	if shouldHintCmdCurlQuoteFix(shellName, exitCode, req.Command, stderrText) {
 		stderrText = "curl 在 Windows cmd 下可能因引号转义失败；重试请使用 curl -sS \"http://127.0.0.1:9080/...\"（不要写 \\\"）。"
 	}
@@ -183,6 +190,21 @@ func normalizeCommandForShell(shellName, command string) string {
 	}
 	command = strings.ReplaceAll(command, `\"`, `"`)
 	command = strings.ReplaceAll(command, `\'`, `'`)
+	command = appendCurlHeadersForSettings(command)
+	return command
+}
+
+func appendCurlHeadersForSettings(command string) string {
+	lower := strings.ToLower(command)
+	if !strings.Contains(lower, "curl") || !strings.Contains(lower, "/settings/") {
+		return command
+	}
+	if strings.Contains(lower, "--dump-header") || strings.Contains(lower, " -d -") {
+		return command
+	}
+	if strings.Contains(lower, "--data-urlencode") || strings.Contains(lower, "--data ") || strings.Contains(lower, "-d ") {
+		return command + " -D -"
+	}
 	return command
 }
 

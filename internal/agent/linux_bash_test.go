@@ -28,3 +28,20 @@ func TestShouldHintScheduleSaveReadback(t *testing.T) {
 		t.Fatalf("unexpected readback hint for non-save endpoint")
 	}
 }
+
+func TestNormalizeCommandForShell_CmdAppendsHeadersForSettingsCurl(t *testing.T) {
+	raw := `curl -sS -X POST http://127.0.0.1:9080/settings/schedules/save --data-urlencode "id=punch-in"`
+	got := normalizeCommandForShell("cmd", raw)
+	if got != raw+" -D -" {
+		t.Fatalf("expected -D - to be appended for settings curl, got %q", got)
+	}
+}
+
+func TestExtractRedirectErrorFromCurlHeaders(t *testing.T) {
+	headers := "HTTP/1.1 302 Found\r\nLocation: /settings?section=schedules&error=task+id+is+required\r\n\r\n"
+	got := extractRedirectErrorFromCurlHeaders(headers)
+	want := "settings 接口返回错误：task id is required"
+	if got != want {
+		t.Fatalf("extractRedirectErrorFromCurlHeaders mismatch: got %q, want %q", got, want)
+	}
+}

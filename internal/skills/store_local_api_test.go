@@ -39,4 +39,7 @@ func TestSetLocalAPIBaseURL_RewritesBuiltinSkillPrompt(t *testing.T) {
 	if !strings.Contains(prompt, "仅接受 id,name,description,action=skill:<skill_id>,cron_expr,enabled=on") {
 		t.Fatalf("expected required schedule fields in schedule skill prompt, got %q", prompt)
 	}
+	if !strings.Contains(prompt, "--data-urlencode \"key=value\"") {
+		t.Fatalf("expected data-urlencode quoting constraint in schedule skill prompt, got %q", prompt)
+	}
 }

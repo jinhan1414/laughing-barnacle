@@ -246,4 +246,7 @@ func TestHandleUserMessage_IncludesToolRuntimeConstraintsPrompt(t *testing.T) {
 	if !strings.Contains(found, "id,name,description,action=skill:<skill_id>,cron_expr,enabled=on") {
 		t.Fatalf("expected required schedule save fields constraint, got %q", found)
 	}
+	if !strings.Contains(found, "--data-urlencode \"key=value\"") {
+		t.Fatalf("expected data-urlencode quoting constraint, got %q", found)
+	}
 }
