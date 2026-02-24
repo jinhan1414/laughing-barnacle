@@ -56,3 +56,16 @@ func TestLoad_DefaultMaxToolCallRoundsIsTen(t *testing.T) {
 		t.Fatalf("expected default MaxToolCallRounds=10, got %d", cfg.MaxToolCallRounds)
 	}
 }
+
+func TestLoad_LocalAPIBaseURLFollowsAPPAddr(t *testing.T) {
+	t.Setenv("CERBER_API_KEY", "test-key")
+	t.Setenv("APP_ADDR", ":9080")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load error: %v", err)
+	}
+	if cfg.LocalAPIBaseURL != "http://127.0.0.1:9080" {
+		t.Fatalf("expected LocalAPIBaseURL to follow APP_ADDR, got %q", cfg.LocalAPIBaseURL)
+	}
+}

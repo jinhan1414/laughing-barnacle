@@ -76,6 +76,7 @@ func (s *Store) ensureBuiltinSkillsLocked() error {
 
 	changed := false
 	for _, builtin := range builtinSkills {
+		builtin = s.withLocalAPIBaseURLLocked(builtin)
 		id := strings.TrimSpace(builtin.ID)
 		if id == "" {
 			continue

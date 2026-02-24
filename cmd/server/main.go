@@ -51,6 +51,9 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	if err := skillStore.SetLocalAPIBaseURL(cfg.LocalAPIBaseURL); err != nil {
+		return err
+	}
 	mcpStore, err := mcp.NewStore(cfg.SettingsFile)
 	if err != nil {
 		return err
@@ -76,6 +79,7 @@ func run() error {
 
 	agentSvc := agent.New(agent.Config{
 		Model:                      cfg.CerberModel,
+		LocalAPIBaseURL:            cfg.LocalAPIBaseURL,
 		Temperature:                cfg.Temperature,
 		MaxRecentMessages:          cfg.MaxRecentMessages,
 		CompressionTriggerMessages: cfg.CompressionTriggerMessages,

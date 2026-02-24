@@ -11,6 +11,7 @@ import (
 func (a *Agent) generateReply(ctx context.Context, messages []conversation.Message) (string, []conversation.ToolCall, *conversation.TokenUsage, error) {
 	summary, _ := a.store.Snapshot()
 	systemPrompt, _ := a.resolvePromptsLocked()
+	localAPIBaseURL := a.localAPIBaseURL()
 
 	requestMessages := make([]llm.Message, 0, 2+len(messages))
 	requestMessages = append(requestMessages, llm.Message{
@@ -26,7 +27,7 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 		if len(allSkillIndex) > 0 {
 			var b strings.Builder
 			b.WriteString(fmt.Sprintf("已启用技能索引（渐进式披露）：共 %d 条。\n", len(allSkillIndex)))
-			b.WriteString("如需技能详情，仅在必要时通过 linux__bash 执行：curl -s \"http://127.0.0.1:8080/api/skills/read?id=<skill_id>\"。\n")
+			b.WriteString(fmt.Sprintf("如需技能详情，仅在必要时通过 linux__bash 执行：curl -s \"%s/api/skills/read?id=<skill_id>\"。\n", localAPIBaseURL))
 			b.WriteString("Skill 调用规则：每轮先按用户请求语义判断是否命中某个 skill_id；一旦命中，无需用户点名，先读取该 skill 详情再执行。\n")
 			b.WriteString("为节省上下文，单轮默认只读取 1 个最相关技能；若仍不足，再按需补充读取。\n")
 			b.WriteString("若未命中或技能不适用，再按普通问答流程回复。\n")
@@ -55,8 +56,8 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 			var b strings.Builder
 			b.WriteString(fmt.Sprintf("MemoryFS 记忆索引（渐进式披露）：共 %d 条。\n", len(memoryIndex)))
 			b.WriteString("读取规则：先读索引，再按需读取文件摘要和分节，禁止一次性拉取全文。\n")
-			b.WriteString("按需读取：curl -s \"http://127.0.0.1:8080/api/memory/read?path=<path>\"。\n")
-			b.WriteString("按需分节：curl -s \"http://127.0.0.1:8080/api/memory/section?path=<path>&section_id=<id>\"。\n")
+			b.WriteString(fmt.Sprintf("按需读取：curl -s \"%s/api/memory/read?path=<path>\"。\n", localAPIBaseURL))
+			b.WriteString(fmt.Sprintf("按需分节：curl -s \"%s/api/memory/section?path=<path>&section_id=<id>\"。\n", localAPIBaseURL))
 			for i, line := range memoryIndex {
 				line = trimRunes(strings.TrimSpace(line), maxSingleSkillPromptRunes)
 				if line == "" {

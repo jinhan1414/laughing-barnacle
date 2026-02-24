@@ -12,6 +12,7 @@ import (
 
 type Config struct {
 	Model                      string
+	LocalAPIBaseURL            string
 	Temperature                float64
 	MaxRecentMessages          int
 	CompressionTriggerMessages int

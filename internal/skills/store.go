@@ -6,6 +6,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"laughing-barnacle/internal/localapi"
 )
 
 const (
@@ -189,6 +191,7 @@ type stateFile struct {
 type Store struct {
 	dir       string
 	statePath string
+	localAPI  string
 
 	mu    sync.RWMutex
 	state stateFile
@@ -204,7 +207,11 @@ func NewStore(dir, statePath string) (*Store, error) {
 		return nil, fmt.Errorf("skills state file path is required")
 	}
 
-	s := &Store{dir: dir, statePath: statePath}
+	s := &Store{
+		dir:       dir,
+		statePath: statePath,
+		localAPI:  localapi.DefaultBaseURL,
+	}
 	if err := s.load(); err != nil {
 		return nil, err
 	}

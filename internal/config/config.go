@@ -8,10 +8,12 @@ import (
 	"time"
 
 	"laughing-barnacle/internal/agentprompt"
+	"laughing-barnacle/internal/localapi"
 )
 
 type Config struct {
 	Addr                        string
+	LocalAPIBaseURL             string
 	SettingsFile                string
 	SkillsDir                   string
 	SkillsStateFile             string
@@ -92,6 +94,7 @@ func Load() (Config, error) {
 		CompressionSystemPrompt: envOrDefault("AGENT_COMPRESSION_SYSTEM_PROMPT",
 			agentprompt.DefaultCompressionSystemPrompt),
 	}
+	cfg.LocalAPIBaseURL = localapi.ResolveBaseURL(cfg.Addr)
 
 	if cfg.CerberAPIKey == "" {
 		return Config{}, fmt.Errorf("CERBER_API_KEY is required")

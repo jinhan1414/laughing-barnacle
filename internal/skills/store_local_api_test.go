@@ -1,0 +1,30 @@
+package skills
+
+import (
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestSetLocalAPIBaseURL_RewritesBuiltinSkillPrompt(t *testing.T) {
+	root := t.TempDir()
+	store, err := NewStore(filepath.Join(root, "skills"), filepath.Join(root, "skills_state.json"))
+	if err != nil {
+		t.Fatalf("NewStore error: %v", err)
+	}
+
+	if err := store.SetLocalAPIBaseURL(":9080"); err != nil {
+		t.Fatalf("SetLocalAPIBaseURL error: %v", err)
+	}
+
+	prompt, ok := store.ReadEnabledSkillPrompt("schedule-config-maintainer")
+	if !ok {
+		t.Fatalf("expected builtin skill prompt to be readable")
+	}
+	if !strings.Contains(prompt, "http://127.0.0.1:9080/api/skills") {
+		t.Fatalf("expected prompt to use :9080 local api base, got %q", prompt)
+	}
+	if strings.Contains(prompt, legacyLocalAPIBaseURL) {
+		t.Fatalf("expected legacy base url to be replaced, got %q", prompt)
+	}
+}
