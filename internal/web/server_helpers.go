@@ -169,6 +169,23 @@ func findScheduledTaskByID(tasks []scheduler.Task, id string) (scheduler.Task, b
 	return scheduler.Task{}, false
 }
 
+func (s *Server) isBuiltinSkill(skillID string) bool {
+	if s.skillStore == nil {
+		return false
+	}
+	skillID = strings.TrimSpace(skillID)
+	if skillID == "" {
+		return false
+	}
+	for _, skill := range s.skillStore.ListSkills() {
+		if strings.TrimSpace(skill.ID) != skillID {
+			continue
+		}
+		return strings.EqualFold(strings.TrimSpace(skill.Source), "builtin")
+	}
+	return false
+}
+
 func (s *Server) validateScheduleActionSkill(action string) error {
 	if s.skillStore == nil {
 		return nil

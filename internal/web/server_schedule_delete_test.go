@@ -188,3 +188,49 @@ func TestHandleSettingsScheduleDelete_KeepSharedSkill(t *testing.T) {
 		t.Fatalf("expected shared-skill kept because still referenced")
 	}
 }
+
+func TestHandleSettingsScheduleDelete_KeepBuiltinSkill(t *testing.T) {
+	root := t.TempDir()
+	store, err := mcp.NewStore(filepath.Join(root, "settings.json"))
+	if err != nil {
+		t.Fatalf("NewStore error: %v", err)
+	}
+	skillStore, err := skills.NewStore(filepath.Join(root, "skills"), filepath.Join(root, "skills_state.json"))
+	if err != nil {
+		t.Fatalf("New skill store error: %v", err)
+	}
+	if err := store.UpsertScheduledTask(scheduler.Task{
+		ID:       "morning-plan-task",
+		Name:     "morning-plan-task",
+		Action:   "skill:morning-planning",
+		CronExpr: "30 8 * * *",
+		Enabled:  true,
+	}); err != nil {
+		t.Fatalf("UpsertScheduledTask error: %v", err)
+	}
+
+	s := &Server{
+		mcpStore:   store,
+		skillStore: skillStore,
+	}
+	form := url.Values{}
+	form.Set("id", "morning-plan-task")
+	req := httptest.NewRequest(http.MethodPost, "/settings/schedules/delete", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	s.handleSettingsScheduleDelete(rec, req)
+
+	if rec.Code != http.StatusFound {
+		t.Fatalf("expected 302, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	found := false
+	for _, skill := range skillStore.ListSkills() {
+		if skill.ID == "morning-planning" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected builtin morning-planning skill to be kept")
+	}
+}

@@ -86,6 +86,8 @@ func (s *Server) handleSettingsScheduleDelete(w http.ResponseWriter, r *http.Req
 			}
 			if referencedByOthers {
 				success += fmt.Sprintf("；Skill %s 仍被其他任务引用，未删除", skillID)
+			} else if s.isBuiltinSkill(skillID) {
+				success += fmt.Sprintf("；Skill %s 为内置技能，保留", skillID)
 			} else if err := s.skillStore.DeleteSkill(skillID); err != nil {
 				s.redirectSettings(
 					w,
