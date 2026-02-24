@@ -58,6 +58,12 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	if err := mcpStore.UpsertAgentPromptConfig(mcp.AgentPromptConfig{
+		SystemPrompt:            cfg.AgentSystemPrompt,
+		CompressionSystemPrompt: cfg.CompressionSystemPrompt,
+	}); err != nil {
+		return err
+	}
 	mcpHTTPClient := mcp.NewHTTPClient(cfg.MCPRequestTimeout, cfg.MCPProtocolVersion)
 	mcpToolProvider := mcp.NewToolProvider(mcpStore, mcpHTTPClient, cfg.MCPToolCacheTTL)
 
