@@ -1,0 +1,274 @@
+package web
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"strings"
+	"time"
+
+	"laughing-barnacle/internal/mcp"
+	"laughing-barnacle/internal/routine"
+	"laughing-barnacle/internal/scheduler"
+)
+
+func (s *Server) handleSettingsScheduleSave(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		s.redirectSettings(w, r, "schedules", "", "请求参数解析失败")
+		return
+	}
+
+	task := scheduler.Task{
+		ID:          strings.TrimSpace(r.FormValue("id")),
+		Name:        strings.TrimSpace(r.FormValue("name")),
+		Description: strings.TrimSpace(r.FormValue("description")),
+		Action:      strings.TrimSpace(r.FormValue("action")),
+		CronExpr:    strings.TrimSpace(r.FormValue("cron_expr")),
+		Enabled:     r.FormValue("enabled") == "on",
+	}
+	if err := s.validateScheduleActionSkill(task.Action); err != nil {
+		s.redirectSettings(w, r, "schedules", "", err.Error())
+		return
+	}
+	if err := s.mcpStore.UpsertScheduledTask(task); err != nil {
+		s.redirectSettings(w, r, "schedules", "", err.Error())
+		return
+	}
+	if s.scheduler != nil {
+		if err := s.scheduler.Reload(); err != nil {
+			s.redirectSettings(w, r, "schedules", "", "调度器重载失败："+err.Error())
+			return
+		}
+	}
+	s.redirectSettings(w, r, "schedules", "定时任务已保存", "")
+}
+
+func (s *Server) handleSettingsScheduleDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		s.redirectSettings(w, r, "schedules", "", "请求参数解析失败")
+		return
+	}
+	id := strings.TrimSpace(r.FormValue("id"))
+	allTasks := s.mcpStore.ListScheduledTasks()
+	task, taskFound := findScheduledTaskByID(allTasks, id)
+	if err := s.mcpStore.DeleteScheduledTask(id); err != nil {
+		s.redirectSettings(w, r, "schedules", "", err.Error())
+		return
+	}
+	if s.scheduler != nil {
+		if err := s.scheduler.Reload(); err != nil {
+			s.redirectSettings(w, r, "schedules", "", "调度器重载失败："+err.Error())
+			return
+		}
+	}
+
+	success := fmt.Sprintf("定时任务 %s 已删除", id)
+	if s.skillStore != nil && taskFound {
+		if skillID, ok := routine.SkillIDFromAction(task.Action); ok {
+			referencedByOthers := false
+			for _, otherTask := range allTasks {
+				if strings.TrimSpace(otherTask.ID) == strings.TrimSpace(task.ID) {
+					continue
+				}
+				otherSkillID, skillAction := routine.SkillIDFromAction(otherTask.Action)
+				if skillAction && otherSkillID == skillID {
+					referencedByOthers = true
+					break
+				}
+			}
+			if referencedByOthers {
+				success += fmt.Sprintf("；Skill %s 仍被其他任务引用，未删除", skillID)
+			} else if err := s.skillStore.DeleteSkill(skillID); err != nil {
+				s.redirectSettings(
+					w,
+					r,
+					"schedules",
+					success,
+					fmt.Sprintf("删除关联 Skill %s 失败: %v", skillID, err),
+				)
+				return
+			} else {
+				success += fmt.Sprintf("；关联 Skill %s 已删除", skillID)
+			}
+		}
+	}
+	s.redirectSettings(w, r, "schedules", success, "")
+}
+
+func (s *Server) handleSettingsScheduleToggle(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		s.redirectSettings(w, r, "schedules", "", "请求参数解析失败")
+		return
+	}
+	id := strings.TrimSpace(r.FormValue("id"))
+	enable := r.FormValue("enabled") == "true"
+	if err := s.mcpStore.SetScheduledTaskEnabled(id, enable); err != nil {
+		s.redirectSettings(w, r, "schedules", "", err.Error())
+		return
+	}
+	if s.scheduler != nil {
+		if err := s.scheduler.Reload(); err != nil {
+			s.redirectSettings(w, r, "schedules", "", "调度器重载失败："+err.Error())
+			return
+		}
+	}
+	if enable {
+		s.redirectSettings(w, r, "schedules", fmt.Sprintf("定时任务 %s 已启用", id), "")
+		return
+	}
+	s.redirectSettings(w, r, "schedules", fmt.Sprintf("定时任务 %s 已禁用", id), "")
+}
+
+func (s *Server) handleSettingsScheduleRun(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		s.redirectSettings(w, r, "schedules", "", "请求参数解析失败")
+		return
+	}
+	taskID := strings.TrimSpace(r.FormValue("id"))
+	if taskID == "" {
+		s.redirectSettings(w, r, "schedules", "", "任务 id 不能为空")
+		return
+	}
+	task, ok := findScheduledTaskByID(s.mcpStore.ListScheduledTasks(), taskID)
+	if !ok {
+		s.redirectSettings(w, r, "schedules", "", fmt.Sprintf("定时任务 %s 不存在", taskID))
+		return
+	}
+	if err := s.validateScheduleActionSkill(task.Action); err != nil {
+		runAt := time.Now().Truncate(time.Second)
+		_ = s.mcpStore.MarkScheduledTaskRun(task.ID, runAt, "error", err.Error())
+		s.redirectSettings(w, r, "schedules", "", "立即执行失败："+err.Error())
+		return
+	}
+	if s.scheduler != nil {
+		if err := s.scheduler.RunNow(taskID); err != nil {
+			s.redirectSettings(w, r, "schedules", "", "立即执行失败："+err.Error())
+			return
+		}
+		s.redirectSettings(w, r, "schedules", fmt.Sprintf("定时任务 %s 已立即执行", taskID), "")
+		return
+	}
+	if s.agent == nil {
+		s.redirectSettings(w, r, "schedules", "", "agent 未初始化")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
+	defer cancel()
+
+	runAt := time.Now().Truncate(time.Second)
+	if err := s.agent.RunScheduledTask(ctx, task.Action); err != nil {
+		_ = s.mcpStore.MarkScheduledTaskRun(task.ID, runAt, "error", err.Error())
+		s.redirectSettings(w, r, "schedules", "", "立即执行失败："+err.Error())
+		return
+	}
+	if err := s.mcpStore.MarkScheduledTaskRun(task.ID, runAt, "success", "manual_run"); err != nil {
+		s.redirectSettings(w, r, "schedules", "", "状态写回失败："+err.Error())
+		return
+	}
+	s.redirectSettings(w, r, "schedules", fmt.Sprintf("定时任务 %s 已立即执行", taskID), "")
+}
+
+func (s *Server) handleSettingsMemoryInboxReview(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if s.memoryStore == nil {
+		s.redirectSettings(w, r, "memory", "", "memory store unavailable")
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		s.redirectSettings(w, r, "memory", "", "请求参数解析失败")
+		return
+	}
+	path := strings.TrimSpace(r.FormValue("path"))
+	action := strings.TrimSpace(r.FormValue("action"))
+	target, err := s.memoryStore.ReviewInboxCandidate(path, action)
+	if err != nil {
+		s.redirectSettings(w, r, "memory", "", err.Error())
+		return
+	}
+	if strings.EqualFold(action, "reject") {
+		s.redirectSettings(w, r, "memory", "候选记忆已拒绝并移入回收区："+target, "")
+		return
+	}
+	s.redirectSettings(w, r, "memory", "候选记忆已确认并写入："+target, "")
+}
+
+func (s *Server) handleSettingsMemoryMaintenanceRun(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	_ = r.ParseForm()
+	redirectSection := "memory"
+	if candidate := strings.TrimSpace(r.FormValue("redirect_section")); candidate == "schedules" || candidate == "memory" {
+		redirectSection = candidate
+	}
+	if s.memoryStore == nil {
+		s.redirectSettings(w, r, redirectSection, "", "memory store unavailable")
+		return
+	}
+	report, err := s.memoryStore.RunMaintenance(time.Now().UTC(), 0, 0)
+	if err != nil {
+		s.redirectSettings(w, r, redirectSection, "", "维护任务执行失败："+err.Error())
+		return
+	}
+	s.redirectSettings(
+		w,
+		r,
+		redirectSection,
+		fmt.Sprintf("维护任务完成：retried=%d, cleaned=%d, repaired=%d", report.RetriedSegments, report.RemovedTrashNodes, report.RepairedChildren),
+		"",
+	)
+}
+
+func (s *Server) handleSettingsLLMPromptsSave(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		s.redirectSettings(w, r, "llm", "", "请求参数解析失败")
+		return
+	}
+
+	cfg := mcp.AgentPromptConfig{
+		SystemPrompt:            strings.TrimSpace(r.FormValue("system_prompt")),
+		CompressionSystemPrompt: strings.TrimSpace(r.FormValue("compression_system_prompt")),
+	}
+	if err := s.mcpStore.UpsertAgentPromptConfig(cfg); err != nil {
+		s.redirectSettings(w, r, "llm", "", err.Error())
+		return
+	}
+	s.redirectSettings(w, r, "llm", "系统提示词已更新", "")
+}
+
+func (s *Server) handleSettingsLLMPromptsReset(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if err := s.mcpStore.ResetAgentPromptConfig(); err != nil {
+		s.redirectSettings(w, r, "llm", "", err.Error())
+		return
+	}
+	s.redirectSettings(w, r, "llm", "已重置为内置默认提示词", "")
+}
