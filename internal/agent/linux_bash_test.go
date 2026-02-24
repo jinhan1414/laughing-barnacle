@@ -35,7 +35,7 @@ func TestShouldHintScheduleSaveReadback(t *testing.T) {
 func TestNormalizeCommandForShell_CmdAppendsHeadersForSettingsCurl(t *testing.T) {
 	raw := `curl -sS -X POST http://127.0.0.1:9080/settings/schedules/save --data-urlencode "id=punch-in"`
 	got := normalizeCommandForShell("cmd", raw)
-	if got != raw+" -D -" {
+	if !strings.Contains(got, " -D -") {
 		t.Fatalf("expected -D - to be appended for settings curl, got %q", got)
 	}
 }

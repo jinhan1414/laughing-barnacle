@@ -252,4 +252,7 @@ func TestHandleUserMessage_IncludesToolRuntimeConstraintsPrompt(t *testing.T) {
 	if !strings.Contains(found, "POST /settings/skills/save（禁止 /api/skills/save）") {
 		t.Fatalf("expected skills save endpoint constraint, got %q", found)
 	}
+	if !strings.Contains(found, "优先使用单条 -d \"k=v&k2=v2\"") {
+		t.Fatalf("expected cmd save -d constraint, got %q", found)
+	}
 }

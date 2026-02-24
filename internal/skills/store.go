@@ -115,6 +115,7 @@ var builtinSkills = []Skill{
 				"硬性约束：调用 linux__bash 时，工具参数键必须是 command（不是 cmd）。\n" +
 				"硬性约束：Windows cmd 场景下 URL 使用正常双引号，禁止反斜杠转义引号（如 \\\"http://...\\\"）。\n" +
 				"硬性约束：使用 --data-urlencode 时，每个字段必须写成 --data-urlencode \"key=value\"（禁止省略双引号）。\n" +
+				"硬性约束：在 cmd + /settings/*/save 场景，优先使用单条 -d \"k=v&k2=v2\"（值先 URL 编码），避免 -F 与多段参数拆分。\n" +
 				"硬性约束：定时任务列表接口固定为 GET /api/schedules（禁止 /api/schedules/list）。\n" +
 				"步骤 1（必做）：先查技能：curl -sS http://127.0.0.1:8080/api/skills；仅在需要更新已有任务时再查一次 /api/schedules。\n" +
 				"步骤 2（按分支执行一次写入）：\n" +

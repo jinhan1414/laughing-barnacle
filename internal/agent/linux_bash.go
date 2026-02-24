@@ -193,26 +193,13 @@ func buildShellCommand(ctx context.Context, command string) (*exec.Cmd, string, 
 func normalizeCommandForShell(shellName, command string) string {
 	command = strings.TrimSpace(command)
 	command = normalizeLocalAPIEndpointAliases(command)
+	command = rewriteCmdCurlSettingsPost(command)
 	if shellName != "cmd" {
 		return command
 	}
 	command = strings.ReplaceAll(command, `\"`, `"`)
 	command = strings.ReplaceAll(command, `\'`, `'`)
 	command = appendCurlHeadersForSettings(command)
-	return command
-}
-
-func appendCurlHeadersForSettings(command string) string {
-	lower := strings.ToLower(command)
-	if !strings.Contains(lower, "curl") || !strings.Contains(lower, "/settings/") {
-		return command
-	}
-	if strings.Contains(lower, "--dump-header") || strings.Contains(lower, " -d -") {
-		return command
-	}
-	if strings.Contains(lower, "--data-urlencode") || strings.Contains(lower, "--data ") || strings.Contains(lower, "-d ") {
-		return command + " -D -"
-	}
 	return command
 }
 

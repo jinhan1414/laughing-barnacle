@@ -13,6 +13,7 @@ func (a *Agent) buildToolRuntimePrompt() string {
 				"定时任务列表接口固定为 GET /api/schedules（禁止 /api/schedules/list）。\n" +
 				"创建/更新 Skill 固定使用 POST /settings/skills/save（禁止 /api/skills/save）。\n" +
 				"使用 --data-urlencode 时，每个字段都必须写成 --data-urlencode \"key=value\"（禁止省略双引号）。\n" +
+				"在 cmd + /settings/*/save 场景，优先使用单条 -d \"k=v&k2=v2\"（值先 URL 编码），避免 -F 与多段参数拆分。\n" +
 				"保存定时任务时，/settings/schedules/save 必填字段固定为：id,name,description,action=skill:<skill_id>,cron_expr,enabled=on（禁止使用 cron/prompt/action=reminder）。",
 		)
 	case "bash", "sh":
