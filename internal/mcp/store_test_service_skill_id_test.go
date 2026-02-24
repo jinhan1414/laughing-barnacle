@@ -132,7 +132,7 @@ func TestStoreUpsertService_EmptyIDUpdatesExistingByEndpoint(t *testing.T) {
 	if err := store.UpsertService(Service{
 		Name:      "DeepWiki PROD",
 		Endpoint:  "https://mcp.deepwiki.com/mcp",
-		Transport: "streamableHttp",
+		Transport: "streamable_http",
 		Enabled:   false,
 	}); err != nil {
 		t.Fatalf("UpsertService update error: %v", err)

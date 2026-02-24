@@ -7,14 +7,6 @@ import (
 	"strings"
 )
 
-func (a *Agent) RunScheduledHumanRoutine(ctx context.Context) error {
-	now := a.nowFn()
-	if isSleepWindow(now) {
-		return a.RunScheduledTask(ctx, routine.ActionNightReflectionEvolution)
-	}
-	return a.RunScheduledTask(ctx, routine.ActionMorningPlanning)
-}
-
 func (a *Agent) RunScheduledTask(ctx context.Context, action string) error {
 	action = routine.NormalizeAction(strings.TrimSpace(action))
 

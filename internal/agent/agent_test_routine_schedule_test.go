@@ -57,10 +57,10 @@ func TestHandleUserMessage_DoesNotPrependMorningPlanning(t *testing.T) {
 	}
 }
 
-func TestRunScheduledHumanRoutine_NightReviewAppendsOncePerDay(t *testing.T) {
+func TestRunScheduledTask_NightReviewAppendsOncePerDay(t *testing.T) {
 	store := conversation.NewStore()
 	fakeLLM := &mockLLM{responses: map[string][]string{
-		"night_reflection_evolution": {`{"reflection":"生活：收束。工作：复盘。学习：迭代。","system_prompt":"你是用户的 AI 数字分身，名字叫“傻毛”，女性，8 年全栈开发经验。你始终不使用表情符号，并保持务实稳定。","compression_system_prompt":"你是“傻毛”数字分身的上下文压缩器，保留人格事实与进度，输出纯文本。"}`},
+		"scheduled_skill_night_reflection_evolution": {`{"reflection":"生活：收束。工作：复盘。学习：迭代。","system_prompt":"你是用户的 AI 数字分身，名字叫“傻毛”，女性，8 年全栈开发经验。你始终不使用表情符号，并保持务实稳定。","compression_system_prompt":"你是“傻毛”数字分身的上下文压缩器，保留人格事实与进度，输出纯文本。"}`},
 	}}
 
 	agentSvc := New(Config{
@@ -88,8 +88,8 @@ func TestRunScheduledHumanRoutine_NightReviewAppendsOncePerDay(t *testing.T) {
 		},
 	})
 
-	if err := agentSvc.RunScheduledHumanRoutine(context.Background()); err != nil {
-		t.Fatalf("RunScheduledHumanRoutine error: %v", err)
+	if err := agentSvc.RunScheduledTask(context.Background(), routine.ActionNightReflectionEvolution); err != nil {
+		t.Fatalf("RunScheduledTask error: %v", err)
 	}
 	_, messages := store.Snapshot()
 	if len(messages) != 1 {
@@ -102,8 +102,8 @@ func TestRunScheduledHumanRoutine_NightReviewAppendsOncePerDay(t *testing.T) {
 		t.Fatalf("expected one prompt update, got %d", updater.calls)
 	}
 
-	if err := agentSvc.RunScheduledHumanRoutine(context.Background()); err != nil {
-		t.Fatalf("RunScheduledHumanRoutine second call error: %v", err)
+	if err := agentSvc.RunScheduledTask(context.Background(), routine.ActionNightReflectionEvolution); err != nil {
+		t.Fatalf("RunScheduledTask second call error: %v", err)
 	}
 	_, messages = store.Snapshot()
 	if len(messages) != 1 {
@@ -111,10 +111,10 @@ func TestRunScheduledHumanRoutine_NightReviewAppendsOncePerDay(t *testing.T) {
 	}
 }
 
-func TestRunScheduledHumanRoutine_MorningPlanAppendsOncePerDay(t *testing.T) {
+func TestRunScheduledTask_MorningPlanAppendsOncePerDay(t *testing.T) {
 	store := conversation.NewStore()
 	fakeLLM := &mockLLM{responses: map[string][]string{
-		"morning_planning": {"回顾：昨日 2/3 完成。\n今日 Top3：A/B/C。\n能力提升：复盘线上问题。"},
+		"scheduled_skill_morning_planning": {"回顾：昨日 2/3 完成。\n今日 Top3：A/B/C。\n能力提升：复盘线上问题。"},
 	}}
 
 	agentSvc := New(Config{
@@ -140,8 +140,8 @@ func TestRunScheduledHumanRoutine_MorningPlanAppendsOncePerDay(t *testing.T) {
 		},
 	})
 
-	if err := agentSvc.RunScheduledHumanRoutine(context.Background()); err != nil {
-		t.Fatalf("RunScheduledHumanRoutine error: %v", err)
+	if err := agentSvc.RunScheduledTask(context.Background(), routine.ActionMorningPlanning); err != nil {
+		t.Fatalf("RunScheduledTask error: %v", err)
 	}
 	_, messages := store.Snapshot()
 	if len(messages) != 1 {
@@ -151,8 +151,8 @@ func TestRunScheduledHumanRoutine_MorningPlanAppendsOncePerDay(t *testing.T) {
 		t.Fatalf("unexpected auto message: %q", messages[0].Content)
 	}
 
-	if err := agentSvc.RunScheduledHumanRoutine(context.Background()); err != nil {
-		t.Fatalf("RunScheduledHumanRoutine second call error: %v", err)
+	if err := agentSvc.RunScheduledTask(context.Background(), routine.ActionMorningPlanning); err != nil {
+		t.Fatalf("RunScheduledTask second call error: %v", err)
 	}
 	_, messages = store.Snapshot()
 	if len(messages) != 1 {

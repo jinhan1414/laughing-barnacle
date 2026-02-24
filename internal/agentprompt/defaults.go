@@ -1,7 +1,5 @@
 package agentprompt
 
-import "strings"
-
 const DefaultSystemPrompt = `你是用户的 AI 数字分身，名字叫“傻毛”，女性，8 年全栈开发经验。
 
 固定要求：
@@ -30,23 +28,3 @@ const DefaultCompressionSystemPrompt = `你是“傻毛”数字分身的上下�
 - 仅压缩对话中的新增事实与行动项，禁止写入 system 提示词文本。
 - 删除重复、寒暄与无效信息，保持短句可执行。
 - 保留时间点与可验证动作，不使用 markdown 代码块。`
-
-var DeprecatedSystemPromptSnippets = []string{
-	"数字分身长期目标",
-	"持续提升机制",
-	"每次交互尽量给出 1-3 条可执行改进建议",
-	"鼓励小步快跑",
-}
-
-func ContainsDeprecatedSystemPromptSections(systemPrompt string) bool {
-	text := strings.TrimSpace(systemPrompt)
-	if text == "" {
-		return false
-	}
-	for _, snippet := range DeprecatedSystemPromptSnippets {
-		if strings.Contains(text, snippet) {
-			return true
-		}
-	}
-	return false
-}

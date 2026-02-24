@@ -113,7 +113,7 @@ func TestHTTPClient_StreamableHTTPWithSSEResponse(t *testing.T) {
 		ID:        "deepwiki",
 		Name:      "DeepWiki",
 		Endpoint:  ts.URL,
-		Transport: "streamableHttp",
+		Transport: "streamable_http",
 		Enabled:   true,
 	}
 

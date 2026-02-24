@@ -95,7 +95,7 @@ func sanitizeIdentifier(input string) string {
 func normalizeServiceTransport(raw string) string {
 	normalized := strings.ToLower(strings.TrimSpace(raw))
 	switch normalized {
-	case "", "streamablehttp", "streamable_http", "streamable-http":
+	case "", "streamable_http":
 		return ServiceTransportStreamableHTTP
 	case "sse":
 		return ServiceTransportSSE

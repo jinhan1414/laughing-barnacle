@@ -34,7 +34,7 @@ var builtinSkills = []Skill{
 				"硬性约束：写接口必须使用 POST + 表单字段（--data-urlencode），禁止 JSON body。\n" +
 				"步骤 1（必做）：先查现状：curl -sS http://127.0.0.1:8080/api/mcp/services。\n" +
 				"步骤 2（三选一，仅一次写入）：\n" +
-				"  a) 新增/更新 streamableHttp：curl -sS -X POST http://127.0.0.1:8080/settings/mcp/save --data-urlencode 'name=<service_name>' --data-urlencode 'transport=streamableHttp' --data-urlencode 'endpoint=<endpoint>' --data-urlencode 'enabled=on'。\n" +
+				"  a) 新增/更新 streamable_http：curl -sS -X POST http://127.0.0.1:8080/settings/mcp/save --data-urlencode 'name=<service_name>' --data-urlencode 'transport=streamable_http' --data-urlencode 'endpoint=<endpoint>' --data-urlencode 'enabled=on'。\n" +
 				"  b) 新增/更新 stdio：curl -sS -X POST http://127.0.0.1:8080/settings/mcp/save --data-urlencode 'name=<service_name>' --data-urlencode 'transport=stdio' --data-urlencode 'command=<command>' --data-urlencode 'args_json=<json_array>' --data-urlencode 'enabled=on'。\n" +
 				"  c) 启停：curl -sS -X POST http://127.0.0.1:8080/settings/mcp/toggle --data-urlencode 'id=<service_id>' --data-urlencode 'enabled=true|false'；删除：curl -sS -X POST http://127.0.0.1:8080/settings/mcp/delete --data-urlencode 'id=<service_id>'。\n" +
 				"步骤 3（必做）：回读校验：curl -sS http://127.0.0.1:8080/api/mcp/services，并仅基于回读结果汇报 diff。\n" +

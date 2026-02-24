@@ -33,7 +33,7 @@ func TestHandleSettingsScheduleRun(t *testing.T) {
 	convStore := conversation.NewStore()
 	llmClient := &mockScheduleLLM{
 		responseByPurpose: map[string]string{
-			"night_reflection_evolution": `{"reflection":"生活：收束。工作：复盘。学习：迭代。"}`,
+			"scheduled_skill_night_reflection_evolution": `{"reflection":"生活：收束。工作：复盘。学习：迭代。"}`,
 		},
 	}
 	agentSvc := agent.New(agent.Config{

@@ -141,36 +141,22 @@ func TestStoreUpsertScheduledTask_InvalidCronRejected(t *testing.T) {
 	}
 }
 
-func TestStoreUpsertScheduledTask_LegacyActionNormalized(t *testing.T) {
+func TestStoreUpsertScheduledTask_LegacyActionRejected(t *testing.T) {
 	settingsPath := filepath.Join(t.TempDir(), "settings.json")
 	store, err := NewStore(settingsPath)
 	if err != nil {
 		t.Fatalf("NewStore error: %v", err)
 	}
 
-	if err := store.UpsertScheduledTask(scheduler.Task{
+	err = store.UpsertScheduledTask(scheduler.Task{
 		ID:       "legacy-action-task",
 		Name:     "legacy action",
-		Action:   routine.LegacyActionMorningPlanning,
+		Action:   "morning_planning",
 		CronExpr: "5 9 * * *",
 		Enabled:  true,
-	}); err != nil {
-		t.Fatalf("UpsertScheduledTask error: %v", err)
-	}
-
-	task, found := scheduler.Task{}, false
-	for _, item := range store.ListScheduledTasks() {
-		if item.ID == "legacy-action-task" {
-			task = item
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatalf("expected legacy-action-task persisted")
-	}
-	if task.Action != routine.ActionMorningPlanning {
-		t.Fatalf("expected legacy action normalized, got %q", task.Action)
+	})
+	if err == nil {
+		t.Fatalf("expected legacy underscore action rejected")
 	}
 }
 

@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"laughing-barnacle/internal/agentprompt"
 	"strings"
 )
 
@@ -18,9 +17,6 @@ func isValidEvolvedPrompt(systemPrompt, compressionPrompt string) bool {
 		return false
 	}
 	if !strings.Contains(systemPrompt, "不使用表情符号") {
-		return false
-	}
-	if agentprompt.ContainsDeprecatedSystemPromptSections(systemPrompt) {
 		return false
 	}
 	return true

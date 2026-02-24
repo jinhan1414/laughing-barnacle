@@ -102,14 +102,6 @@ func normalizeAgentPromptConfigOnLoad(cfg AgentPromptConfig) (AgentPromptConfig,
 
 	changed := normalized.SystemPrompt != cfg.SystemPrompt ||
 		normalized.CompressionSystemPrompt != cfg.CompressionSystemPrompt
-
-	if agentprompt.ContainsDeprecatedSystemPromptSections(normalized.SystemPrompt) {
-		defaults := DefaultAgentPromptConfig()
-		normalized.SystemPrompt = defaults.SystemPrompt
-		normalized.CompressionSystemPrompt = defaults.CompressionSystemPrompt
-		normalized.UpdatedAt = time.Now()
-		return normalized, true
-	}
 	return normalized, changed
 }
 

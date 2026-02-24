@@ -8,9 +8,6 @@ const (
 	ScheduledSkillNightReflectionEvolution = "night-reflection-evolution"
 	ScheduledSkillMorningPlanning          = "morning-planning"
 
-	LegacyActionNightReflectionEvolution = "night_reflection_evolution"
-	LegacyActionMorningPlanning          = "morning_planning"
-
 	ActionNightReflectionEvolution = ActionSkillPrefix + ScheduledSkillNightReflectionEvolution
 	ActionMorningPlanning          = ActionSkillPrefix + ScheduledSkillMorningPlanning
 )
@@ -28,15 +25,7 @@ func IsSupportedAction(action string) bool {
 }
 
 func NormalizeAction(action string) string {
-	action = strings.TrimSpace(action)
-	switch action {
-	case LegacyActionNightReflectionEvolution:
-		return ActionNightReflectionEvolution
-	case LegacyActionMorningPlanning:
-		return ActionMorningPlanning
-	default:
-		return action
-	}
+	return strings.TrimSpace(action)
 }
 
 func SkillIDFromAction(action string) (string, bool) {

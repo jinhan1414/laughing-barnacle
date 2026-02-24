@@ -7,13 +7,6 @@ import (
 	"time"
 )
 
-func isSleepWindow(now time.Time) bool {
-	minutes := now.Hour()*60 + now.Minute()
-	sleepStartMinutes := 30
-	sleepEndMinutes := 8*60 + 30
-	return minutes >= sleepStartMinutes && minutes < sleepEndMinutes
-}
-
 func (a *Agent) runNightReflectionAndEvolution(ctx context.Context, now time.Time, skillID string) (string, error) {
 	if a.habits == nil {
 		return "", nil
@@ -56,7 +49,7 @@ func (a *Agent) runNightReflectionAndEvolution(ctx context.Context, now time.Tim
 }
 
 func (a *Agent) runMorningPlanning(ctx context.Context, now time.Time, skillID string) (string, error) {
-	if isSleepWindow(now) || a.habits == nil {
+	if a.habits == nil {
 		return "", nil
 	}
 	today := now.Format("2006-01-02")

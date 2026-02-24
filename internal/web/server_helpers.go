@@ -152,7 +152,7 @@ func displayTransport(raw string) string {
 	case "stdio":
 		return "stdio"
 	default:
-		return "streamableHttp"
+		return "streamable_http"
 	}
 }
 

@@ -31,7 +31,7 @@ func (a *Agent) generateNightReflectionPayload(ctx context.Context, skillPrompt,
 	}
 
 	resp, err := a.llm.Chat(ctx, llm.ChatRequest{
-		Purpose:     "night_reflection_evolution",
+		Purpose:     "scheduled_skill_night_reflection_evolution",
 		Model:       a.cfg.Model,
 		Messages:    msgs,
 		Temperature: 0.1,
@@ -61,7 +61,7 @@ func (a *Agent) generateNightReflectionPayload(ctx context.Context, skillPrompt,
 func (a *Agent) generateMorningPlan(ctx context.Context, skillPrompt, summary string, messages []conversation.Message) (string, error) {
 	currentSystemPrompt, currentCompressionPrompt := a.resolvePromptsLocked()
 	resp, err := a.llm.Chat(ctx, llm.ChatRequest{
-		Purpose: "morning_planning",
+		Purpose: "scheduled_skill_morning_planning",
 		Model:   a.cfg.Model,
 		Messages: []llm.Message{
 			{

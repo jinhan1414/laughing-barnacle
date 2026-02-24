@@ -151,9 +151,7 @@ docker run --rm -p 8080:8080 \
 6. 追加助手回复
 
 此外，服务进程启动后会注册后台 Cron 调度：
-- 所有任务由设置中心的 Cron 表达式驱动（5 段：分 时 日 月 周），默认内置：
-  - `skill:night-reflection-evolution`: `30 0 * * *`
-  - `skill:morning-planning`: `30 8 * * *`
+- 所有任务由设置中心的 Cron 表达式驱动（5 段：分 时 日 月 周），默认不内置任务，由用户按需创建
 - 执行结果会记录任务的最近运行时间与状态，并写回设置存储
 - 可通过设置页“定时任务”统一查看、编辑、立即执行，Agent 也可通过 `/api/schedules` 与 `/settings/schedules/*` 接口按确认流程自动维护
 - 并发策略：同一任务执行中再次触发会标记 `skipped/already_running`；不同任务即使同一时刻触发也会串行执行，避免冲突
