@@ -110,6 +110,7 @@ var builtinSkills = []Skill{
 			"目标：以最少命令完成定时任务配置并可验证，默认命令预算 3-4 条。\n" +
 				"写入字段硬约束：/settings/schedules/save 仅接受 id,name,description,action=skill:<skill_id>,cron_expr,enabled=on；禁止 cron/prompt/action=reminder。\n" +
 				"硬性约束：写接口必须使用 POST + 表单字段（--data-urlencode），禁止 JSON body。\n" +
+				"硬性约束：创建/更新 Skill 固定使用 POST /settings/skills/save（禁止 /api/skills/save）。\n" +
 				"硬性约束：action 必须是 skill:<skill_id>；skill_id 仅允许 [a-zA-Z0-9_-]，必须使用普通连字符 '-'。\n" +
 				"硬性约束：调用 linux__bash 时，工具参数键必须是 command（不是 cmd）。\n" +
 				"硬性约束：Windows cmd 场景下 URL 使用正常双引号，禁止反斜杠转义引号（如 \\\"http://...\\\"）。\n" +

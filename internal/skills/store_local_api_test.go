@@ -42,4 +42,7 @@ func TestSetLocalAPIBaseURL_RewritesBuiltinSkillPrompt(t *testing.T) {
 	if !strings.Contains(prompt, "--data-urlencode \"key=value\"") {
 		t.Fatalf("expected data-urlencode quoting constraint in schedule skill prompt, got %q", prompt)
 	}
+	if !strings.Contains(prompt, "POST /settings/skills/save（禁止 /api/skills/save）") {
+		t.Fatalf("expected skills save endpoint constraint in schedule skill prompt, got %q", prompt)
+	}
 }

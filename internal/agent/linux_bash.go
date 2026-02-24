@@ -129,6 +129,13 @@ func runLinuxBash(ctx context.Context, req linuxBashRequest) (string, error) {
 
 	stdoutText := trimRunes(stdout.String(), maxBashStdoutRunes)
 	stderrText := trimRunes(stderr.String(), maxBashStderrRunes)
+	if aliasHint := localAPIEndpointAliasHint(req.Command); strings.TrimSpace(aliasHint) != "" {
+		if strings.TrimSpace(stderrText) == "" {
+			stderrText = aliasHint
+		} else {
+			stderrText += "\n" + aliasHint
+		}
+	}
 	if redirectErr := extractRedirectErrorFromCurlHeaders(stdoutText); strings.TrimSpace(redirectErr) != "" {
 		if strings.TrimSpace(stderrText) == "" {
 			stderrText = redirectErr
@@ -185,6 +192,7 @@ func buildShellCommand(ctx context.Context, command string) (*exec.Cmd, string, 
 
 func normalizeCommandForShell(shellName, command string) string {
 	command = strings.TrimSpace(command)
+	command = normalizeLocalAPIEndpointAliases(command)
 	if shellName != "cmd" {
 		return command
 	}

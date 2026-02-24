@@ -11,6 +11,7 @@ func (a *Agent) buildToolRuntimePrompt() string {
 				"写 URL 时使用正常双引号，禁止写反斜杠转义引号（如 \\\"http://...\\\"）。\n" +
 				"只能使用 cmd 兼容命令（如 curl、dir、findstr、schtasks、echo），禁止使用 Linux 命令（如 ls/find/head/grep/uname/crontab）。\n" +
 				"定时任务列表接口固定为 GET /api/schedules（禁止 /api/schedules/list）。\n" +
+				"创建/更新 Skill 固定使用 POST /settings/skills/save（禁止 /api/skills/save）。\n" +
 				"使用 --data-urlencode 时，每个字段都必须写成 --data-urlencode \"key=value\"（禁止省略双引号）。\n" +
 				"保存定时任务时，/settings/schedules/save 必填字段固定为：id,name,description,action=skill:<skill_id>,cron_expr,enabled=on（禁止使用 cron/prompt/action=reminder）。",
 		)
@@ -19,12 +20,14 @@ func (a *Agent) buildToolRuntimePrompt() string {
 			"工具执行环境：linux__bash 当前在 Linux shell 下执行。\n" +
 				"调用参数键必须是 command（不是 cmd）。\n" +
 				"定时任务列表接口固定为 GET /api/schedules（禁止 /api/schedules/list）。\n" +
+				"创建/更新 Skill 固定使用 POST /settings/skills/save（禁止 /api/skills/save）。\n" +
 				"保存定时任务时，/settings/schedules/save 必填字段固定为：id,name,description,action=skill:<skill_id>,cron_expr,enabled=on（禁止使用 cron/prompt/action=reminder）。",
 		)
 	default:
 		return strings.TrimSpace(
 			"调用 linux__bash 时，参数键必须是 command（不是 cmd）；" +
 				"定时任务列表接口固定为 GET /api/schedules（禁止 /api/schedules/list）；" +
+				"创建/更新 Skill 固定使用 POST /settings/skills/save（禁止 /api/skills/save）；" +
 				"保存定时任务时，/settings/schedules/save 必填字段固定为 id,name,description,action=skill:<skill_id>,cron_expr,enabled=on。",
 		)
 	}

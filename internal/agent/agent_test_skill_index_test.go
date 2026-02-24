@@ -249,4 +249,7 @@ func TestHandleUserMessage_IncludesToolRuntimeConstraintsPrompt(t *testing.T) {
 	if !strings.Contains(found, "--data-urlencode \"key=value\"") {
 		t.Fatalf("expected data-urlencode quoting constraint, got %q", found)
 	}
+	if !strings.Contains(found, "POST /settings/skills/save（禁止 /api/skills/save）") {
+		t.Fatalf("expected skills save endpoint constraint, got %q", found)
+	}
 }
