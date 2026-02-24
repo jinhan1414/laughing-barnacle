@@ -40,6 +40,20 @@ func TestNormalizeCommandForShell_CmdAppendsHeadersForSettingsCurl(t *testing.T)
 	}
 }
 
+func TestNormalizeCommandForShell_CmdEscapedQuotesRewriteKeepsFormFields(t *testing.T) {
+	raw := `curl -sS -X POST http://127.0.0.1:9080/settings/schedules/save -d \"id=clock-out-reminder&enabled=on&action=skill%3Askill&cron_expr=32+17+*+*+*\"`
+	got := normalizeCommandForShell("cmd", raw)
+	if strings.Contains(got, `\id=`) || strings.Contains(got, `enabled=on\`) {
+		t.Fatalf("expected escaped quotes to be normalized before rewrite, got %q", got)
+	}
+	if !strings.Contains(got, "id=clock-out-reminder") {
+		t.Fatalf("expected id field preserved, got %q", got)
+	}
+	if !strings.Contains(got, "enabled=on") {
+		t.Fatalf("expected enabled field preserved, got %q", got)
+	}
+}
+
 func TestExtractRedirectErrorFromCurlHeaders(t *testing.T) {
 	headers := "HTTP/1.1 302 Found\r\nLocation: /settings?section=schedules&error=task+id+is+required\r\n\r\n"
 	got := extractRedirectErrorFromCurlHeaders(headers)

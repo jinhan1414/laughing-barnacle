@@ -193,12 +193,14 @@ func buildShellCommand(ctx context.Context, command string) (*exec.Cmd, string, 
 func normalizeCommandForShell(shellName, command string) string {
 	command = strings.TrimSpace(command)
 	command = normalizeLocalAPIEndpointAliases(command)
+	if shellName == "cmd" {
+		command = strings.ReplaceAll(command, `\"`, `"`)
+		command = strings.ReplaceAll(command, `\'`, `'`)
+	}
 	command = rewriteCmdCurlSettingsPost(command)
 	if shellName != "cmd" {
 		return command
 	}
-	command = strings.ReplaceAll(command, `\"`, `"`)
-	command = strings.ReplaceAll(command, `\'`, `'`)
 	command = appendCurlHeadersForSettings(command)
 	return command
 }
