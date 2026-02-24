@@ -37,23 +37,53 @@
 - `internal/conversation`: 全局对话存储（无 session）
 - `internal/web`: Web 路由与页面模板
 
-## 快速启动
+## 本地开发环境运行（推荐）
 
-1. 配置环境变量（可复制 `.env.example`）：
+### 1. 前置依赖
+
+- Go `1.22+`
+- 可用的 `CERBER_API_KEY`（必填，缺失会启动失败）
+
+### 2. 准备环境变量
+
+先复制一份本地配置文件：
 
 ```bash
 cp .env.example .env
-# 编辑 .env，填入 CERBER_API_KEY
 ```
 
-2. 导入环境变量并启动：
+然后编辑 `.env`，至少填写：
 
-```bash
-set -a; source .env; set +a
+```env
+CERBER_API_KEY=your_real_api_key
+```
+
+### 3. 启动服务
+
+#### Windows PowerShell
+
+```powershell
+Get-Content .env | ForEach-Object {
+  if ($_ -match '^\s*([^#=]+)\s*=\s*(.*)\s*$') {
+    [System.Environment]::SetEnvironmentVariable($matches[1].Trim(), $matches[2].Trim(), 'Process')
+  }
+}
 go run ./cmd/server
 ```
 
-3. 访问页面：
+#### macOS / Linux（bash/zsh）
+
+```bash
+set -a
+source .env
+set +a
+go run ./cmd/server
+```
+
+启动成功后日志会出现类似：`HTTP server listening on :8080`。
+
+### 4. 本地浏览器访问
+
 - 聊天页：`http://localhost:8080/chat`
 - 日志页：`http://localhost:8080/logs`
 - 设置页：`http://localhost:8080/settings`
