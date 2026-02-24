@@ -48,4 +48,7 @@ func TestSetLocalAPIBaseURL_RewritesBuiltinSkillPrompt(t *testing.T) {
 	if !strings.Contains(prompt, "优先使用单条 -d \"k=v&k2=v2\"") {
 		t.Fatalf("expected cmd save -d constraint in schedule skill prompt, got %q", prompt)
 	}
+	if !strings.Contains(prompt, "提醒类任务必须先创建或复用专用 reminder skill") {
+		t.Fatalf("expected reminder skill binding constraint in schedule skill prompt, got %q", prompt)
+	}
 }
