@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 
+	"laughing-barnacle/internal/routine"
 	"laughing-barnacle/internal/scheduler"
 	"strings"
 	"time"
@@ -158,6 +159,9 @@ func (s *Store) findSkillIDForUpdateLocked(skill Skill) string {
 func (s *Store) findScheduledTaskIDForUpdateLocked(task scheduler.Task) string {
 	action := strings.TrimSpace(task.Action)
 	if action == "" {
+		return ""
+	}
+	if _, isSkillAction := routine.SkillIDFromAction(action); isSkillAction {
 		return ""
 	}
 	matchedID := ""

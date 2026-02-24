@@ -52,3 +52,17 @@ func TestRewriteCmdCurlSettingsPost_SkillSaveUsesIDAsName(t *testing.T) {
 		t.Fatalf("expected name to be normalized from id, got %q", got)
 	}
 }
+
+func TestRewriteCmdCurlSettingsPost_ScheduleSaveKeepsIDAndEnabled(t *testing.T) {
+	raw := `curl -sS -X POST http://127.0.0.1:9080/settings/schedules/save -d "id=clock-out-reminder&name=%E4%B8%8B%E7%8F%AD%E6%89%93%E5%8D%A1&description=%E6%AF%8F%E5%A4%A917%3A32%E6%8F%90%E9%86%92%E6%89%93%E4%B8%8B%E7%8F%AD%E5%8D%A1&action=skill%3Askill&cron_expr=32+17+*+*+*&enabled=on"`
+	got := rewriteCmdCurlSettingsPost(raw)
+	if !strings.Contains(got, "id=clock-out-reminder") {
+		t.Fatalf("expected schedule id to be preserved, got %q", got)
+	}
+	if !strings.Contains(got, "enabled=on") {
+		t.Fatalf("expected enabled field to be preserved, got %q", got)
+	}
+	if !strings.Contains(got, "action=skill%3Askill") {
+		t.Fatalf("expected action encoding to remain valid, got %q", got)
+	}
+}

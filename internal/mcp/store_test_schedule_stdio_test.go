@@ -160,6 +160,41 @@ func TestStoreUpsertScheduledTask_LegacyActionRejected(t *testing.T) {
 	}
 }
 
+func TestStoreUpsertScheduledTask_SkillActionWithoutID_DoesNotOverwrite(t *testing.T) {
+	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	store, err := NewStore(settingsPath)
+	if err != nil {
+		t.Fatalf("NewStore error: %v", err)
+	}
+
+	err = store.UpsertScheduledTask(scheduler.Task{
+		Name:     "上班打卡",
+		Action:   "skill:skill",
+		CronExpr: "56 8 * * *",
+		Enabled:  true,
+	})
+	if err != nil {
+		t.Fatalf("first UpsertScheduledTask error: %v", err)
+	}
+	err = store.UpsertScheduledTask(scheduler.Task{
+		Name:     "下班打卡",
+		Action:   "skill:skill",
+		CronExpr: "32 17 * * *",
+		Enabled:  true,
+	})
+	if err != nil {
+		t.Fatalf("second UpsertScheduledTask error: %v", err)
+	}
+
+	tasks := store.ListScheduledTasks()
+	if len(tasks) != 2 {
+		t.Fatalf("expected two tasks, got %+v", tasks)
+	}
+	if tasks[0].ID == tasks[1].ID {
+		t.Fatalf("expected different generated IDs, got %+v", tasks)
+	}
+}
+
 func TestStoreUpsertService_StdioPersisted(t *testing.T) {
 	settingsPath := filepath.Join(t.TempDir(), "settings.json")
 	store, err := NewStore(settingsPath)
