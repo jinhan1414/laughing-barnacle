@@ -148,6 +148,7 @@ func TestSetSummaryAndTrim_CreatesArchiveAndSectionLookup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewStoreWithFile error: %v", err)
 	}
+	t.Cleanup(func() { _ = store.Close() })
 
 	store.Append("user", "排查登录接口超时，先看网关日志")
 	store.Append("assistant", "先确认 502 还是 504，并记录时间窗口")

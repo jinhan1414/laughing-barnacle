@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -130,6 +131,10 @@ func TestHTTPClient_StreamableHTTPWithSSEResponse(t *testing.T) {
 }
 
 func TestHTTPClient_StdioListAndCallTool(t *testing.T) {
+	if isWindows() {
+		t.Skip("stdio mock script test is POSIX-only")
+	}
+
 	script := filepath.Join(t.TempDir(), "fake-mcp.sh")
 	err := os.WriteFile(script, []byte(`#!/bin/sh
 extract_id() {
@@ -183,4 +188,8 @@ done
 	if len(result.Content) != 1 || result.Content[0].Text != "ok" {
 		t.Fatalf("unexpected result: %+v", result)
 	}
+}
+
+func isWindows() bool {
+	return runtime.GOOS == "windows"
 }

@@ -152,8 +152,31 @@ func (s *Store) persistLocked() error {
 	if err := os.WriteFile(tempPath, data, 0o600); err != nil {
 		return fmt.Errorf("write temp llm logs: %w", err)
 	}
-	if err := os.Rename(tempPath, s.path); err != nil {
+	if err := replaceFileWithRetry(tempPath, s.path); err != nil {
 		return fmt.Errorf("rename llm log file: %w", err)
 	}
 	return nil
+}
+
+func replaceFileWithRetry(tempPath, targetPath string) error {
+	if err := os.Rename(tempPath, targetPath); err == nil {
+		return nil
+	}
+
+	var lastErr error
+	for i := 0; i < 5; i++ {
+		if err := os.Remove(targetPath); err != nil && !os.IsNotExist(err) {
+			lastErr = err
+		}
+		if err := os.Rename(tempPath, targetPath); err == nil {
+			return nil
+		} else {
+			lastErr = err
+		}
+		time.Sleep(time.Duration(i+1) * 20 * time.Millisecond)
+	}
+	if lastErr != nil {
+		return lastErr
+	}
+	return fmt.Errorf("replace file failed")
 }

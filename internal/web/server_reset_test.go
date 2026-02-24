@@ -18,6 +18,7 @@ func TestHandleChatReset_ClearsConversationAndLogs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewStoreWithFile error: %v", err)
 	}
+	t.Cleanup(func() { _ = convStore.Close() })
 	logStore, err := llmlog.NewStoreWithFile(10, logPath)
 	if err != nil {
 		t.Fatalf("NewStoreWithFile llmlog error: %v", err)
