@@ -30,3 +30,25 @@ func TestRewriteCmdCurlSettingsPost_NonTargetUnchanged(t *testing.T) {
 		t.Fatalf("expected non-target command unchanged, got %q", got)
 	}
 }
+
+func TestRewriteCmdCurlSettingsPost_AvoidsDoubleEncodingAction(t *testing.T) {
+	raw := `curl -sS -X POST http://127.0.0.1:9080/settings/schedules/save -d "id=punch-out&action=skill%3Apunch-card-reminder&cron_expr=32+17+*+*+*"`
+	got := rewriteCmdCurlSettingsPost(raw)
+	if strings.Contains(got, "skill%253A") {
+		t.Fatalf("expected action not to be double-encoded, got %q", got)
+	}
+	if !strings.Contains(got, "action=skill%3Apunch-card-reminder") {
+		t.Fatalf("expected action to stay percent-encoded once, got %q", got)
+	}
+}
+
+func TestRewriteCmdCurlSettingsPost_SkillSaveUsesIDAsName(t *testing.T) {
+	raw := `curl -sS -X POST http://127.0.0.1:9080/settings/skills/save --data-urlencode "id=punch-card-reminder" --data-urlencode "name=打卡提醒" --data-urlencode "prompt=Remind user now"`
+	got := rewriteCmdCurlSettingsPost(raw)
+	if strings.Contains(got, "id=punch-card-reminder") {
+		t.Fatalf("expected id field removed for skills/save, got %q", got)
+	}
+	if !strings.Contains(got, "name=punch-card-reminder") {
+		t.Fatalf("expected name to be normalized from id, got %q", got)
+	}
+}

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"net/url"
+	"regexp"
 	"strings"
 )
 
@@ -49,7 +50,7 @@ func rewriteCmdCurlSettingsPost(command string) string {
 		return command
 	}
 
-	encoded := encodeFormFields(formFields)
+	encoded := encodeFormFields(targetURL, formFields)
 	if encoded == "" {
 		return command
 	}
@@ -64,8 +65,36 @@ func isSettingsSaveURL(raw string) bool {
 	return strings.Contains(u, "/settings/skills/save") || strings.Contains(u, "/settings/schedules/save")
 }
 
-func encodeFormFields(fields []string) string {
-	pairs := make([]string, 0, len(fields))
+type formField struct {
+	key   string
+	value string
+}
+
+var skillIDPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+
+func encodeFormFields(targetURL string, fields []string) string {
+	pairs := parseFormFields(fields)
+	pairs = normalizeSettingsSkillSaveFields(targetURL, pairs)
+	if len(pairs) == 0 {
+		return ""
+	}
+	encoded := make([]string, 0, len(pairs))
+	for _, pair := range pairs {
+		key := strings.TrimSpace(pair.key)
+		if key == "" {
+			continue
+		}
+		value := strings.TrimSpace(pair.value)
+		if decoded, err := url.QueryUnescape(value); err == nil {
+			value = decoded
+		}
+		encoded = append(encoded, url.QueryEscape(key)+"="+url.QueryEscape(value))
+	}
+	return strings.Join(encoded, "&")
+}
+
+func parseFormFields(fields []string) []formField {
+	pairs := make([]formField, 0, len(fields))
 	for _, raw := range fields {
 		field := strings.Trim(strings.TrimSpace(raw), "\"")
 		if field == "" {
@@ -80,10 +109,47 @@ func encodeFormFields(fields []string) string {
 			if key == "" {
 				continue
 			}
-			pairs = append(pairs, url.QueryEscape(key)+"="+url.QueryEscape(value))
+			pairs = append(pairs, formField{key: key, value: value})
 		}
 	}
-	return strings.Join(pairs, "&")
+	return pairs
+}
+
+func normalizeSettingsSkillSaveFields(targetURL string, fields []formField) []formField {
+	if !strings.Contains(strings.ToLower(strings.TrimSpace(targetURL)), "/settings/skills/save") {
+		return fields
+	}
+
+	idValue := ""
+	nameValue := ""
+	for _, field := range fields {
+		key := strings.ToLower(strings.TrimSpace(field.key))
+		switch key {
+		case "id":
+			idValue = strings.TrimSpace(field.value)
+		case "name":
+			nameValue = strings.TrimSpace(field.value)
+		}
+	}
+
+	useIDAsName := skillIDPattern.MatchString(idValue) && (nameValue == "" || !skillIDPattern.MatchString(nameValue))
+	out := make([]formField, 0, len(fields))
+	nameUpdated := false
+	for _, field := range fields {
+		keyLower := strings.ToLower(strings.TrimSpace(field.key))
+		if keyLower == "id" {
+			continue
+		}
+		if keyLower == "name" && useIDAsName {
+			field.value = idValue
+			nameUpdated = true
+		}
+		out = append(out, field)
+	}
+	if useIDAsName && !nameUpdated {
+		out = append(out, formField{key: "name", value: idValue})
+	}
+	return out
 }
 
 func splitKeyValue(raw string) (string, string) {
