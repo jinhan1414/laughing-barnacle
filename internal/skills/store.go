@@ -110,6 +110,8 @@ var builtinSkills = []Skill{
 			"目标：以最少命令完成定时任务配置并可验证，默认命令预算 3-4 条。\n" +
 				"硬性约束：写接口必须使用 POST + 表单字段（--data-urlencode），禁止 JSON body。\n" +
 				"硬性约束：action 必须是 skill:<skill_id>；skill_id 仅允许 [a-zA-Z0-9_-]，必须使用普通连字符 '-'。\n" +
+				"硬性约束：调用 linux__bash 时，工具参数键必须是 command（不是 cmd）。\n" +
+				"硬性约束：定时任务列表接口固定为 GET /api/schedules（禁止 /api/schedules/list）。\n" +
 				"步骤 1（必做）：先查技能：curl -sS http://127.0.0.1:8080/api/skills；仅在需要更新已有任务时再查一次 /api/schedules。\n" +
 				"步骤 2（按分支执行一次写入）：\n" +
 				"  a) skill 不存在：先创建 skill：curl -sS -X POST http://127.0.0.1:8080/settings/skills/save --data-urlencode 'name=<skill_slug>' --data-urlencode 'description=<desc>' --data-urlencode 'prompt=<prompt>' --data-urlencode 'enabled=on'。\n" +
@@ -117,6 +119,8 @@ var builtinSkills = []Skill{
 				"  c) 保存任务：curl -sS -X POST http://127.0.0.1:8080/settings/schedules/save --data-urlencode 'id=<schedule_id>' --data-urlencode 'name=<name>' --data-urlencode 'description=<desc>' --data-urlencode 'action=skill:<skill_id>' --data-urlencode 'cron_expr=<cron>' --data-urlencode 'enabled=on'。\n" +
 				"  d) 立即执行（仅用户明确要求时）：curl -sS -X POST http://127.0.0.1:8080/settings/schedules/run --data-urlencode 'id=<schedule_id>'。\n" +
 				"步骤 3（必做）：回读一次：curl -sS http://127.0.0.1:8080/api/schedules；仅基于回读结果汇报是否生效。\n" +
+				"失败处理约束：若接口调用失败，只允许重试同一 API 或先查 /healthz；禁止改为目录扫描、系统全盘搜索或 Linux 命令探测。\n" +
+				"若工具回显 shell: cmd，后续仅允许使用 cmd 兼容命令（curl、dir、findstr、schtasks、echo）。\n" +
 				"禁止写入引用不存在或未启用 skill 的 action。\n" +
 				"Cron 规则使用 5 段：分 时 日 月 周（例如 30 8 * * *）。\n" +
 				"默认自主闭环：时间与提醒目标明确时直接完成；仅在 cron、目标动作或提醒文案缺失时追问。",

@@ -148,18 +148,34 @@ func runLinuxBash(ctx context.Context, req linuxBashRequest) (string, error) {
 }
 
 func buildShellCommand(ctx context.Context, command string) (*exec.Cmd, string, error) {
-	if bashPath, err := exec.LookPath("bash"); err == nil {
+	switch preferredShellName() {
+	case "bash":
+		bashPath, _ := exec.LookPath("bash")
 		return exec.CommandContext(ctx, bashPath, "-lc", command), "bash", nil
-	}
-	if shPath, err := exec.LookPath("sh"); err == nil {
+	case "sh":
+		shPath, _ := exec.LookPath("sh")
 		return exec.CommandContext(ctx, shPath, "-c", command), "sh", nil
+	case "cmd":
+		cmdPath, _ := exec.LookPath("cmd")
+		return exec.CommandContext(ctx, cmdPath, "/C", command), "cmd", nil
+	default:
+		return nil, "", fmt.Errorf("run shell command: no bash/sh available in current environment")
+	}
+}
+
+func preferredShellName() string {
+	if _, err := exec.LookPath("bash"); err == nil {
+		return "bash"
+	}
+	if _, err := exec.LookPath("sh"); err == nil {
+		return "sh"
 	}
 	if runtime.GOOS == "windows" {
-		if cmdPath, err := exec.LookPath("cmd"); err == nil {
-			return exec.CommandContext(ctx, cmdPath, "/C", command), "cmd", nil
+		if _, err := exec.LookPath("cmd"); err == nil {
+			return "cmd"
 		}
 	}
-	return nil, "", fmt.Errorf("run shell command: no bash/sh available in current environment")
+	return ""
 }
 
 func readToolArguments(raw string) (map[string]any, error) {

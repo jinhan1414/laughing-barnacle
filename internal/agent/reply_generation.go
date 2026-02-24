@@ -78,7 +78,14 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 		Role:    "system",
 		Content: responseStylePrompt,
 	})
-	summary = pruneSummaryOverlap(summary, systemPrompt, skillIndexPrompt, memoryIndexPrompt, responseStylePrompt)
+	runtimePrompt := strings.TrimSpace(a.buildToolRuntimePrompt())
+	if runtimePrompt != "" {
+		requestMessages = append(requestMessages, llm.Message{
+			Role:    "system",
+			Content: runtimePrompt,
+		})
+	}
+	summary = pruneSummaryOverlap(summary, systemPrompt, skillIndexPrompt, memoryIndexPrompt, responseStylePrompt, runtimePrompt)
 	if strings.TrimSpace(summary) != "" {
 		requestMessages = append(requestMessages, llm.Message{
 			Role:    "system",

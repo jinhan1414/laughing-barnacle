@@ -195,3 +195,49 @@ func TestHandleUserMessage_LinuxBashToolCall(t *testing.T) {
 		t.Fatalf("unexpected tool call name: %s", messages[0].ToolCalls[0].Name)
 	}
 }
+
+func TestHandleUserMessage_IncludesToolRuntimeConstraintsPrompt(t *testing.T) {
+	store := conversation.NewStore()
+	fakeLLM := &mockLLM{responses: map[string][]string{
+		"chat_reply": {"ok"},
+	}}
+
+	agentSvc := New(Config{
+		Model:                      "test-model",
+		MaxRecentMessages:          10,
+		CompressionTriggerMessages: 99,
+		CompressionTriggerChars:    99999,
+		KeepRecentAfterCompression: 1,
+		MaxCompressionLoopsPerTurn: 1,
+		MaxToolCallRounds:          2,
+		SystemPrompt:               "system",
+		CompressionSystemPrompt:    "compressor",
+		EnforceHumanRoutine:        true,
+	}, store, fakeLLM, nil)
+
+	_, err := agentSvc.HandleUserMessage(context.Background(), "hello")
+	if err != nil {
+		t.Fatalf("HandleUserMessage error: %v", err)
+	}
+	if len(fakeLLM.calls) != 1 {
+		t.Fatalf("expected one llm call, got %d", len(fakeLLM.calls))
+	}
+
+	msgs := fakeLLM.calls[0].Messages
+	found := ""
+	for _, msg := range msgs {
+		if msg.Role != "system" {
+			continue
+		}
+		if strings.Contains(msg.Content, "参数键必须是 command（不是 cmd）") {
+			found = msg.Content
+			break
+		}
+	}
+	if strings.TrimSpace(found) == "" {
+		t.Fatalf("expected tool runtime constraints prompt to be injected")
+	}
+	if !strings.Contains(found, "/api/schedules/list") {
+		t.Fatalf("expected schedules list endpoint constraint, got %q", found)
+	}
+}
