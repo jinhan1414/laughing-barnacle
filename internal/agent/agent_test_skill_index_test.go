@@ -240,19 +240,21 @@ func TestHandleUserMessage_IncludesToolRuntimeConstraintsPrompt(t *testing.T) {
 	if !strings.Contains(found, "/api/schedules/list") {
 		t.Fatalf("expected schedules list endpoint constraint, got %q", found)
 	}
-	if !strings.Contains(found, "禁止写反斜杠转义引号") {
-		t.Fatalf("expected windows quote escape constraint, got %q", found)
-	}
 	if !strings.Contains(found, "id,name,description,action=skill:<skill_id>,cron_expr,enabled=on") {
 		t.Fatalf("expected required schedule save fields constraint, got %q", found)
-	}
-	if !strings.Contains(found, "--data-urlencode \"key=value\"") {
-		t.Fatalf("expected data-urlencode quoting constraint, got %q", found)
 	}
 	if !strings.Contains(found, "POST /settings/skills/save（禁止 /api/skills/save）") {
 		t.Fatalf("expected skills save endpoint constraint, got %q", found)
 	}
-	if !strings.Contains(found, "优先使用单条 -d \"k=v&k2=v2\"") {
-		t.Fatalf("expected cmd save -d constraint, got %q", found)
+	if preferredShellName() == "cmd" {
+		if !strings.Contains(found, "禁止写反斜杠转义引号") {
+			t.Fatalf("expected windows quote escape constraint for cmd shell, got %q", found)
+		}
+		if !strings.Contains(found, "--data-urlencode \"key=value\"") {
+			t.Fatalf("expected data-urlencode quoting constraint for cmd shell, got %q", found)
+		}
+		if !strings.Contains(found, "优先使用单条 -d \"k=v&k2=v2\"") {
+			t.Fatalf("expected cmd save -d constraint for cmd shell, got %q", found)
+		}
 	}
 }
