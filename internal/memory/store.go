@@ -215,21 +215,7 @@ func (s *Store) bootstrap() error {
 	}); err != nil {
 		return fmt.Errorf("init memory db schema: %w", err)
 	}
-	for _, path := range []string{
-		"/", "/meta", "/profile", "/preferences", "/constraints", "/goals", "/projects", "/routines", "/conversation", "/conversation/archive", "/inbox", "/inbox/pending", "/inbox/reviewed", "/inbox/trash",
-	} {
-		if _, err := s.UpsertNode(UpsertRequest{
-			Mode:          "patch",
-			Path:          path,
-			Type:          NodeTypeDir,
-			Title:         pathTitle(path),
-			SchemaKind:    "namespace",
-			SchemaVersion: 1,
-			Source:        "system",
-			Confidence:    1,
-		}); err != nil {
-			return err
-		}
-	}
-	return nil
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.seedDefaultNamespacesLocked()
 }
