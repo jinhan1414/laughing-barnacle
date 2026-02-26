@@ -42,4 +42,8 @@ Keep this managed block so 'openspec update' can refresh the instructions.
   - A2A 接入维护（新增/修改/启停/删除）必须通过 `/settings/a2a/save|toggle|delete` + `/api/a2a/agents*` 回读校验，禁止新增或暴露 `a2a__register`。
   - 内置 A2A 工具仅保留 `a2a__send` / `a2a__get` / `a2a__cancel`，用于调用已接入 agent。
   - 设置页必须可见当前已接入 A2A 列表与状态，保证普通用户可直接查看与维护。
+- 用户长期规则：需长期记住 A2A 基础知识并按“代码现状优先”解释：
+  - A2A 是 Agent 与 Agent 的通信协议能力；在本系统中，维护链路走 HTTP 请求，执行链路走内置 `a2a__send/get/cancel`。
+  - 资料优先级：`openspec/changes/add-a2a-native-capability/`（proposal/design/spec）> `integrations/codex-a2a/README.md`（本地联调）> `internal/agent|internal/a2a|internal/web`（最终运行实现，以此为准）。
+  - 若文档与代码冲突，统一以当前主干代码行为和测试为准，并在答复中显式指出差异。
 - 用户长期规则：当且仅当确认当前任务已完成时，必须且只发送一次 `curl -X POST "https://ntfy.sh/jincs5658944s" -d "done"`；未完成、失败或中断时禁止发送；发送后需在回复末尾写“已发送 done 通知”。
