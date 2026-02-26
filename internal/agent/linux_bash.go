@@ -26,13 +26,13 @@ func linuxBashToolDefinition() llm.ToolDefinition {
 		Type: "function",
 		Function: llm.ToolFunctionDefinition{
 			Name:        builtinLinuxBashToolName,
-			Description: "Run one Linux shell command (prefer bash, fallback sh) and return stdout/stderr/exit_code.",
+			Description: "Run one shell command (prefer bash/sh; on Windows prefer PowerShell) and return stdout/stderr/exit_code.",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"command": map[string]any{
 						"type":        "string",
-						"description": "Bash command string to execute.",
+						"description": "Shell command string to execute.",
 					},
 					"working_dir": map[string]any{
 						"type":        "string",
@@ -182,26 +182,34 @@ func buildShellCommand(ctx context.Context, command string) (*exec.Cmd, string, 
 	case "sh":
 		shPath, _ := exec.LookPath("sh")
 		return exec.CommandContext(ctx, shPath, "-c", command), "sh", nil
+	case "pwsh":
+		pwshPath, _ := exec.LookPath("pwsh")
+		return exec.CommandContext(ctx, pwshPath, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command), "pwsh", nil
+	case "powershell":
+		psPath, _ := exec.LookPath("powershell")
+		return exec.CommandContext(ctx, psPath, "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", command), "powershell", nil
 	case "cmd":
 		cmdPath, _ := exec.LookPath("cmd")
 		return exec.CommandContext(ctx, cmdPath, "/C", command), "cmd", nil
 	default:
-		return nil, "", fmt.Errorf("run shell command: no bash/sh available in current environment")
+		return nil, "", fmt.Errorf("run shell command: no available shell in current environment")
 	}
 }
 
 func normalizeCommandForShell(shellName, command string) string {
 	command = strings.TrimSpace(command)
 	command = normalizeLocalAPIEndpointAliases(command)
-	if shellName == "cmd" {
+	switch shellName {
+	case "cmd":
 		command = normalizeEscapedCmdQuotes(command)
-	}
-	command = rewriteCmdCurlSettingsPost(command)
-	if shellName != "cmd" {
+		command = rewriteCmdCurlSettingsPost(command)
+		command = appendCurlHeadersForSettings(command)
+		return command
+	case "powershell", "pwsh":
+		return normalizePowerShellCommand(command)
+	default:
 		return command
 	}
-	command = appendCurlHeadersForSettings(command)
-	return command
 }
 
 func shouldHintCmdCurlQuoteFix(shellName string, exitCode int, command, stderr string) bool {
@@ -236,9 +244,7 @@ func preferredShellName() string {
 		return "sh"
 	}
 	if runtime.GOOS == "windows" {
-		if _, err := exec.LookPath("cmd"); err == nil {
-			return "cmd"
-		}
+		return preferredWindowsShellName()
 	}
 	return ""
 }

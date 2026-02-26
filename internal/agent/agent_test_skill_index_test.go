@@ -257,4 +257,15 @@ func TestHandleUserMessage_IncludesToolRuntimeConstraintsPrompt(t *testing.T) {
 			t.Fatalf("expected cmd save -d constraint for cmd shell, got %q", found)
 		}
 	}
+	if preferredShellName() == "powershell" || preferredShellName() == "pwsh" {
+		if !strings.Contains(found, "Windows PowerShell") {
+			t.Fatalf("expected powershell runtime prompt, got %q", found)
+		}
+		if !strings.Contains(found, "curl.exe") {
+			t.Fatalf("expected curl.exe constraint for powershell shell, got %q", found)
+		}
+		if !strings.Contains(found, "Invoke-RestMethod + ConvertTo-Json") {
+			t.Fatalf("expected powershell json guidance, got %q", found)
+		}
+	}
 }

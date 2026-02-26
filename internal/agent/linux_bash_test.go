@@ -25,6 +25,26 @@ func TestNormalizeCommandForShell_CmdKeepsJSONDataEscapes(t *testing.T) {
 	}
 }
 
+func TestNormalizeCommandForShell_PowerShellUsesCurlExe(t *testing.T) {
+	raw := `curl -sS http://127.0.0.1:9080/api/a2a/agents`
+	got := normalizeCommandForShell("powershell", raw)
+	want := `curl.exe -sS http://127.0.0.1:9080/api/a2a/agents`
+	if got != want {
+		t.Fatalf("normalizeCommandForShell mismatch:\n got: %q\nwant: %q", got, want)
+	}
+}
+
+func TestNormalizeCommandForShell_PowerShellSkipsCmdRewrite(t *testing.T) {
+	raw := `curl -sS -X POST http://127.0.0.1:9080/settings/skills/save --data-urlencode "name=demo"`
+	got := normalizeCommandForShell("pwsh", raw)
+	if strings.Contains(got, `-d "name=demo"`) {
+		t.Fatalf("expected cmd rewrite to be skipped for powershell, got %q", got)
+	}
+	if !strings.Contains(got, `curl.exe -sS -X POST`) {
+		t.Fatalf("expected curl.exe rewrite for powershell, got %q", got)
+	}
+}
+
 func TestShouldHintCmdCurlQuoteFix(t *testing.T) {
 	if !shouldHintCmdCurlQuoteFix("cmd", 3, `curl -s \"http://127.0.0.1:9080/api/schedules\"`, "") {
 		t.Fatalf("expected quote-fix hint for cmd curl exit=3 with empty stderr")
