@@ -25,15 +25,22 @@ func linuxBashToolDefinition() llm.ToolDefinition {
 			Name:        builtinLinuxBashToolName,
 			Description: "Run one shell command (prefer bash/sh; on Windows prefer PowerShell) and return stdout/stderr/exit_code.",
 			Parameters: map[string]any{
-				"type":        "string",
-				"description": "Shell command string to execute.",
+				"type": "object",
+				"properties": map[string]any{
+					"command": map[string]any{
+						"type":        "string",
+						"description": "Shell command string to execute.",
+					},
+				},
+				"required":             []string{"command"},
+				"additionalProperties": false,
 			},
 		},
 	}
 }
 
 func parseLinuxBashArguments(raw string) (linuxBashRequest, error) {
-	command, err := parseCommandStringArgument(raw)
+	command, err := parseCommandToolArgument(raw)
 	if err != nil {
 		return linuxBashRequest{}, err
 	}
@@ -226,4 +233,24 @@ func parseCommandStringArgument(raw string) (string, error) {
 		return "", fmt.Errorf("tool arguments must be JSON string command")
 	}
 	return trimmed, nil
+}
+
+func parseCommandToolArgument(raw string) (string, error) {
+	if command, err := parseCommandStringArgument(raw); err == nil {
+		return command, nil
+	}
+
+	args, err := readToolArguments(raw)
+	if err != nil {
+		return "", fmt.Errorf("tool argument %q is required", "command")
+	}
+	commandRaw, ok := args["command"]
+	if !ok {
+		return "", fmt.Errorf("tool argument %q is required", "command")
+	}
+	command, ok := commandRaw.(string)
+	if !ok || strings.TrimSpace(command) == "" {
+		return "", fmt.Errorf("tool argument %q must be non-empty string", "command")
+	}
+	return strings.TrimSpace(command), nil
 }

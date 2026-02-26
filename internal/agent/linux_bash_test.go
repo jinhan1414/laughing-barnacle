@@ -132,16 +132,33 @@ func TestParseLinuxBashArguments_RawCommandString(t *testing.T) {
 	}
 }
 
-func TestParseLinuxBashArguments_RejectsLegacyObject(t *testing.T) {
-	_, err := parseLinuxBashArguments(`{"command":"echo hello-linux-bash"}`)
-	if err == nil || !strings.Contains(err.Error(), "JSON string command") {
-		t.Fatalf("expected legacy object rejection, got err=%v", err)
+func TestParseLinuxBashArguments_ObjectCommand(t *testing.T) {
+	req, err := parseLinuxBashArguments(`{"command":"echo hello-linux-bash"}`)
+	if err != nil {
+		t.Fatalf("parseLinuxBashArguments error: %v", err)
+	}
+	if req.Command != "echo hello-linux-bash" {
+		t.Fatalf("unexpected command: %q", req.Command)
+	}
+}
+
+func TestLinuxBashToolDefinition_UsesObjectParameters(t *testing.T) {
+	def := linuxBashToolDefinition()
+	if def.Function.Parameters["type"] != "object" {
+		t.Fatalf("expected object parameters, got %#v", def.Function.Parameters["type"])
+	}
+	properties, ok := def.Function.Parameters["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected properties object, got %#v", def.Function.Parameters["properties"])
+	}
+	if _, ok := properties["command"]; !ok {
+		t.Fatalf("expected command property, got %#v", properties)
 	}
 }
 
 func TestParseLinuxBashArguments_RejectsEmpty(t *testing.T) {
 	_, err := parseLinuxBashArguments(`""`)
-	if err == nil || !strings.Contains(err.Error(), "non-empty command string") {
+	if err == nil || (!strings.Contains(err.Error(), "non-empty command string") && !strings.Contains(err.Error(), `tool argument "command" is required`)) {
 		t.Fatalf("expected empty command rejection, got err=%v", err)
 	}
 }

@@ -7,7 +7,7 @@ func (a *Agent) buildToolRuntimePrompt() string {
 	case "powershell", "pwsh":
 		return strings.TrimSpace(
 			"工具执行环境：linux__bash 当前在 Windows PowerShell 下执行。\n" +
-				"linux__bash 参数直接填写完整命令字符串（不要再包 command/cmd 键）。\n" +
+				"linux__bash 仅保留 command 参数，命令内容直接写在 command 字段（不使用 cmd/timeout_sec/working_dir）。\n" +
 				"若需调用 curl，请使用 curl.exe（避免命中 PowerShell 的 curl 别名）。\n" +
 				"定时任务列表接口固定为 GET /api/schedules（禁止 /api/schedules/list）。\n" +
 				"维护写接口默认使用 JSON：MCP 用 /api/mcp/services/save|toggle|delete，Skills 用 /api/skills/save|toggle|delete|install，Schedules 用 /api/schedules/save|toggle|delete|run。\n" +
@@ -19,7 +19,7 @@ func (a *Agent) buildToolRuntimePrompt() string {
 	case "cmd":
 		return strings.TrimSpace(
 			"工具执行环境：linux__bash 当前在 Windows cmd 下执行。\n" +
-				"linux__bash 参数直接填写完整命令字符串（不要再包 command/cmd 键）。\n" +
+				"linux__bash 仅保留 command 参数，命令内容直接写在 command 字段（不使用 cmd/timeout_sec/working_dir）。\n" +
 				"写 URL 时使用正常双引号，禁止写反斜杠转义引号（如 \\\"http://...\\\"）。\n" +
 				"只能使用 cmd 兼容命令（如 curl、dir、findstr、schtasks、echo），禁止使用 Linux 命令（如 ls/find/head/grep/uname/crontab）。\n" +
 				"定时任务列表接口固定为 GET /api/schedules（禁止 /api/schedules/list）。\n" +
@@ -32,7 +32,7 @@ func (a *Agent) buildToolRuntimePrompt() string {
 	case "bash", "sh":
 		return strings.TrimSpace(
 			"工具执行环境：linux__bash 当前在 Linux shell 下执行。\n" +
-				"linux__bash 参数直接填写完整命令字符串（不要再包 command/cmd 键）。\n" +
+				"linux__bash 仅保留 command 参数，命令内容直接写在 command 字段（不使用 cmd/timeout_sec/working_dir）。\n" +
 				"定时任务列表接口固定为 GET /api/schedules（禁止 /api/schedules/list）。\n" +
 				"维护写接口默认使用 JSON：MCP 用 /api/mcp/services/save|toggle|delete，Skills 用 /api/skills/save|toggle|delete|install，Schedules 用 /api/schedules/save|toggle|delete|run。\n" +
 				"维护写入必须带 Content-Type: application/json；不要默认使用 --data-urlencode。\n" +
@@ -41,7 +41,7 @@ func (a *Agent) buildToolRuntimePrompt() string {
 		)
 	default:
 		return strings.TrimSpace(
-			"调用 linux__bash 时直接填写完整命令字符串（不要再包 command/cmd 键）；" +
+			"调用 linux__bash 时仅保留 command 参数，命令内容直接写在 command 字段（不使用 cmd/timeout_sec/working_dir）；" +
 				"定时任务列表接口固定为 GET /api/schedules（禁止 /api/schedules/list）；" +
 				"维护写接口默认使用 JSON：/api/mcp/services/save|toggle|delete、/api/skills/save|toggle|delete|install、/api/schedules/save|toggle|delete|run；" +
 				"维护写入必须使用 Content-Type: application/json；" +

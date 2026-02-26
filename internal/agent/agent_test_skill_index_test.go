@@ -229,7 +229,7 @@ func TestHandleUserMessage_IncludesToolRuntimeConstraintsPrompt(t *testing.T) {
 		if msg.Role != "system" {
 			continue
 		}
-		if strings.Contains(msg.Content, "直接填写完整命令字符串") {
+		if strings.Contains(msg.Content, "仅保留 command 参数") {
 			found = msg.Content
 			break
 		}
@@ -237,8 +237,8 @@ func TestHandleUserMessage_IncludesToolRuntimeConstraintsPrompt(t *testing.T) {
 	if strings.TrimSpace(found) == "" {
 		t.Fatalf("expected tool runtime constraints prompt to be injected")
 	}
-	if strings.Contains(found, "参数键必须是 command（不是 cmd）") {
-		t.Fatalf("expected command-key instruction removed, got %q", found)
+	if strings.Contains(found, "不要再包 command/cmd 键") {
+		t.Fatalf("expected command-only wording removed, got %q", found)
 	}
 	if !strings.Contains(found, "/api/schedules/list") {
 		t.Fatalf("expected schedules list endpoint constraint, got %q", found)

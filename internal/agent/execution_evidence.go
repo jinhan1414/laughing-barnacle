@@ -97,7 +97,7 @@ func extractLinuxBashCommand(call conversation.ToolCall) (string, bool) {
 	if strings.TrimSpace(call.Name) != builtinLinuxBashToolName {
 		return "", false
 	}
-	command, err := parseCommandStringArgument(call.Arguments)
+	command, err := parseCommandToolArgument(call.Arguments)
 	if err != nil {
 		return "", false
 	}
