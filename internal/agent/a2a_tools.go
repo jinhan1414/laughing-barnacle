@@ -5,38 +5,13 @@ import (
 	"fmt"
 	"laughing-barnacle/internal/llm"
 	"strings"
-	"time"
 )
 
 func a2aBuiltinToolDefinitions() []llm.ToolDefinition {
 	return []llm.ToolDefinition{
-		a2aRegisterToolDefinition(),
 		a2aSendToolDefinition(),
 		a2aGetToolDefinition(),
 		a2aCancelToolDefinition(),
-	}
-}
-
-func a2aRegisterToolDefinition() llm.ToolDefinition {
-	return llm.ToolDefinition{
-		Type: "function",
-		Function: llm.ToolFunctionDefinition{
-			Name:        builtinA2ARegisterToolName,
-			Description: "Register or update one A2A agent connection in local registry.",
-			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"agent_card_url":  map[string]any{"type": "string"},
-					"agent_card_json": map[string]any{"type": "string"},
-					"alias":           map[string]any{"type": "string"},
-					"description":     map[string]any{"type": "string"},
-					"endpoint":        map[string]any{"type": "string"},
-					"auth_token":      map[string]any{"type": "string"},
-					"enabled":         map[string]any{"type": "boolean"},
-				},
-				"additionalProperties": false,
-			},
-		},
 	}
 }
 
@@ -97,34 +72,6 @@ func a2aCancelToolDefinition() llm.ToolDefinition {
 			},
 		},
 	}
-}
-
-func (a *Agent) callA2ARegister(ctx context.Context, raw string) (string, error) {
-	provider, err := a.requireA2AProvider()
-	if err != nil {
-		return "", err
-	}
-	args, err := readToolArguments(raw)
-	if err != nil {
-		return "", err
-	}
-	req := A2ARegisterRequest{
-		AgentCardURL:  readStringArgument(args, "agent_card_url"),
-		AgentCardJSON: readStringArgument(args, "agent_card_json"),
-		Alias:         readStringArgument(args, "alias"),
-		Description:   readStringArgument(args, "description"),
-		Endpoint:      readStringArgument(args, "endpoint"),
-		AuthToken:     readStringArgument(args, "auth_token"),
-		Enabled:       readBoolArgument(args, "enabled", true),
-	}
-	if req.AgentCardURL == "" && req.AgentCardJSON == "" && req.Endpoint == "" {
-		return "", fmt.Errorf("one of agent_card_url, agent_card_json or endpoint is required")
-	}
-	agentInfo, err := provider.Register(ctx, req)
-	if err != nil {
-		return "", err
-	}
-	return renderA2AAgentDetail(agentInfo), nil
 }
 
 func (a *Agent) callA2ASend(ctx context.Context, raw string) (string, error) {
@@ -222,24 +169,6 @@ func renderA2ATaskResult(result A2ATaskResult) string {
 	return strings.TrimSpace(b.String())
 }
 
-func renderA2AAgentDetail(agentInfo A2AAgentDetail) string {
-	var b strings.Builder
-	b.WriteString("agent_id: " + safeOrEmpty(strings.TrimSpace(agentInfo.ID)) + "\n")
-	b.WriteString("name: " + safeOrEmpty(strings.TrimSpace(agentInfo.Name)) + "\n")
-	b.WriteString("enabled: " + boolToOnOff(agentInfo.Enabled) + "\n")
-	b.WriteString("endpoint: " + safeOrEmpty(strings.TrimSpace(agentInfo.Endpoint)) + "\n")
-	if cardURL := strings.TrimSpace(agentInfo.AgentCardURL); cardURL != "" {
-		b.WriteString("agent_card_url: " + cardURL + "\n")
-	}
-	if desc := strings.TrimSpace(agentInfo.Description); desc != "" {
-		b.WriteString("description: " + desc + "\n")
-	}
-	if !agentInfo.UpdatedAt.IsZero() {
-		b.WriteString("updated_at: " + agentInfo.UpdatedAt.UTC().Format(time.RFC3339) + "\n")
-	}
-	return strings.TrimSpace(b.String())
-}
-
 func readStringArgument(args map[string]any, key string) string {
 	value, ok := args[key]
 	if !ok {
@@ -251,18 +180,6 @@ func readStringArgument(args map[string]any, key string) string {
 
 func requireStringArgument(args map[string]any, key string) string {
 	return readStringArgument(args, key)
-}
-
-func readBoolArgument(args map[string]any, key string, fallback bool) bool {
-	value, ok := args[key]
-	if !ok {
-		return fallback
-	}
-	boolValue, ok := value.(bool)
-	if !ok {
-		return fallback
-	}
-	return boolValue
 }
 
 func readObjectArgument(args map[string]any, key string) map[string]any {
@@ -278,11 +195,4 @@ func readObjectArgument(args map[string]any, key string) map[string]any {
 		return nil
 	}
 	return objectValue
-}
-
-func boolToOnOff(v bool) string {
-	if v {
-		return "on"
-	}
-	return "off"
 }

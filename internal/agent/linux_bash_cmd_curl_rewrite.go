@@ -46,7 +46,7 @@ func rewriteCmdCurlSettingsPost(command string) string {
 		}
 	}
 
-	if !isSettingsSaveURL(targetURL) || len(formFields) == 0 {
+	if !isSettingsWriteURL(targetURL) || len(formFields) == 0 {
 		return command
 	}
 
@@ -57,12 +57,16 @@ func rewriteCmdCurlSettingsPost(command string) string {
 	return "curl -sS -X POST " + targetURL + " -d \"" + encoded + "\" -D -"
 }
 
-func isSettingsSaveURL(raw string) bool {
+func isSettingsWriteURL(raw string) bool {
 	u := strings.ToLower(strings.TrimSpace(raw))
 	if u == "" {
 		return false
 	}
-	return strings.Contains(u, "/settings/skills/save") || strings.Contains(u, "/settings/schedules/save")
+	return strings.Contains(u, "/settings/skills/save") ||
+		strings.Contains(u, "/settings/schedules/save") ||
+		strings.Contains(u, "/settings/a2a/save") ||
+		strings.Contains(u, "/settings/a2a/toggle") ||
+		strings.Contains(u, "/settings/a2a/delete")
 }
 
 type formField struct {

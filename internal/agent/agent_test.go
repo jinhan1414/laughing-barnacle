@@ -75,8 +75,6 @@ type mockMemory struct {
 
 type mockA2A struct {
 	indexLines []string
-	details    map[string]A2AAgentDetail
-	register   A2AAgentDetail
 	send       A2ATaskResult
 	get        A2ATaskResult
 	cancel     A2ATaskResult
@@ -122,24 +120,6 @@ func (m *mockA2A) ListIndexLines(_ int) []string {
 		return nil
 	}
 	return append([]string(nil), m.indexLines...)
-}
-
-func (m *mockA2A) ReadAgentDetail(agentID string) (A2AAgentDetail, bool) {
-	if m == nil || m.details == nil {
-		return A2AAgentDetail{}, false
-	}
-	item, ok := m.details[strings.TrimSpace(agentID)]
-	return item, ok
-}
-
-func (m *mockA2A) Register(_ context.Context, _ A2ARegisterRequest) (A2AAgentDetail, error) {
-	if m != nil && m.err != nil {
-		return A2AAgentDetail{}, m.err
-	}
-	if m == nil {
-		return A2AAgentDetail{}, nil
-	}
-	return m.register, nil
 }
 
 func (m *mockA2A) Send(_ context.Context, _ A2ASendRequest) (A2ATaskResult, error) {

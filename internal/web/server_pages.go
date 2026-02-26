@@ -76,6 +76,24 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 			}
 			data.Services = append(data.Services, view)
 		}
+	} else if section == "a2a" {
+		allAgents := s.mcpStore.ListA2AAgents()
+		data.A2AAgents = make([]a2aAgentView, 0, len(allAgents))
+		for _, item := range allAgents {
+			view := a2aAgentView{
+				ID:           item.ID,
+				Name:         item.Name,
+				Description:  item.Description,
+				Endpoint:     item.Endpoint,
+				AgentCardURL: item.AgentCardURL,
+				HasAuthToken: strings.TrimSpace(item.AuthToken) != "",
+				Enabled:      item.Enabled,
+			}
+			if !item.UpdatedAt.IsZero() {
+				view.UpdatedAt = item.UpdatedAt.Format("2006-01-02 15:04:05")
+			}
+			data.A2AAgents = append(data.A2AAgents, view)
+		}
 	} else if section == "skills" {
 		allSkills := s.skillStore.ListSkills()
 		data.Skills = make([]skillView, 0, len(allSkills))

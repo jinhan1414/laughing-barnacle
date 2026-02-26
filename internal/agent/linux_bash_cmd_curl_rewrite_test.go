@@ -66,3 +66,17 @@ func TestRewriteCmdCurlSettingsPost_ScheduleSaveKeepsIDAndEnabled(t *testing.T) 
 		t.Fatalf("expected action encoding to remain valid, got %q", got)
 	}
 }
+
+func TestRewriteCmdCurlSettingsPost_A2ASavePreservesEndpoint(t *testing.T) {
+	raw := `curl -sS -X POST http://127.0.0.1:9080/settings/a2a/save --data-urlencode "name=codex-local" --data-urlencode "description=本地写代码助手" --data-urlencode "endpoint=http://127.0.0.1:9091/a2a/rpc" --data-urlencode "agent_card_url=http://127.0.0.1:9091/.well-known/agent-card.json" --data-urlencode "enabled=on"`
+	got := rewriteCmdCurlSettingsPost(raw)
+	if !strings.Contains(got, "endpoint=http%3A%2F%2F127.0.0.1%3A9091%2Fa2a%2Frpc") {
+		t.Fatalf("expected endpoint field preserved for a2a save, got %q", got)
+	}
+	if !strings.Contains(got, "name=codex-local") || !strings.Contains(got, "enabled=on") {
+		t.Fatalf("expected a2a save core fields preserved, got %q", got)
+	}
+	if !strings.HasSuffix(got, " -D -") {
+		t.Fatalf("expected rewritten command to include -D -, got %q", got)
+	}
+}

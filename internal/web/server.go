@@ -97,6 +97,7 @@ type settingsPageData struct {
 	ActiveSection  string
 	Sections       []settingsSection
 	Services       []mcpServiceView
+	A2AAgents      []a2aAgentView
 	Skills         []skillView
 	MemoryTask     scheduleMemoryMaintenanceView
 	MemoryMetrics  memoryMetricsView
@@ -107,6 +108,17 @@ type settingsPageData struct {
 	AgentPrompts   agentPromptsView
 	Success        string
 	Error          string
+}
+
+type a2aAgentView struct {
+	ID           string
+	Name         string
+	Description  string
+	Endpoint     string
+	AgentCardURL string
+	HasAuthToken bool
+	Enabled      bool
+	UpdatedAt    string
 }
 
 type skillView struct {

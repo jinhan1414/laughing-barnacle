@@ -136,6 +136,108 @@
               <div class="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm text-slate-500">暂无 MCP 服务。先在上方添加一个服务并启用。</div>
             {{end}}
           </div>
+        {{else if eq .ActiveSection "a2a"}}
+          <h2 class="text-base font-semibold">A2A 接入管理</h2>
+          <p class="mt-1 text-sm leading-6 text-slate-500">统一维护已接入 Agent。新增或更新后，可通过 <span class="font-mono text-[12px]">/api/a2a/agents</span> 回读校验。</p>
+
+          <form method="post" action="/settings/a2a/save" class="mt-3 space-y-3">
+            <div class="grid gap-3">
+              <label class="flex flex-col gap-1 text-xs font-medium text-slate-600">
+                Agent ID（新增可留空）
+                <input type="text" name="id" placeholder="例如：codex-local" class="rounded-xl border-slate-300 text-sm">
+              </label>
+              <label class="flex flex-col gap-1 text-xs font-medium text-slate-600">
+                Agent 名称
+                <input type="text" name="name" placeholder="例如：codex-local" required class="rounded-xl border-slate-300 text-sm">
+              </label>
+              <label class="flex flex-col gap-1 text-xs font-medium text-slate-600">
+                说明
+                <textarea name="description" placeholder="例如：本地写代码助手" class="min-h-16 rounded-xl border-slate-300 text-sm"></textarea>
+              </label>
+              <label class="flex flex-col gap-1 text-xs font-medium text-slate-600">
+                Endpoint
+                <input type="url" name="endpoint" placeholder="http://127.0.0.1:9091/a2a/rpc" required class="rounded-xl border-slate-300 text-sm">
+              </label>
+              <label class="flex flex-col gap-1 text-xs font-medium text-slate-600">
+                Agent Card URL（可选）
+                <input type="url" name="agent_card_url" placeholder="http://127.0.0.1:9091/.well-known/agent-card.json" class="rounded-xl border-slate-300 text-sm">
+              </label>
+              <label class="flex flex-col gap-1 text-xs font-medium text-slate-600">
+                鉴权 Token（留空表示不变）
+                <input type="password" name="auth_token" placeholder="Bearer token" class="rounded-xl border-slate-300 text-sm">
+              </label>
+              <label class="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700">
+                <input type="checkbox" name="enabled" class="h-4 w-4 rounded border-slate-300 text-emerald-500 focus:ring-emerald-200">
+                保存后立即启用
+              </label>
+            </div>
+            <div class="flex">
+              <button type="submit" class="w-full rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-white active:scale-[0.99] sm:w-auto">新增/更新 A2A Agent</button>
+            </div>
+          </form>
+
+          <div class="mt-4 space-y-3">
+            {{if .A2AAgents}}
+              {{range .A2AAgents}}
+                <article class="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <div class="flex flex-wrap items-center justify-between gap-2">
+                    <div class="text-sm font-semibold text-slate-800">{{.Name}} <span class="text-xs font-normal text-slate-500">({{.ID}})</span></div>
+                    <span class="rounded-full border px-2 py-0.5 text-xs {{if .Enabled}}border-emerald-200 bg-emerald-50 text-emerald-700{{else}}border-slate-200 bg-white text-slate-500{{end}}">{{if .Enabled}}已启用{{else}}已禁用{{end}}</span>
+                  </div>
+                  <div class="mt-2 break-all text-xs leading-6 text-slate-500">
+                    Endpoint: {{.Endpoint}}<br>
+                    说明: {{if .Description}}{{.Description}}{{else}}(空){{end}}<br>
+                    Agent Card: {{if .AgentCardURL}}{{.AgentCardURL}}{{else}}(空){{end}}<br>
+                    鉴权: {{if .HasAuthToken}}已配置{{else}}未配置{{end}}<br>
+                    最后更新: {{if .UpdatedAt}}{{.UpdatedAt}}{{else}}-{{end}}
+                  </div>
+
+                  <form method="post" action="/settings/a2a/save" class="mt-3 space-y-2">
+                    <input type="hidden" name="id" value="{{.ID}}">
+                    <label class="flex flex-col gap-1 text-xs font-medium text-slate-600">
+                      Agent 名称
+                      <input type="text" name="name" value="{{.Name}}" required class="rounded-lg border-slate-300 text-sm">
+                    </label>
+                    <label class="flex flex-col gap-1 text-xs font-medium text-slate-600">
+                      说明
+                      <textarea name="description" class="min-h-16 rounded-lg border-slate-300 text-sm">{{.Description}}</textarea>
+                    </label>
+                    <label class="flex flex-col gap-1 text-xs font-medium text-slate-600">
+                      Endpoint
+                      <input type="url" name="endpoint" value="{{.Endpoint}}" required class="rounded-lg border-slate-300 text-sm">
+                    </label>
+                    <label class="flex flex-col gap-1 text-xs font-medium text-slate-600">
+                      Agent Card URL
+                      <input type="url" name="agent_card_url" value="{{.AgentCardURL}}" class="rounded-lg border-slate-300 text-sm">
+                    </label>
+                    <label class="flex flex-col gap-1 text-xs font-medium text-slate-600">
+                      鉴权 Token（留空表示不变）
+                      <input type="password" name="auth_token" placeholder="Bearer token" class="rounded-lg border-slate-300 text-sm">
+                    </label>
+                    <label class="inline-flex min-h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700">
+                      <input type="checkbox" name="enabled" class="h-4 w-4 rounded border-slate-300 text-emerald-500 focus:ring-emerald-200" {{if .Enabled}}checked{{end}}>
+                      启用
+                    </label>
+                    <button class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 active:scale-[0.99]" type="submit">保存该 Agent</button>
+                  </form>
+
+                  <div class="mt-2 grid grid-cols-2 gap-2">
+                    <form method="post" action="/settings/a2a/toggle">
+                      <input type="hidden" name="id" value="{{.ID}}">
+                      <input type="hidden" name="enabled" value="{{if .Enabled}}false{{else}}true{{end}}">
+                      <button class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 active:scale-[0.99]" type="submit">{{if .Enabled}}禁用{{else}}启用{{end}}</button>
+                    </form>
+                    <form method="post" action="/settings/a2a/delete" onsubmit="return confirm('确认删除 A2A Agent {{.ID}} ?')">
+                      <input type="hidden" name="id" value="{{.ID}}">
+                      <button class="w-full rounded-lg bg-rose-600 px-3 py-2 text-sm font-medium text-white active:scale-[0.99]" type="submit">删除</button>
+                    </form>
+                  </div>
+                </article>
+              {{end}}
+            {{else}}
+              <div class="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm text-slate-500">暂无 A2A Agent。先在上方添加一个并启用。</div>
+            {{end}}
+          </div>
         {{else if eq .ActiveSection "memory"}}
           <h2 class="text-base font-semibold">MemoryFS 可视化</h2>
           <p class="mt-1 text-sm leading-6 text-slate-500">展示统一记忆命名空间的节点与沉淀分段状态。读取接口：`/api/memory/index`、`/api/memory/read`、`/api/memory/section`。</p>

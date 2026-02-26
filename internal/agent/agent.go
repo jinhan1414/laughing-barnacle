@@ -42,8 +42,6 @@ type MemoryProvider interface {
 
 type A2AProvider interface {
 	ListIndexLines(limit int) []string
-	ReadAgentDetail(agentID string) (A2AAgentDetail, bool)
-	Register(ctx context.Context, req A2ARegisterRequest) (A2AAgentDetail, error)
 	Send(ctx context.Context, req A2ASendRequest) (A2ATaskResult, error)
 	GetTask(ctx context.Context, req A2ATaskQuery) (A2ATaskResult, error)
 	CancelTask(ctx context.Context, req A2ATaskQuery) (A2ATaskResult, error)
@@ -68,7 +66,6 @@ const (
 	maxReplayHistoryToolCalls  = 2
 	maxAssistantReplyRunes     = 2200
 	runtimeDateContextMarker   = "[[RUNTIME_DATE_CONTEXT]]"
-	builtinA2ARegisterToolName = "a2a__register"
 	builtinA2ASendToolName     = "a2a__send"
 	builtinA2AGetToolName      = "a2a__get"
 	builtinA2ACancelToolName   = "a2a__cancel"
