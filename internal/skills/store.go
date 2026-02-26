@@ -33,12 +33,13 @@ var builtinSkills = []Skill{
 		Description: "当用户要求新增/修改/删除/启停 MCP 服务时使用",
 		Prompt: strings.TrimSpace(
 			"目标：用最少命令维护 MCP 服务，默认命令预算 3-4 条。\n" +
-				"硬性约束：写接口必须使用 POST + 表单字段（--data-urlencode），禁止 JSON body。\n" +
+				"硬性约束：写接口必须使用 JSON body（Content-Type: application/json），禁止使用表单 URL 编码作为默认写入方式。\n" +
+				"硬性约束：Windows 下优先使用 PowerShell 的 Invoke-RestMethod + ConvertTo-Json；若使用 curl，必须用 curl.exe。\n" +
 				"步骤 1（必做）：先查现状：curl -sS http://127.0.0.1:8080/api/mcp/services。\n" +
 				"步骤 2（三选一，仅一次写入）：\n" +
-				"  a) 新增/更新 streamable_http：curl -sS -X POST http://127.0.0.1:8080/settings/mcp/save --data-urlencode 'name=<service_name>' --data-urlencode 'transport=streamable_http' --data-urlencode 'endpoint=<endpoint>' --data-urlencode 'enabled=on'。\n" +
-				"  b) 新增/更新 stdio：curl -sS -X POST http://127.0.0.1:8080/settings/mcp/save --data-urlencode 'name=<service_name>' --data-urlencode 'transport=stdio' --data-urlencode 'command=<command>' --data-urlencode 'args_json=<json_array>' --data-urlencode 'enabled=on'。\n" +
-				"  c) 启停：curl -sS -X POST http://127.0.0.1:8080/settings/mcp/toggle --data-urlencode 'id=<service_id>' --data-urlencode 'enabled=true|false'；删除：curl -sS -X POST http://127.0.0.1:8080/settings/mcp/delete --data-urlencode 'id=<service_id>'。\n" +
+				"  a) 新增/更新 streamable_http（PowerShell）：$body=@{id=\"<optional_id>\";name=\"<service_name>\";transport=\"streamable_http\";endpoint=\"<endpoint>\";enabled=$true}|ConvertTo-Json -Compress; Invoke-RestMethod -Method Post -Uri \"http://127.0.0.1:8080/api/mcp/services/save\" -ContentType \"application/json\" -Body $body。\n" +
+				"  b) 新增/更新 stdio（PowerShell）：$body=@{id=\"<optional_id>\";name=\"<service_name>\";transport=\"stdio\";command=\"<command>\";args=@(\"<arg1>\",\"<arg2>\");enabled=$true}|ConvertTo-Json -Compress; Invoke-RestMethod -Method Post -Uri \"http://127.0.0.1:8080/api/mcp/services/save\" -ContentType \"application/json\" -Body $body。\n" +
+				"  c) 启停/删除（PowerShell）：Invoke-RestMethod -Method Post -Uri \"http://127.0.0.1:8080/api/mcp/services/toggle\" -ContentType \"application/json\" -Body (@{id=\"<service_id>\";enabled=$false}|ConvertTo-Json -Compress)；删除用 /api/mcp/services/delete + {\"id\":\"<service_id>\"}。\n" +
 				"步骤 3（必做）：回读校验：curl -sS http://127.0.0.1:8080/api/mcp/services，并仅基于回读结果汇报 diff。\n" +
 				"默认自主闭环：目标明确时直接完成，不要求用户二次确认；仅在关键参数缺失、权限不足或删除对象歧义时追问。",
 		),
@@ -85,12 +86,13 @@ var builtinSkills = []Skill{
 		Description: "当用户要求安装/新增/删除/启停 Skill 时使用",
 		Prompt: strings.TrimSpace(
 			"目标：用最少命令维护 Skill，默认命令预算 3-4 条。\n" +
-				"硬性约束：写接口必须使用 POST + 表单字段（--data-urlencode），禁止 JSON body。\n" +
+				"硬性约束：写接口必须使用 JSON body（Content-Type: application/json），禁止使用表单 URL 编码作为默认写入方式。\n" +
+				"硬性约束：Windows 下优先使用 PowerShell 的 Invoke-RestMethod + ConvertTo-Json；若使用 curl，必须用 curl.exe。\n" +
 				"步骤 1（必做）：先查现状：curl -sS http://127.0.0.1:8080/api/skills。\n" +
 				"步骤 2（按需执行一个写分支）：\n" +
-				"  a) skills.sh 安装：curl -sS -X POST http://127.0.0.1:8080/settings/skills/install --data-urlencode 'skills_sh_url=<url>'。\n" +
-				"  b) 手动新增/更新：curl -sS -X POST http://127.0.0.1:8080/settings/skills/save --data-urlencode 'name=<skill_slug>' --data-urlencode 'description=<desc>' --data-urlencode 'prompt=<prompt>' --data-urlencode 'enabled=on'。\n" +
-				"  c) 启停：curl -sS -X POST http://127.0.0.1:8080/settings/skills/toggle --data-urlencode 'id=<skill_id>' --data-urlencode 'enabled=true|false'；删除：curl -sS -X POST http://127.0.0.1:8080/settings/skills/delete --data-urlencode 'id=<skill_id>'。\n" +
+				"  a) skills.sh 安装（PowerShell）：Invoke-RestMethod -Method Post -Uri \"http://127.0.0.1:8080/api/skills/install\" -ContentType \"application/json\" -Body (@{skills_sh_url=\"<url>\"}|ConvertTo-Json -Compress)。\n" +
+				"  b) 手动新增/更新（PowerShell）：Invoke-RestMethod -Method Post -Uri \"http://127.0.0.1:8080/api/skills/save\" -ContentType \"application/json\" -Body (@{id=\"<optional_id>\";name=\"<skill_slug>\";description=\"<desc>\";prompt=\"<prompt>\";enabled=$true}|ConvertTo-Json -Compress)。\n" +
+				"  c) 启停/删除（PowerShell）：Invoke-RestMethod -Method Post -Uri \"http://127.0.0.1:8080/api/skills/toggle\" -ContentType \"application/json\" -Body (@{id=\"<skill_id>\";enabled=$false}|ConvertTo-Json -Compress)；删除用 /api/skills/delete + {\"id\":\"<skill_id>\"}。\n" +
 				"步骤 3（必做）：回读校验：curl -sS http://127.0.0.1:8080/api/skills，并仅基于回读结果汇报 diff 与启用状态。\n" +
 				"仅当目标不明确时，才额外调用 GET /api/skills/catalog/search?q=<关键词>&limit=8；目标明确时禁止先搜索再重复查询。\n" +
 				"默认自主闭环：目标明确时直接执行；仅在重名冲突、删除对象不唯一或关键信息缺失时追问。",
@@ -104,23 +106,22 @@ var builtinSkills = []Skill{
 		Description: "当用户要求查看/修改 Cron 定时任务时使用",
 		Prompt: strings.TrimSpace(
 			"目标：以最少命令完成定时任务配置并可验证，默认命令预算 3-4 条。\n" +
-				"写入字段硬约束：/settings/schedules/save 仅接受 id,name,description,action=skill:<skill_id>,cron_expr,enabled=on；禁止 cron/prompt/action=reminder。\n" +
-				"硬性约束：写接口必须使用 POST + 表单字段（--data-urlencode），禁止 JSON body。\n" +
-				"硬性约束：创建/更新 Skill 固定使用 POST /settings/skills/save（禁止 /api/skills/save）。\n" +
+				"写入字段硬约束：/api/schedules/save 仅接受 id,name,description,action=skill:<skill_id>,cron_expr,enabled；禁止 cron/prompt/action=reminder。\n" +
+				"硬性约束：维护写接口必须使用 JSON body（Content-Type: application/json），禁止使用表单 URL 编码作为默认写入方式。\n" +
+				"硬性约束：创建/更新 Skill 固定使用 POST /api/skills/save（JSON）。\n" +
 				"硬性约束：action 必须是 skill:<skill_id>；skill_id 仅允许 [a-zA-Z0-9_-]，必须使用普通连字符 '-'。\n" +
 				"硬性约束：用户提醒类任务（如打卡/会议/出行提醒）禁止绑定流程性内置 skill（project-memory-maintainer、context-archive-recall、mcp-config-maintainer、skills-config-maintainer、schedule-config-maintainer）。\n" +
 				"硬性约束：提醒类任务必须先创建或复用专用 reminder skill（例如 punch-card-reminder），再用 action=skill:<reminder_skill_id> 绑定。\n" +
 				"硬性约束：调用 linux__bash 时，工具参数键必须是 command（不是 cmd）。\n" +
 				"硬性约束：Windows cmd 场景下 URL 使用正常双引号，禁止反斜杠转义引号（如 \\\"http://...\\\"）。\n" +
-				"硬性约束：使用 --data-urlencode 时，每个字段必须写成 --data-urlencode \"key=value\"（禁止省略双引号）。\n" +
-				"硬性约束：在 cmd + /settings/*/save 场景，优先使用单条 -d \"k=v&k2=v2\"（值先 URL 编码），避免 -F 与多段参数拆分。\n" +
+				"硬性约束：JSON 写入必须显式带 Content-Type: application/json；cmd 下用单条 -d \"{\\\"k\\\":\\\"v\\\"}\"。\n" +
 				"硬性约束：定时任务列表接口固定为 GET /api/schedules（禁止 /api/schedules/list）。\n" +
 				"步骤 1（必做）：先查技能：curl -sS http://127.0.0.1:8080/api/skills；仅在需要更新已有任务时再查一次 /api/schedules。\n" +
 				"步骤 2（按分支执行一次写入）：\n" +
-				"  a) skill 不存在：先创建 skill：curl -sS -X POST http://127.0.0.1:8080/settings/skills/save --data-urlencode 'name=<skill_slug>' --data-urlencode 'description=<desc>' --data-urlencode 'prompt=<prompt>' --data-urlencode 'enabled=on'。\n" +
-				"  b) skill 已存在但禁用：先启用：curl -sS -X POST http://127.0.0.1:8080/settings/skills/toggle --data-urlencode 'id=<skill_id>' --data-urlencode 'enabled=true'。\n" +
-				"  c) 保存任务：curl -sS -X POST http://127.0.0.1:8080/settings/schedules/save --data-urlencode 'id=<schedule_id>' --data-urlencode 'name=<name>' --data-urlencode 'description=<desc>' --data-urlencode 'action=skill:<skill_id>' --data-urlencode 'cron_expr=<cron>' --data-urlencode 'enabled=on'。\n" +
-				"  d) 立即执行（仅用户明确要求时）：curl -sS -X POST http://127.0.0.1:8080/settings/schedules/run --data-urlencode 'id=<schedule_id>'。\n" +
+				"  a) skill 不存在：先创建 skill（PowerShell）：Invoke-RestMethod -Method Post -Uri \"http://127.0.0.1:8080/api/skills/save\" -ContentType \"application/json\" -Body (@{id=\"<skill_slug>\";name=\"<skill_slug>\";description=\"<desc>\";prompt=\"<prompt>\";enabled=$true}|ConvertTo-Json -Compress)。\n" +
+				"  b) skill 已存在但禁用：先启用（PowerShell）：Invoke-RestMethod -Method Post -Uri \"http://127.0.0.1:8080/api/skills/toggle\" -ContentType \"application/json\" -Body (@{id=\"<skill_id>\";enabled=$true}|ConvertTo-Json -Compress)。\n" +
+				"  c) 保存任务（PowerShell）：Invoke-RestMethod -Method Post -Uri \"http://127.0.0.1:8080/api/schedules/save\" -ContentType \"application/json\" -Body (@{id=\"<schedule_id>\";name=\"<name>\";description=\"<desc>\";action=\"skill:<skill_id>\";cron_expr=\"<cron>\";enabled=$true}|ConvertTo-Json -Compress)。\n" +
+				"  d) 立即执行（仅用户明确要求时）：Invoke-RestMethod -Method Post -Uri \"http://127.0.0.1:8080/api/schedules/run\" -ContentType \"application/json\" -Body (@{id=\"<schedule_id>\"}|ConvertTo-Json -Compress)。\n" +
 				"步骤 3（必做）：回读一次：curl -sS http://127.0.0.1:8080/api/schedules；仅基于回读结果汇报是否生效。\n" +
 				"失败处理约束：若接口调用失败，只允许重试同一 API 或先查 /healthz；禁止改为目录扫描、系统全盘搜索或 Linux 命令探测。\n" +
 				"若工具回显 shell: cmd，后续仅允许使用 cmd 兼容命令（curl、dir、findstr、schtasks、echo）。\n" +

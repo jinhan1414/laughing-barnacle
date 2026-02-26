@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"laughing-barnacle/internal/mcp"
-	"laughing-barnacle/internal/routine"
 	"laughing-barnacle/internal/scheduler"
 )
 
@@ -28,21 +27,11 @@ func (s *Server) handleSettingsScheduleSave(w http.ResponseWriter, r *http.Reque
 		Description: strings.TrimSpace(r.FormValue("description")),
 		Action:      strings.TrimSpace(r.FormValue("action")),
 		CronExpr:    strings.TrimSpace(r.FormValue("cron_expr")),
-		Enabled:     r.FormValue("enabled") == "on",
+		Enabled:     parseEnabledFormValue(r.FormValue("enabled")),
 	}
-	if err := s.validateScheduleActionSkill(task.Action); err != nil {
+	if err := s.saveSchedule(task); err != nil {
 		s.redirectSettings(w, r, "schedules", "", err.Error())
 		return
-	}
-	if err := s.mcpStore.UpsertScheduledTask(task); err != nil {
-		s.redirectSettings(w, r, "schedules", "", err.Error())
-		return
-	}
-	if s.scheduler != nil {
-		if err := s.scheduler.Reload(); err != nil {
-			s.redirectSettings(w, r, "schedules", "", "调度器重载失败："+err.Error())
-			return
-		}
 	}
 	s.redirectSettings(w, r, "schedules", "定时任务已保存", "")
 }
@@ -57,52 +46,12 @@ func (s *Server) handleSettingsScheduleDelete(w http.ResponseWriter, r *http.Req
 		return
 	}
 	id := strings.TrimSpace(r.FormValue("id"))
-	allTasks := s.mcpStore.ListScheduledTasks()
-	task, taskFound := findScheduledTaskByID(allTasks, id)
-	if err := s.mcpStore.DeleteScheduledTask(id); err != nil {
+	result, err := s.deleteSchedule(id)
+	if err != nil {
 		s.redirectSettings(w, r, "schedules", "", err.Error())
 		return
 	}
-	if s.scheduler != nil {
-		if err := s.scheduler.Reload(); err != nil {
-			s.redirectSettings(w, r, "schedules", "", "调度器重载失败："+err.Error())
-			return
-		}
-	}
-
-	success := fmt.Sprintf("定时任务 %s 已删除", id)
-	if s.skillStore != nil && taskFound {
-		if skillID, ok := routine.SkillIDFromAction(task.Action); ok {
-			referencedByOthers := false
-			for _, otherTask := range allTasks {
-				if strings.TrimSpace(otherTask.ID) == strings.TrimSpace(task.ID) {
-					continue
-				}
-				otherSkillID, skillAction := routine.SkillIDFromAction(otherTask.Action)
-				if skillAction && otherSkillID == skillID {
-					referencedByOthers = true
-					break
-				}
-			}
-			if referencedByOthers {
-				success += fmt.Sprintf("；Skill %s 仍被其他任务引用，未删除", skillID)
-			} else if s.isBuiltinSkill(skillID) {
-				success += fmt.Sprintf("；Skill %s 为内置技能，保留", skillID)
-			} else if err := s.skillStore.DeleteSkill(skillID); err != nil {
-				s.redirectSettings(
-					w,
-					r,
-					"schedules",
-					success,
-					fmt.Sprintf("删除关联 Skill %s 失败: %v", skillID, err),
-				)
-				return
-			} else {
-				success += fmt.Sprintf("；关联 Skill %s 已删除", skillID)
-			}
-		}
-	}
-	s.redirectSettings(w, r, "schedules", success, "")
+	s.redirectSettings(w, r, "schedules", result.Message, result.Warning)
 }
 
 func (s *Server) handleSettingsScheduleToggle(w http.ResponseWriter, r *http.Request) {
@@ -115,16 +64,10 @@ func (s *Server) handleSettingsScheduleToggle(w http.ResponseWriter, r *http.Req
 		return
 	}
 	id := strings.TrimSpace(r.FormValue("id"))
-	enable := r.FormValue("enabled") == "true"
-	if err := s.mcpStore.SetScheduledTaskEnabled(id, enable); err != nil {
+	enable := parseEnabledFormValue(r.FormValue("enabled"))
+	if err := s.toggleSchedule(id, enable); err != nil {
 		s.redirectSettings(w, r, "schedules", "", err.Error())
 		return
-	}
-	if s.scheduler != nil {
-		if err := s.scheduler.Reload(); err != nil {
-			s.redirectSettings(w, r, "schedules", "", "调度器重载失败："+err.Error())
-			return
-		}
 	}
 	if enable {
 		s.redirectSettings(w, r, "schedules", fmt.Sprintf("定时任务 %s 已启用", id), "")
@@ -143,45 +86,10 @@ func (s *Server) handleSettingsScheduleRun(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	taskID := strings.TrimSpace(r.FormValue("id"))
-	if taskID == "" {
-		s.redirectSettings(w, r, "schedules", "", "任务 id 不能为空")
-		return
-	}
-	task, ok := findScheduledTaskByID(s.mcpStore.ListScheduledTasks(), taskID)
-	if !ok {
-		s.redirectSettings(w, r, "schedules", "", fmt.Sprintf("定时任务 %s 不存在", taskID))
-		return
-	}
-	if err := s.validateScheduleActionSkill(task.Action); err != nil {
-		runAt := time.Now().Truncate(time.Second)
-		_ = s.mcpStore.MarkScheduledTaskRun(task.ID, runAt, "error", err.Error())
-		s.redirectSettings(w, r, "schedules", "", "立即执行失败："+err.Error())
-		return
-	}
-	if s.scheduler != nil {
-		if err := s.scheduler.RunNow(taskID); err != nil {
-			s.redirectSettings(w, r, "schedules", "", "立即执行失败："+err.Error())
-			return
-		}
-		s.redirectSettings(w, r, "schedules", fmt.Sprintf("定时任务 %s 已立即执行", taskID), "")
-		return
-	}
-	if s.agent == nil {
-		s.redirectSettings(w, r, "schedules", "", "agent 未初始化")
-		return
-	}
-
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
 	defer cancel()
-
-	runAt := time.Now().Truncate(time.Second)
-	if err := s.agent.RunScheduledTask(ctx, task.Action); err != nil {
-		_ = s.mcpStore.MarkScheduledTaskRun(task.ID, runAt, "error", err.Error())
-		s.redirectSettings(w, r, "schedules", "", "立即执行失败："+err.Error())
-		return
-	}
-	if err := s.mcpStore.MarkScheduledTaskRun(task.ID, runAt, "success", "manual_run"); err != nil {
-		s.redirectSettings(w, r, "schedules", "", "状态写回失败："+err.Error())
+	if err := s.runScheduleNow(ctx, taskID); err != nil {
+		s.redirectSettings(w, r, "schedules", "", err.Error())
 		return
 	}
 	s.redirectSettings(w, r, "schedules", fmt.Sprintf("定时任务 %s 已立即执行", taskID), "")

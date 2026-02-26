@@ -3,11 +3,12 @@ package web
 import (
 	"context"
 	"fmt"
-	"laughing-barnacle/internal/mcp"
-	"laughing-barnacle/internal/skills"
 	"net/http"
 	"strings"
 	"time"
+
+	"laughing-barnacle/internal/mcp"
+	"laughing-barnacle/internal/skills"
 )
 
 func (s *Server) handleSettingsMCPSave(w http.ResponseWriter, r *http.Request) {
@@ -21,13 +22,13 @@ func (s *Server) handleSettingsMCPSave(w http.ResponseWriter, r *http.Request) {
 	}
 
 	service := mcp.Service{
-		ID:        "",
+		ID:        strings.TrimSpace(r.FormValue("id")),
 		Name:      strings.TrimSpace(r.FormValue("name")),
 		Endpoint:  strings.TrimSpace(r.FormValue("endpoint")),
 		Command:   strings.TrimSpace(r.FormValue("command")),
 		Transport: strings.TrimSpace(r.FormValue("transport")),
 		AuthToken: strings.TrimSpace(r.FormValue("auth_token")),
-		Enabled:   r.FormValue("enabled") == "on",
+		Enabled:   parseEnabledFormValue(r.FormValue("enabled")),
 	}
 	args, err := parseJSONArgsList(strings.TrimSpace(r.FormValue("args_json")))
 	if err != nil {
@@ -35,11 +36,10 @@ func (s *Server) handleSettingsMCPSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	service.Args = args
-	if err := s.mcpStore.UpsertService(service); err != nil {
+	if err := s.saveMCPService(service); err != nil {
 		s.redirectSettings(w, r, "mcp", "", err.Error())
 		return
 	}
-	s.mcpTools.InvalidateCache()
 	s.redirectSettings(w, r, "mcp", "MCP 服务已保存", "")
 }
 
@@ -53,11 +53,10 @@ func (s *Server) handleSettingsMCPDelete(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	id := strings.TrimSpace(r.FormValue("id"))
-	if err := s.mcpStore.DeleteService(id); err != nil {
+	if err := s.deleteMCPService(id); err != nil {
 		s.redirectSettings(w, r, "mcp", "", err.Error())
 		return
 	}
-	s.mcpTools.InvalidateCache()
 	s.redirectSettings(w, r, "mcp", fmt.Sprintf("MCP 服务 %s 已删除", id), "")
 }
 
@@ -71,12 +70,11 @@ func (s *Server) handleSettingsMCPToggle(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	id := strings.TrimSpace(r.FormValue("id"))
-	enable := r.FormValue("enabled") == "true"
-	if err := s.mcpStore.SetEnabled(id, enable); err != nil {
+	enable := parseEnabledFormValue(r.FormValue("enabled"))
+	if err := s.toggleMCPService(id, enable); err != nil {
 		s.redirectSettings(w, r, "mcp", "", err.Error())
 		return
 	}
-	s.mcpTools.InvalidateCache()
 	if enable {
 		s.redirectSettings(w, r, "mcp", fmt.Sprintf("MCP 服务 %s 已启用", id), "")
 		return
@@ -121,7 +119,7 @@ func (s *Server) handleSettingsSkillInstall(w http.ResponseWriter, r *http.Reque
 	rawURL := strings.TrimSpace(r.FormValue("skills_sh_url"))
 	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
 	defer cancel()
-	installed, err := s.skillStore.InstallFromSkillsSH(ctx, rawURL)
+	installed, err := s.installSkill(ctx, rawURL)
 	if err != nil {
 		s.redirectSettings(w, r, "skills", "", err.Error())
 		return
@@ -140,13 +138,13 @@ func (s *Server) handleSettingsSkillSave(w http.ResponseWriter, r *http.Request)
 	}
 
 	skill := skills.Skill{
-		ID:          "",
+		ID:          strings.TrimSpace(r.FormValue("id")),
 		Name:        strings.TrimSpace(r.FormValue("name")),
 		Description: strings.TrimSpace(r.FormValue("description")),
 		Prompt:      strings.TrimSpace(r.FormValue("prompt")),
-		Enabled:     r.FormValue("enabled") == "on",
+		Enabled:     parseEnabledFormValue(r.FormValue("enabled")),
 	}
-	if err := s.skillStore.UpsertSkill(skill); err != nil {
+	if err := s.saveSkill(skill); err != nil {
 		s.redirectSettings(w, r, "skills", "", err.Error())
 		return
 	}
@@ -164,7 +162,7 @@ func (s *Server) handleSettingsSkillDelete(w http.ResponseWriter, r *http.Reques
 	}
 
 	id := strings.TrimSpace(r.FormValue("id"))
-	if err := s.skillStore.DeleteSkill(id); err != nil {
+	if err := s.deleteSkill(id); err != nil {
 		s.redirectSettings(w, r, "skills", "", err.Error())
 		return
 	}
@@ -182,8 +180,8 @@ func (s *Server) handleSettingsSkillToggle(w http.ResponseWriter, r *http.Reques
 	}
 
 	id := strings.TrimSpace(r.FormValue("id"))
-	enable := r.FormValue("enabled") == "true"
-	if err := s.skillStore.SetSkillEnabled(id, enable); err != nil {
+	enable := parseEnabledFormValue(r.FormValue("enabled"))
+	if err := s.toggleSkill(id, enable); err != nil {
 		s.redirectSettings(w, r, "skills", "", err.Error())
 		return
 	}

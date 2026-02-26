@@ -97,20 +97,17 @@ func TestExtractRedirectErrorFromCurlHeaders(t *testing.T) {
 func TestNormalizeLocalAPIEndpointAliases(t *testing.T) {
 	raw := "curl -sS -X POST http://127.0.0.1:9080/api/skills/save && curl -sS http://127.0.0.1:9080/api/schedules/list"
 	got := normalizeLocalAPIEndpointAliases(raw)
-	if strings.Contains(got, "/api/skills/save") {
-		t.Fatalf("expected /api/skills/save alias to be rewritten, got %q", got)
-	}
 	if strings.Contains(got, "/api/schedules/list") {
 		t.Fatalf("expected /api/schedules/list alias to be rewritten, got %q", got)
 	}
-	if !strings.Contains(got, "/settings/skills/save") || !strings.Contains(got, "/api/schedules") {
+	if !strings.Contains(got, "/api/skills/save") || !strings.Contains(got, "/api/schedules") {
 		t.Fatalf("expected rewritten aliases in command, got %q", got)
 	}
 }
 
 func TestLocalAPIEndpointAliasHint(t *testing.T) {
-	hint := localAPIEndpointAliasHint("curl -sS -X POST http://127.0.0.1:9080/api/skills/save")
-	if !strings.Contains(hint, "/api/skills/save -> /settings/skills/save") {
-		t.Fatalf("expected skills endpoint alias hint, got %q", hint)
+	hint := localAPIEndpointAliasHint("curl -sS http://127.0.0.1:9080/api/schedules/list")
+	if !strings.Contains(hint, "/api/schedules/list -> /api/schedules") {
+		t.Fatalf("expected schedules endpoint alias hint, got %q", hint)
 	}
 }
