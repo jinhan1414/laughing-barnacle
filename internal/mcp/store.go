@@ -37,6 +37,17 @@ type Service struct {
 	UpdatedAt  time.Time          `json:"updated_at"`
 }
 
+type A2AAgent struct {
+	ID           string    `json:"id"`
+	Name         string    `json:"name"`
+	Description  string    `json:"description,omitempty"`
+	Endpoint     string    `json:"endpoint"`
+	AgentCardURL string    `json:"agent_card_url,omitempty"`
+	AuthToken    string    `json:"auth_token,omitempty"`
+	Enabled      bool      `json:"enabled"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
 type ServiceToolState struct {
 	Name      string    `json:"name"`
 	Enabled   bool      `json:"enabled"`
@@ -72,6 +83,9 @@ type fileConfig struct {
 	MCP struct {
 		Services []Service `json:"services"`
 	} `json:"mcp"`
+	A2A struct {
+		Agents []A2AAgent `json:"agents"`
+	} `json:"a2a"`
 	Skills struct {
 		Items []Skill `json:"items"`
 	} `json:"skills"`

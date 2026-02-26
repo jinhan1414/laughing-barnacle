@@ -219,6 +219,17 @@ type apiMCPService struct {
 	UpdatedAt time.Time `json:"updated_at,omitempty"`
 }
 
+type apiA2AAgent struct {
+	ID           string    `json:"id"`
+	Name         string    `json:"name"`
+	Description  string    `json:"description,omitempty"`
+	Endpoint     string    `json:"endpoint"`
+	AgentCardURL string    `json:"agent_card_url,omitempty"`
+	Enabled      bool      `json:"enabled"`
+	HasAuthToken bool      `json:"has_auth_token"`
+	UpdatedAt    time.Time `json:"updated_at,omitempty"`
+}
+
 type apiSkill struct {
 	ID          string    `json:"id"`
 	Name        string    `json:"name"`

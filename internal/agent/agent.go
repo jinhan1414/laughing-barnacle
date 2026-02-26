@@ -40,6 +40,15 @@ type MemoryProvider interface {
 	AppendTurn(user, assistant string, toolCalls []conversation.ToolCall, now time.Time) error
 }
 
+type A2AProvider interface {
+	ListIndexLines(limit int) []string
+	ReadAgentDetail(agentID string) (A2AAgentDetail, bool)
+	Register(ctx context.Context, req A2ARegisterRequest) (A2AAgentDetail, error)
+	Send(ctx context.Context, req A2ASendRequest) (A2ATaskResult, error)
+	GetTask(ctx context.Context, req A2ATaskQuery) (A2ATaskResult, error)
+	CancelTask(ctx context.Context, req A2ATaskQuery) (A2ATaskResult, error)
+}
+
 const (
 	maxInjectedSkillPrompts    = 4
 	maxSingleSkillPromptRunes  = 220
@@ -59,6 +68,10 @@ const (
 	maxReplayHistoryToolCalls  = 2
 	maxAssistantReplyRunes     = 2200
 	runtimeDateContextMarker   = "[[RUNTIME_DATE_CONTEXT]]"
+	builtinA2ARegisterToolName = "a2a__register"
+	builtinA2ASendToolName     = "a2a__send"
+	builtinA2AGetToolName      = "a2a__get"
+	builtinA2ACancelToolName   = "a2a__cancel"
 )
 
 var (
@@ -91,6 +104,7 @@ type Agent struct {
 	tools   ToolProvider
 	skills  SkillProvider
 	memory  MemoryProvider
+	a2a     A2AProvider
 	prompts PromptProvider
 	updater PromptUpdater
 	store   *conversation.Store
@@ -118,6 +132,12 @@ func (a *Agent) SetMemoryProvider(provider MemoryProvider) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.memory = provider
+}
+
+func (a *Agent) SetA2AProvider(provider A2AProvider) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.a2a = provider
 }
 
 func (a *Agent) SetPromptProvider(provider PromptProvider) {

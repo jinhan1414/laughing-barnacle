@@ -46,6 +46,39 @@ var builtinSkills = []Skill{
 		Source:  builtinSkillSource,
 	},
 	{
+		ID:          "a2a-config-maintainer",
+		Name:        "A2A 接入维护",
+		Description: "当用户要求新增/修改/删除/启停 A2A Agent 接入时使用",
+		Prompt: strings.TrimSpace(
+			"目标：用最少命令维护 A2A 接入，默认命令预算 3-4 条。\n" +
+				"硬性约束：写接口必须使用 POST + 表单字段（--data-urlencode），禁止 JSON body。\n" +
+				"步骤 1（必做）：先查现状：curl -sS http://127.0.0.1:8080/api/a2a/agents。\n" +
+				"步骤 2（按需执行一个写分支）：\n" +
+				"  a) 新增/更新：curl -sS -X POST http://127.0.0.1:8080/settings/a2a/save --data-urlencode 'id=<optional_agent_id>' --data-urlencode 'name=<agent_name>' --data-urlencode 'description=<desc>' --data-urlencode 'endpoint=<a2a_endpoint>' --data-urlencode 'agent_card_url=<optional_card_url>' --data-urlencode 'auth_token=<optional_token>' --data-urlencode 'enabled=on'。\n" +
+				"  b) 启停：curl -sS -X POST http://127.0.0.1:8080/settings/a2a/toggle --data-urlencode 'id=<agent_id>' --data-urlencode 'enabled=true|false'。\n" +
+				"  c) 删除：curl -sS -X POST http://127.0.0.1:8080/settings/a2a/delete --data-urlencode 'id=<agent_id>'。\n" +
+				"步骤 3（必做）：回读校验：curl -sS http://127.0.0.1:8080/api/a2a/agents；必要时再读单个详情：curl -sS \"http://127.0.0.1:8080/api/a2a/agents/read?id=<agent_id>\"。\n" +
+				"默认自主闭环：目标明确时直接执行；仅在 endpoint/card_url 缺失、删除对象歧义或鉴权信息缺失时追问。",
+		),
+		Enabled: true,
+		Source:  builtinSkillSource,
+	},
+	{
+		ID:          "a2a-task-orchestrator",
+		Name:        "A2A 任务编排",
+		Description: "当用户要求调用已接入外部 Agent 完成任务时使用",
+		Prompt: strings.TrimSpace(
+			"目标：基于已接入 A2A Agent 完成任务编排与结果回读。\n" +
+				"步骤 1：先读索引：curl -sS http://127.0.0.1:8080/api/a2a/agents，优先选 enabled=true 且最相关的 agent_id。\n" +
+				"步骤 2：如索引不足，再读单个详情：curl -sS \"http://127.0.0.1:8080/api/a2a/agents/read?id=<agent_id>\"。\n" +
+				"步骤 3：调用内置 A2A 工具执行：a2a__send -> 按需 a2a__get -> 需要中断时 a2a__cancel。\n" +
+				"约束：禁止一次性读取全部 Agent 详情；单轮默认只读 1 个详情，不足再补读。\n" +
+				"约束：只基于工具回读结果汇报，不得在无执行证据时声称“已完成”。",
+		),
+		Enabled: true,
+		Source:  builtinSkillSource,
+	},
+	{
 		ID:          "skills-config-maintainer",
 		Name:        "Skills 配置维护",
 		Description: "当用户要求安装/新增/删除/启停 Skill 时使用",

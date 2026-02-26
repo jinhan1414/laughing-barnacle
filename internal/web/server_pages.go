@@ -20,7 +20,7 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 	if section == "" {
 		section = "mcp"
 	}
-	if section != "mcp" && section != "llm" && section != "security" && section != "skills" && section != "schedules" && section != "memory" {
+	if section != "mcp" && section != "a2a" && section != "llm" && section != "security" && section != "skills" && section != "schedules" && section != "memory" {
 		section = "mcp"
 	}
 
@@ -28,6 +28,7 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 		ActiveSection: section,
 		Sections: []settingsSection{
 			{Key: "mcp", Title: "MCP 服务", Description: "管理 Agent 可用的 MCP 工具服务"},
+			{Key: "a2a", Title: "A2A 接入", Description: "管理已接入的 A2A Agent 注册信息"},
 			{Key: "memory", Title: "记忆模块", Description: "可视化查看 MemoryFS 命名空间、节点与沉淀分段"},
 			{Key: "schedules", Title: "定时任务", Description: "统一管理系统 Cron 定时任务"},
 			{Key: "llm", Title: "提示词策略", Description: "配置 Agent 系统提示词与压缩提示词"},

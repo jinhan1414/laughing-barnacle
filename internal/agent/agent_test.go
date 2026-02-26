@@ -73,6 +73,16 @@ type mockMemory struct {
 	lastReply  string
 }
 
+type mockA2A struct {
+	indexLines []string
+	details    map[string]A2AAgentDetail
+	register   A2AAgentDetail
+	send       A2ATaskResult
+	get        A2ATaskResult
+	cancel     A2ATaskResult
+	err        error
+}
+
 func (m *mockSkills) ListEnabledSkillIndex() []string {
 	if len(m.indexLines) > 0 {
 		return m.indexLines
@@ -105,6 +115,61 @@ func (m *mockMemory) AppendTurn(user, assistant string, _ []conversation.ToolCal
 	m.lastUser = strings.TrimSpace(user)
 	m.lastReply = strings.TrimSpace(assistant)
 	return nil
+}
+
+func (m *mockA2A) ListIndexLines(_ int) []string {
+	if m == nil {
+		return nil
+	}
+	return append([]string(nil), m.indexLines...)
+}
+
+func (m *mockA2A) ReadAgentDetail(agentID string) (A2AAgentDetail, bool) {
+	if m == nil || m.details == nil {
+		return A2AAgentDetail{}, false
+	}
+	item, ok := m.details[strings.TrimSpace(agentID)]
+	return item, ok
+}
+
+func (m *mockA2A) Register(_ context.Context, _ A2ARegisterRequest) (A2AAgentDetail, error) {
+	if m != nil && m.err != nil {
+		return A2AAgentDetail{}, m.err
+	}
+	if m == nil {
+		return A2AAgentDetail{}, nil
+	}
+	return m.register, nil
+}
+
+func (m *mockA2A) Send(_ context.Context, _ A2ASendRequest) (A2ATaskResult, error) {
+	if m != nil && m.err != nil {
+		return A2ATaskResult{}, m.err
+	}
+	if m == nil {
+		return A2ATaskResult{}, nil
+	}
+	return m.send, nil
+}
+
+func (m *mockA2A) GetTask(_ context.Context, _ A2ATaskQuery) (A2ATaskResult, error) {
+	if m != nil && m.err != nil {
+		return A2ATaskResult{}, m.err
+	}
+	if m == nil {
+		return A2ATaskResult{}, nil
+	}
+	return m.get, nil
+}
+
+func (m *mockA2A) CancelTask(_ context.Context, _ A2ATaskQuery) (A2ATaskResult, error) {
+	if m != nil && m.err != nil {
+		return A2ATaskResult{}, m.err
+	}
+	if m == nil {
+		return A2ATaskResult{}, nil
+	}
+	return m.cancel, nil
 }
 
 type mockPromptProvider struct {

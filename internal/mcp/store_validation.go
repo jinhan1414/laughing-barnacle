@@ -41,6 +41,30 @@ func validateService(service Service) error {
 	return nil
 }
 
+func validateA2AAgent(agent A2AAgent) error {
+	if agent.ID == "" {
+		return fmt.Errorf("agent id is required")
+	}
+	if !serviceIDPattern.MatchString(agent.ID) {
+		return fmt.Errorf("agent id must match [a-zA-Z0-9_-]+")
+	}
+	if strings.TrimSpace(agent.Name) == "" {
+		return fmt.Errorf("agent name is required")
+	}
+	if strings.TrimSpace(agent.Endpoint) == "" {
+		return fmt.Errorf("agent endpoint is required")
+	}
+	if !strings.HasPrefix(agent.Endpoint, "http://") && !strings.HasPrefix(agent.Endpoint, "https://") {
+		return fmt.Errorf("agent endpoint must start with http:// or https://")
+	}
+	if cardURL := strings.TrimSpace(agent.AgentCardURL); cardURL != "" {
+		if !strings.HasPrefix(cardURL, "http://") && !strings.HasPrefix(cardURL, "https://") {
+			return fmt.Errorf("agent card url must start with http:// or https://")
+		}
+	}
+	return nil
+}
+
 func validateSkill(skill Skill) error {
 	if skill.ID == "" {
 		return fmt.Errorf("skill id is required")

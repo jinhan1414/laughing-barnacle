@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"laughing-barnacle/internal/a2a"
 	"laughing-barnacle/internal/agent"
 	"laughing-barnacle/internal/config"
 	"laughing-barnacle/internal/conversation"
@@ -66,6 +67,7 @@ func run() error {
 	}
 	mcpHTTPClient := mcp.NewHTTPClient(cfg.MCPRequestTimeout, cfg.MCPProtocolVersion)
 	mcpToolProvider := mcp.NewToolProvider(mcpStore, mcpHTTPClient, cfg.MCPToolCacheTTL)
+	a2aProvider := a2a.NewProvider(mcpStore, cfg.MCPRequestTimeout)
 
 	llmClient := cerber.NewClient(cerber.Config{
 		BaseURL:        cfg.CerberBaseURL,
@@ -99,6 +101,7 @@ func run() error {
 	}, convStore, llmClient, mcpToolProvider)
 	agentSvc.SetSkillProvider(skillStore)
 	agentSvc.SetMemoryProvider(memoryStore)
+	agentSvc.SetA2AProvider(a2aProvider)
 	agentSvc.SetPromptProvider(mcpStore)
 	agentSvc.SetPromptUpdater(mcpStore)
 

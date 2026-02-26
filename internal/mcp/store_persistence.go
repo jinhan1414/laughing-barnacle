@@ -39,6 +39,18 @@ func (s *Store) load() error {
 		}
 		cfg.MCP.Services[i] = svc
 	}
+	for i, agent := range cfg.A2A.Agents {
+		agent.ID = strings.TrimSpace(agent.ID)
+		agent.Name = strings.TrimSpace(agent.Name)
+		agent.Description = normalizeSkillDescription(agent.Description, agent.Name, agent.Endpoint)
+		agent.Endpoint = strings.TrimSpace(agent.Endpoint)
+		agent.AgentCardURL = strings.TrimSpace(agent.AgentCardURL)
+		agent.AuthToken = strings.TrimSpace(agent.AuthToken)
+		if err := validateA2AAgent(agent); err != nil {
+			return fmt.Errorf("invalid a2a agent %q: %w", agent.ID, err)
+		}
+		cfg.A2A.Agents[i] = agent
+	}
 	for i, skill := range cfg.Skills.Items {
 		skill.ID = strings.TrimSpace(skill.ID)
 		skill.Name = strings.TrimSpace(skill.Name)

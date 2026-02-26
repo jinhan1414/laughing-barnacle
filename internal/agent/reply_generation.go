@@ -20,8 +20,12 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 	})
 	responseStylePrompt := "回答策略：默认简洁直答（3-6 行）。仅当用户明确要求“详细/方案/步骤/复盘/计划/总结”时再展开，避免无关模板、表格和冗长铺垫。"
 	builtinToolDefs := []llm.ToolDefinition{linuxBashToolDefinition()}
+	if a.a2a != nil {
+		builtinToolDefs = append(builtinToolDefs, a2aBuiltinToolDefinitions()...)
+	}
 	skillIndexPrompt := ""
 	memoryIndexPrompt := ""
+	a2aIndexPrompt := ""
 	if a.skills != nil {
 		allSkillIndex := a.skills.ListEnabledSkillIndex()
 		if len(allSkillIndex) > 0 {
@@ -74,6 +78,31 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 			}
 		}
 	}
+	if a.a2a != nil {
+		a2aIndex := a.a2a.ListIndexLines(20)
+		if len(a2aIndex) > 0 {
+			var b strings.Builder
+			b.WriteString(fmt.Sprintf("A2A 已接入 Agent 索引（渐进式披露）：共 %d 条。\n", len(a2aIndex)))
+			b.WriteString("读取规则：先读索引，再按需读取单个 Agent 详情，禁止一次性拉取全部 AgentCard 正文。\n")
+			b.WriteString(fmt.Sprintf("按需读取列表：curl -s \"%s/api/a2a/agents\"。\n", localAPIBaseURL))
+			b.WriteString(fmt.Sprintf("按需读取详情：curl -s \"%s/api/a2a/agents/read?id=<agent_id>\"。\n", localAPIBaseURL))
+			b.WriteString("单轮默认只读取 1 个最相关 Agent 详情；若仍不足，再按需补读。\n")
+			for i, line := range a2aIndex {
+				line = trimRunes(strings.TrimSpace(line), maxSingleSkillPromptRunes)
+				if line == "" {
+					continue
+				}
+				b.WriteString(fmt.Sprintf("%d. %s\n", i+1, line))
+			}
+			a2aIndexPrompt = strings.TrimSpace(b.String())
+			if a2aIndexPrompt != "" {
+				requestMessages = append(requestMessages, llm.Message{
+					Role:    "system",
+					Content: a2aIndexPrompt,
+				})
+			}
+		}
+	}
 	requestMessages = append(requestMessages, llm.Message{
 		Role:    "system",
 		Content: responseStylePrompt,
@@ -85,7 +114,7 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 			Content: runtimePrompt,
 		})
 	}
-	summary = pruneSummaryOverlap(summary, systemPrompt, skillIndexPrompt, memoryIndexPrompt, responseStylePrompt, runtimePrompt)
+	summary = pruneSummaryOverlap(summary, systemPrompt, skillIndexPrompt, memoryIndexPrompt, a2aIndexPrompt, responseStylePrompt, runtimePrompt)
 	if strings.TrimSpace(summary) != "" {
 		requestMessages = append(requestMessages, llm.Message{
 			Role:    "system",

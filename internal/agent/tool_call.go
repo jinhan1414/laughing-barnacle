@@ -27,6 +27,18 @@ func (a *Agent) callBuiltinTool(ctx context.Context, call llm.ToolCall) (result 
 		}
 		out, err := runLinuxBashFn(ctx, req)
 		return out, err, true
+	case builtinA2ARegisterToolName:
+		out, err := a.callA2ARegister(ctx, call.Function.Arguments)
+		return out, err, true
+	case builtinA2ASendToolName:
+		out, err := a.callA2ASend(ctx, call.Function.Arguments)
+		return out, err, true
+	case builtinA2AGetToolName:
+		out, err := a.callA2AGetTask(ctx, call.Function.Arguments)
+		return out, err, true
+	case builtinA2ACancelToolName:
+		out, err := a.callA2ACancelTask(ctx, call.Function.Arguments)
+		return out, err, true
 	default:
 		return "", nil, false
 	}
