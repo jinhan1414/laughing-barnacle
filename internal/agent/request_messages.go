@@ -60,7 +60,7 @@ func trimMessagesForRequest(
 	return out
 }
 
-func appendHistoryMessagesWithToolCalls(dst []llm.Message, messages []conversation.Message, replayToolCalls bool) []llm.Message {
+func appendHistoryMessagesWithToolCalls(dst []llm.Message, messages []conversation.Message) []llm.Message {
 	if len(messages) == 0 {
 		return dst
 	}
@@ -71,10 +71,6 @@ func appendHistoryMessagesWithToolCalls(dst []llm.Message, messages []conversati
 			Role:    msg.Role,
 			Content: msg.Content,
 		})
-		// Only replay history tool traces for retrying the latest pending user turn.
-		if !replayToolCalls || i != len(messages)-1 {
-			continue
-		}
 		if !strings.EqualFold(strings.TrimSpace(msg.Role), "user") || len(msg.ToolCalls) == 0 {
 			continue
 		}
@@ -130,13 +126,6 @@ func appendHistoryMessagesWithToolCalls(dst []llm.Message, messages []conversati
 		}
 	}
 	return out
-}
-
-func hasPendingUserMessage(messages []conversation.Message) bool {
-	if len(messages) == 0 {
-		return false
-	}
-	return strings.EqualFold(strings.TrimSpace(messages[len(messages)-1].Role), "user")
 }
 
 func latestUserMessageText(messages []conversation.Message) string {

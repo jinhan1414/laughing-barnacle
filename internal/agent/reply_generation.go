@@ -94,7 +94,7 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 	}
 
 	recentMessages := trimMessagesForRequest(messages, a.cfg.MaxRecentMessages, maxRecentContextRunes, maxContextMessageRunes)
-	requestMessages = appendHistoryMessagesWithToolCalls(requestMessages, recentMessages, hasPendingUserMessage(recentMessages))
+	requestMessages = appendHistoryMessagesWithToolCalls(requestMessages, recentMessages)
 	latestUserInput := latestUserMessageText(recentMessages)
 	requiresToolEvidence := shouldRequireRuntimeToolEvidence(latestUserInput)
 	requestMessages = removeRuntimeDateContextUserMessages(requestMessages)

@@ -84,7 +84,7 @@ func TestHandleUserMessage_ForcesFinalAnswerWhenToolRoundsExceeded(t *testing.T)
 	}
 }
 
-func TestHandleUserMessage_DoesNotReplayToolCallsFromPreviousCompletedTurn(t *testing.T) {
+func TestHandleUserMessage_ReplaysToolCallsFromPreviousCompletedTurn(t *testing.T) {
 	store := conversation.NewStore()
 	store.Append("user", "今天北京天气")
 	if err := store.SetLatestUserToolCalls([]conversation.ToolCall{
@@ -124,17 +124,31 @@ func TestHandleUserMessage_DoesNotReplayToolCallsFromPreviousCompletedTurn(t *te
 		t.Fatalf("expected one llm call, got %d", len(fakeLLM.calls))
 	}
 
+	foundHistoryAssistantToolCall := false
+	foundHistoryToolResult := false
 	for _, msg := range fakeLLM.calls[0].Messages {
 		if msg.Role == "assistant" && len(msg.ToolCalls) == 1 {
-			t.Fatalf("expected no replayed assistant tool_call message, got %+v", msg.ToolCalls)
+			call := msg.ToolCalls[0]
+			if call.ID == "call_prev_1" &&
+				call.Function.Name == "weather__query" &&
+				call.Function.Arguments == `{"city":"beijing"}` {
+				foundHistoryAssistantToolCall = true
+			}
 		}
 		if msg.Role == "tool" &&
-			msg.ToolCallID == "call_prev_1" {
-			t.Fatalf("expected no replayed tool result message, got %+v", msg)
+			msg.ToolCallID == "call_prev_1" &&
+			msg.Content == `{"temp":18}` {
+			foundHistoryToolResult = true
 		}
 		if msg.Role == "system" && strings.Contains(msg.Content, "可复用工具结果（最近）") {
 			t.Fatalf("unexpected carryover system hint: %q", msg.Content)
 		}
+	}
+	if !foundHistoryAssistantToolCall {
+		t.Fatalf("expected replayed assistant tool_call message from previous completed turn")
+	}
+	if !foundHistoryToolResult {
+		t.Fatalf("expected replayed tool result message from previous completed turn")
 	}
 }
 
