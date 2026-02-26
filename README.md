@@ -37,6 +37,10 @@
 - `internal/conversation`: 全局对话存储（无 session）
 - `internal/web`: Web 路由与页面模板
 
+## 协议归档
+
+- [A2A 协议归档](./docs/a2a-archive.md)
+
 ## 本地开发环境运行（推荐）
 
 ### 1. 前置依赖
