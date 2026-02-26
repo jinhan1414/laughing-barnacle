@@ -22,7 +22,7 @@ func TestHandleUserMessage_UsesStandardToolExecutionForRuntimeScheduleQuery(t *t
 						Type: "function",
 						Function: llm.ToolFunctionCall{
 							Name:      builtinLinuxBashToolName,
-							Arguments: `{"command":"curl -s http://127.0.0.1:8080/api/schedules"}`,
+							Arguments: `"curl -s http://127.0.0.1:8080/api/schedules"`,
 						},
 					},
 				},
@@ -74,12 +74,12 @@ func TestHandleUserMessage_UsesStandardToolExecutionForRuntimeScheduleQuery(t *t
 func TestNeedsExecutionClaimCorrection(t *testing.T) {
 	writeCall := conversation.ToolCall{
 		Name:      builtinLinuxBashToolName,
-		Arguments: `{"command":"curl -s -X POST http://127.0.0.1:8080/api/skills/save -H \"Content-Type: application/json\" -d \"{}\""}`,
+		Arguments: `"curl -s -X POST http://127.0.0.1:8080/api/skills/save -H 'Content-Type: application/json' -d '{}'"`,
 		Result:    "exit_code: 0\nshell: bash\nstdout:\nok\nstderr:\n(无)",
 	}
 	readbackCall := conversation.ToolCall{
 		Name:      builtinLinuxBashToolName,
-		Arguments: `{"command":"curl -s http://127.0.0.1:8080/api/skills"}`,
+		Arguments: `"curl -s http://127.0.0.1:8080/api/skills"`,
 		Result:    "exit_code: 0\nshell: bash\nstdout:\n{\"skills\":[]}\nstderr:\n(无)",
 	}
 

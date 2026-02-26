@@ -27,8 +27,8 @@ func TestSetLocalAPIBaseURL_RewritesBuiltinSkillPrompt(t *testing.T) {
 	if strings.Contains(prompt, legacyLocalAPIBaseURL) {
 		t.Fatalf("expected legacy base url to be replaced, got %q", prompt)
 	}
-	if !strings.Contains(prompt, "工具参数键必须是 command（不是 cmd）") {
-		t.Fatalf("expected command key constraint in schedule skill prompt, got %q", prompt)
+	if !strings.Contains(prompt, "直接填写完整命令字符串") {
+		t.Fatalf("expected command-only constraint in schedule skill prompt, got %q", prompt)
 	}
 	if !strings.Contains(prompt, "禁止 /api/schedules/list") {
 		t.Fatalf("expected schedules endpoint constraint in schedule skill prompt, got %q", prompt)

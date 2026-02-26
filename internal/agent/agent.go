@@ -55,7 +55,6 @@ const (
 	maxScheduledRecentMessages = 20
 	builtinLinuxBashToolName   = "linux__bash"
 	defaultBashTimeoutSeconds  = 20
-	maxBashTimeoutSeconds      = 180
 	maxBashStdoutRunes         = 4000
 	maxBashStderrRunes         = 2000
 	maxGreetingRecentMessages  = 8
