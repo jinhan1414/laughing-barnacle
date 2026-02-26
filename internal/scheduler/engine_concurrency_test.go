@@ -10,7 +10,7 @@ import (
 func TestEngineRunNow_SameTaskConcurrentSkipsSecond(t *testing.T) {
 	store := &fakeStore{tasks: []Task{{
 		ID:       "morning-plan",
-		Action:   "skill:morning-planning",
+		Action:   "skill:daily-review",
 		CronExpr: "* * * * *",
 		Enabled:  true,
 	}}}
@@ -66,8 +66,8 @@ func TestEngineRunNow_SameTaskConcurrentSkipsSecond(t *testing.T) {
 
 func TestEngineRunNow_DifferentTasksSameTimeExecuteSerially(t *testing.T) {
 	store := &fakeStore{tasks: []Task{
-		{ID: "morning-plan", Action: "skill:morning-planning", CronExpr: "* * * * *", Enabled: true},
-		{ID: "night-review", Action: "skill:night-reflection-evolution", CronExpr: "* * * * *", Enabled: true},
+		{ID: "morning-plan", Action: "skill:daily-review", CronExpr: "* * * * *", Enabled: true},
+		{ID: "night-review", Action: "skill:project-memory-maintainer", CronExpr: "* * * * *", Enabled: true},
 	}}
 	runner := &fakeRunner{delay: 80 * time.Millisecond}
 	engine := NewEngine(store, runner, nil)
@@ -104,7 +104,7 @@ func TestEngineRunNow_DifferentTasksSameTimeExecuteSerially(t *testing.T) {
 func TestEngineReload_SkipsInvalidExpr(t *testing.T) {
 	store := &fakeStore{tasks: []Task{{
 		ID:       "bad-task",
-		Action:   "skill:morning-planning",
+		Action:   "skill:daily-review",
 		CronExpr: "invalid",
 		Enabled:  true,
 	}}}
@@ -124,7 +124,7 @@ func TestEngineReload_SkipsInvalidExpr(t *testing.T) {
 func TestEngineHasRunningTask(t *testing.T) {
 	store := &fakeStore{tasks: []Task{{
 		ID:       "morning-plan",
-		Action:   "skill:morning-planning",
+		Action:   "skill:daily-review",
 		CronExpr: "* * * * *",
 		Enabled:  true,
 	}}}

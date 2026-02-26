@@ -40,23 +40,11 @@ type MemoryProvider interface {
 	AppendTurn(user, assistant string, toolCalls []conversation.ToolCall, now time.Time) error
 }
 
-type AutoSkillWriter interface {
-	UpsertAutoSkill(name, prompt string) error
-}
-
-type evolvedSkill struct {
-	Name   string
-	Prompt string
-}
-
 const (
 	maxInjectedSkillPrompts    = 4
 	maxSingleSkillPromptRunes  = 220
 	minInjectedSkillScore      = 3
 	maxSkillFocusUserMessages  = 3
-	maxNightEvolvedSkills      = 3
-	maxEvolvedSkillNameRunes   = 24
-	maxEvolvedSkillPromptRunes = 180
 	maxScheduledRecentMessages = 20
 	builtinLinuxBashToolName   = "linux__bash"
 	defaultBashTimeoutSeconds  = 20
@@ -89,15 +77,6 @@ type PromptUpdater interface {
 	UpdateAgentPrompts(systemPrompt, compressionSystemPrompt string) error
 }
 
-type HabitProvider interface {
-	GetLastSleepReviewDate() string
-	GetLastWakePlanDate() string
-	GetLastPromptEvolutionDate() string
-	SetLastSleepReviewDate(date string) error
-	SetLastWakePlanDate(date string) error
-	SetLastPromptEvolutionDate(date string) error
-}
-
 type ChatGreetingInput struct {
 	Now                 time.Time
 	IsFirstToday        bool
@@ -114,7 +93,6 @@ type Agent struct {
 	memory  MemoryProvider
 	prompts PromptProvider
 	updater PromptUpdater
-	habits  HabitProvider
 	store   *conversation.Store
 	nowFn   func() time.Time
 	mu      sync.Mutex
@@ -152,12 +130,6 @@ func (a *Agent) SetPromptUpdater(updater PromptUpdater) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.updater = updater
-}
-
-func (a *Agent) SetHabitProvider(provider HabitProvider) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.habits = provider
 }
 
 func (a *Agent) GetEffectivePrompts() (systemPrompt string, compressionSystemPrompt string) {

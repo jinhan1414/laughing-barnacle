@@ -64,7 +64,6 @@ type mockSkills struct {
 	prompts    []string
 	indexLines []string
 	promptByID map[string]string
-	upserts    []evolvedSkill
 }
 
 type mockMemory struct {
@@ -92,14 +91,6 @@ func (m *mockSkills) ReadEnabledSkillPrompt(skillID string) (string, bool) {
 	}
 	prompt, ok := m.promptByID[strings.TrimSpace(skillID)]
 	return prompt, ok && strings.TrimSpace(prompt) != ""
-}
-
-func (m *mockSkills) UpsertAutoSkill(name, prompt string) error {
-	m.upserts = append(m.upserts, evolvedSkill{
-		Name:   strings.TrimSpace(name),
-		Prompt: strings.TrimSpace(prompt),
-	})
-	return nil
 }
 
 func (m *mockMemory) ListIndexLines(_ int) []string {
@@ -139,39 +130,6 @@ func (m *mockPromptUpdater) UpdateAgentPrompts(systemPrompt, compressionSystemPr
 	m.systemPrompt = systemPrompt
 	m.compressionSystemPrompt = compressionSystemPrompt
 	m.calls++
-	return nil
-}
-
-type mockHabits struct {
-	lastSleepReviewDate     string
-	lastWakePlanDate        string
-	lastPromptEvolutionDate string
-}
-
-func (m *mockHabits) GetLastSleepReviewDate() string {
-	return m.lastSleepReviewDate
-}
-
-func (m *mockHabits) GetLastWakePlanDate() string {
-	return m.lastWakePlanDate
-}
-
-func (m *mockHabits) GetLastPromptEvolutionDate() string {
-	return m.lastPromptEvolutionDate
-}
-
-func (m *mockHabits) SetLastSleepReviewDate(date string) error {
-	m.lastSleepReviewDate = date
-	return nil
-}
-
-func (m *mockHabits) SetLastWakePlanDate(date string) error {
-	m.lastWakePlanDate = date
-	return nil
-}
-
-func (m *mockHabits) SetLastPromptEvolutionDate(date string) error {
-	m.lastPromptEvolutionDate = date
 	return nil
 }
 

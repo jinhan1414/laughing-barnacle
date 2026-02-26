@@ -17,7 +17,6 @@ func (a *Agent) RunScheduledTask(ctx context.Context, action string) error {
 		return nil
 	}
 
-	now := a.nowFn()
 	skillID, ok := routine.SkillIDFromAction(action)
 	if !ok {
 		err := fmt.Errorf("unknown scheduled action: %s", action)
@@ -30,16 +29,7 @@ func (a *Agent) RunScheduledTask(ctx context.Context, action string) error {
 		content string
 		err     error
 	)
-	switch {
-	case routine.IsNightReflectionSkillID(skillID):
-		title = "夜间复盘（自动）"
-		content, err = a.runNightReflectionAndEvolution(ctx, now, skillID)
-	case routine.IsMorningPlanningSkillID(skillID):
-		title = "晨间规划（自动）"
-		content, err = a.runMorningPlanning(ctx, now, skillID)
-	default:
-		title, content, err = a.runGenericScheduledSkill(ctx, now, skillID)
-	}
+	title, content, err = a.runGenericScheduledSkill(ctx, skillID)
 	if err != nil {
 		a.appendScheduledTaskFailureLocked(action, err)
 		return err

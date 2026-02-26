@@ -101,7 +101,6 @@ func run() error {
 	agentSvc.SetMemoryProvider(memoryStore)
 	agentSvc.SetPromptProvider(mcpStore)
 	agentSvc.SetPromptUpdater(mcpStore)
-	agentSvc.SetHabitProvider(mcpStore)
 
 	memoryWorker := memory.NewWorker(
 		memoryStore,

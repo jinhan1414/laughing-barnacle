@@ -95,7 +95,7 @@ func TestGenerateChatGreeting_UsesContextAndPurpose(t *testing.T) {
 		IsFirstToday:        true,
 		LastGreetingAt:      time.Date(2026, 2, 16, 19, 0, 0, 0, time.Local),
 		LastGreetingContent: "晚上好",
-		RecentTaskStatuses:  []string{"morning-planning | success"},
+		RecentTaskStatuses:  []string{"daily-review | success"},
 	})
 	if err != nil {
 		t.Fatalf("GenerateChatGreeting error: %v", err)

@@ -247,7 +247,7 @@
           </div>
         {{else if eq .ActiveSection "schedules"}}
           <h2 class="text-base font-semibold">定时任务（Cron）</h2>
-          <p class="mt-1 text-sm leading-6 text-slate-500">系统中的所有自动任务统一在这里管理。动作建议使用 `skill:&lt;skill_id&gt;`（例如 `skill:morning-planning`）。Cron 使用 5 段格式：`分 时 日 月 周`，例如 `30 8 * * *`。</p>
+          <p class="mt-1 text-sm leading-6 text-slate-500">系统中的所有自动任务统一在这里管理。动作建议使用 `skill:&lt;skill_id&gt;`（例如 `skill:daily-review`）。Cron 使用 5 段格式：`分 时 日 月 周`，例如 `30 8 * * *`。</p>
 
           {{if .MemoryTask.Available}}
             <article class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
@@ -278,19 +278,19 @@
             <div class="grid gap-3">
               <label class="flex flex-col gap-1 text-xs font-medium text-slate-600">
                 任务 ID（新增可留空）
-                <input type="text" name="id" placeholder="例如：morning-planning" class="rounded-xl border-slate-300 text-sm">
+                <input type="text" name="id" placeholder="例如：daily-review" class="rounded-xl border-slate-300 text-sm">
               </label>
               <label class="flex flex-col gap-1 text-xs font-medium text-slate-600">
                 任务名称
-                <input type="text" name="name" placeholder="例如：晨间规划" required class="rounded-xl border-slate-300 text-sm">
+                <input type="text" name="name" placeholder="例如：日终复盘" required class="rounded-xl border-slate-300 text-sm">
               </label>
               <label class="flex flex-col gap-1 text-xs font-medium text-slate-600">
                 任务说明
-                <textarea name="description" placeholder="例如：每天早晨生成任务回顾和今日 Top3。" class="min-h-16 rounded-xl border-slate-300 text-sm"></textarea>
+                <textarea name="description" placeholder="例如：每天输出一次简短进展复盘。" class="min-h-16 rounded-xl border-slate-300 text-sm"></textarea>
               </label>
               <label class="flex flex-col gap-1 text-xs font-medium text-slate-600">
                 动作
-                <input type="text" name="action" placeholder="例如：skill:morning-planning" list="schedule-action-options" required class="rounded-xl border-slate-300 text-sm">
+                <input type="text" name="action" placeholder="例如：skill:daily-review" list="schedule-action-options" required class="rounded-xl border-slate-300 text-sm">
               </label>
               <label class="flex flex-col gap-1 text-xs font-medium text-slate-600">
                 Cron 表达式
@@ -361,8 +361,8 @@
             {{end}}
           </div>
           <datalist id="schedule-action-options">
-            <option value="skill:morning-planning"></option>
-            <option value="skill:night-reflection-evolution"></option>
+            <option value="skill:daily-review"></option>
+            <option value="skill:project-memory-maintainer"></option>
           </datalist>
         {{else if eq .ActiveSection "llm"}}
           <h2 class="text-base font-semibold">提示词策略</h2>

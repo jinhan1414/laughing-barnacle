@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"laughing-barnacle/internal/llm"
 	"laughing-barnacle/internal/mcp"
-	"laughing-barnacle/internal/routine"
 	"laughing-barnacle/internal/skills"
 	"net/http"
 	"net/http/httptest"
@@ -96,10 +95,10 @@ func TestHandleSettingsScheduleSave(t *testing.T) {
 
 	s := &Server{mcpStore: store}
 	form := url.Values{}
-	form.Set("id", "morning-planning")
-	form.Set("name", "晨间规划")
+	form.Set("id", "daily-review")
+	form.Set("name", "日终复盘")
 	form.Set("description", "调整到 9 点")
-	form.Set("action", routine.ActionMorningPlanning)
+	form.Set("action", "skill:daily-review")
 	form.Set("cron_expr", "0 9 * * *")
 	form.Set("enabled", "on")
 
@@ -118,7 +117,7 @@ func TestHandleSettingsScheduleSave(t *testing.T) {
 	tasks := store.ListScheduledTasks()
 	found := false
 	for _, task := range tasks {
-		if task.ID != "morning-planning" {
+		if task.ID != "daily-review" {
 			continue
 		}
 		found = true
@@ -127,7 +126,7 @@ func TestHandleSettingsScheduleSave(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Fatalf("morning task not found after save")
+		t.Fatalf("daily-review task not found after save")
 	}
 }
 

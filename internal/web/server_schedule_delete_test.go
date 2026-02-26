@@ -2,7 +2,6 @@ package web
 
 import (
 	"laughing-barnacle/internal/mcp"
-	"laughing-barnacle/internal/routine"
 	"laughing-barnacle/internal/scheduler"
 	"laughing-barnacle/internal/skills"
 	"net/http"
@@ -19,9 +18,9 @@ func TestHandleSettingsScheduleDelete(t *testing.T) {
 		t.Fatalf("NewStore error: %v", err)
 	}
 	if err := store.UpsertScheduledTask(scheduler.Task{
-		ID:       "morning-planning",
-		Name:     "morning-planning",
-		Action:   routine.ActionMorningPlanning,
+		ID:       "daily-review",
+		Name:     "daily-review",
+		Action:   "skill:daily-review",
 		CronExpr: "30 8 * * *",
 		Enabled:  true,
 	}); err != nil {
@@ -34,7 +33,7 @@ func TestHandleSettingsScheduleDelete(t *testing.T) {
 	}
 
 	form := url.Values{}
-	form.Set("id", "morning-planning")
+	form.Set("id", "daily-review")
 	req := httptest.NewRequest(http.MethodPost, "/settings/schedules/delete", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
@@ -50,8 +49,8 @@ func TestHandleSettingsScheduleDelete(t *testing.T) {
 		t.Fatalf("expected scheduler reload once, got %d", runtime.reloadCalls)
 	}
 	for _, task := range store.ListScheduledTasks() {
-		if task.ID == "morning-planning" {
-			t.Fatalf("expected morning-planning deleted")
+		if task.ID == "daily-review" {
+			t.Fatalf("expected daily-review deleted")
 		}
 	}
 }
@@ -200,9 +199,9 @@ func TestHandleSettingsScheduleDelete_KeepBuiltinSkill(t *testing.T) {
 		t.Fatalf("New skill store error: %v", err)
 	}
 	if err := store.UpsertScheduledTask(scheduler.Task{
-		ID:       "morning-plan-task",
-		Name:     "morning-plan-task",
-		Action:   "skill:morning-planning",
+		ID:       "mcp-config-task",
+		Name:     "mcp-config-task",
+		Action:   "skill:mcp-config-maintainer",
 		CronExpr: "30 8 * * *",
 		Enabled:  true,
 	}); err != nil {
@@ -214,7 +213,7 @@ func TestHandleSettingsScheduleDelete_KeepBuiltinSkill(t *testing.T) {
 		skillStore: skillStore,
 	}
 	form := url.Values{}
-	form.Set("id", "morning-plan-task")
+	form.Set("id", "mcp-config-task")
 	req := httptest.NewRequest(http.MethodPost, "/settings/schedules/delete", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
@@ -225,12 +224,12 @@ func TestHandleSettingsScheduleDelete_KeepBuiltinSkill(t *testing.T) {
 	}
 	found := false
 	for _, skill := range skillStore.ListSkills() {
-		if skill.ID == "morning-planning" {
+		if skill.ID == "mcp-config-maintainer" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Fatalf("expected builtin morning-planning skill to be kept")
+		t.Fatalf("expected builtin mcp-config-maintainer skill to be kept")
 	}
 }

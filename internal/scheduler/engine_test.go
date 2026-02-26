@@ -79,7 +79,7 @@ func (f *fakeRunner) RunScheduledTask(_ context.Context, action string) error {
 func TestEngineStartReloadAndStop(t *testing.T) {
 	store := &fakeStore{tasks: []Task{{
 		ID:       "morning-plan",
-		Action:   "skill:morning-planning",
+		Action:   "skill:daily-review",
 		CronExpr: "* * * * *",
 		Enabled:  true,
 	}}}
@@ -99,7 +99,7 @@ func TestEngineStartReloadAndStop(t *testing.T) {
 	store.mu.Lock()
 	store.tasks = append(store.tasks, Task{
 		ID:       "night-review",
-		Action:   "skill:night-reflection-evolution",
+		Action:   "skill:project-memory-maintainer",
 		CronExpr: "30 0 * * *",
 		Enabled:  true,
 	})
@@ -120,7 +120,7 @@ func TestEngineStartReloadAndStop(t *testing.T) {
 func TestEngineRunNow_MarksSuccess(t *testing.T) {
 	store := &fakeStore{tasks: []Task{{
 		ID:       "morning-plan",
-		Action:   "skill:morning-planning",
+		Action:   "skill:daily-review",
 		CronExpr: "* * * * *",
 		Enabled:  true,
 	}}}
@@ -134,7 +134,7 @@ func TestEngineRunNow_MarksSuccess(t *testing.T) {
 	runner.mu.Lock()
 	actions := append([]string(nil), runner.actions...)
 	runner.mu.Unlock()
-	if len(actions) != 1 || actions[0] != "skill:morning-planning" {
+	if len(actions) != 1 || actions[0] != "skill:daily-review" {
 		t.Fatalf("unexpected run actions: %+v", actions)
 	}
 
@@ -154,7 +154,7 @@ func TestEngineRunNow_MarksSuccess(t *testing.T) {
 func TestEngineRunNow_MarksError(t *testing.T) {
 	store := &fakeStore{tasks: []Task{{
 		ID:       "night-review",
-		Action:   "skill:night-reflection-evolution",
+		Action:   "skill:project-memory-maintainer",
 		CronExpr: "* * * * *",
 		Enabled:  true,
 	}}}

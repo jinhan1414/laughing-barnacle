@@ -4,7 +4,6 @@ import (
 	"laughing-barnacle/internal/agent"
 	"laughing-barnacle/internal/conversation"
 	"laughing-barnacle/internal/mcp"
-	"laughing-barnacle/internal/routine"
 	"laughing-barnacle/internal/scheduler"
 	"laughing-barnacle/internal/skills"
 	"net/http"
@@ -21,9 +20,9 @@ func TestHandleSettingsScheduleRun(t *testing.T) {
 		t.Fatalf("NewStore error: %v", err)
 	}
 	if err := store.UpsertScheduledTask(scheduler.Task{
-		ID:       "night-reflection-evolution",
-		Name:     "night-reflection-evolution",
-		Action:   routine.ActionNightReflectionEvolution,
+		ID:       "daily-review",
+		Name:     "daily-review",
+		Action:   "skill:daily-review",
 		CronExpr: "0 22 * * *",
 		Enabled:  true,
 	}); err != nil {
@@ -33,7 +32,7 @@ func TestHandleSettingsScheduleRun(t *testing.T) {
 	convStore := conversation.NewStore()
 	llmClient := &mockScheduleLLM{
 		responseByPurpose: map[string]string{
-			"scheduled_skill_night_reflection_evolution": `{"reflection":"生活：收束。工作：复盘。学习：迭代。"}`,
+			"scheduled_skill_daily_review": `{"content":"今日总结：生活稳定，工作推进，学习迭代。"}`,
 		},
 	}
 	agentSvc := agent.New(agent.Config{
@@ -42,10 +41,8 @@ func TestHandleSettingsScheduleRun(t *testing.T) {
 		CompressionSystemPrompt: "compressor",
 		EnforceHumanRoutine:     true,
 	}, convStore, llmClient, nil)
-	agentSvc.SetHabitProvider(store)
 	agentSvc.SetSkillProvider(&mockScheduleSkills{promptByID: map[string]string{
-		routine.ScheduledSkillNightReflectionEvolution: "---\nname: \"night\"\ndescription: \"night\"\n---\n\ndo night",
-		routine.ScheduledSkillMorningPlanning:          "---\nname: \"morning\"\ndescription: \"morning\"\n---\n\ndo morning",
+		"daily-review": "---\nname: \"daily\"\ndescription: \"daily\"\n---\n\ndo daily review",
 	}})
 
 	s := &Server{
@@ -53,7 +50,7 @@ func TestHandleSettingsScheduleRun(t *testing.T) {
 		agent:    agentSvc,
 	}
 	form := url.Values{}
-	form.Set("id", "night-reflection-evolution")
+	form.Set("id", "daily-review")
 
 	req := httptest.NewRequest(http.MethodPost, "/settings/schedules/run", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -73,7 +70,7 @@ func TestHandleSettingsScheduleRun(t *testing.T) {
 	tasks := store.ListScheduledTasks()
 	found := false
 	for _, task := range tasks {
-		if task.ID != "night-reflection-evolution" {
+		if task.ID != "daily-review" {
 			continue
 		}
 		found = true
@@ -88,7 +85,7 @@ func TestHandleSettingsScheduleRun(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Fatalf("expected night task not found")
+		t.Fatalf("expected daily-review task not found")
 	}
 }
 
@@ -160,9 +157,9 @@ func TestHandleSettingsScheduleRun_UsesSchedulerRuntimeWhenAvailable(t *testing.
 		t.Fatalf("NewStore error: %v", err)
 	}
 	if err := store.UpsertScheduledTask(scheduler.Task{
-		ID:       "morning-planning",
-		Name:     "morning-planning",
-		Action:   routine.ActionMorningPlanning,
+		ID:       "daily-review",
+		Name:     "daily-review",
+		Action:   "skill:daily-review",
 		CronExpr: "30 8 * * *",
 		Enabled:  true,
 	}); err != nil {
@@ -175,7 +172,7 @@ func TestHandleSettingsScheduleRun_UsesSchedulerRuntimeWhenAvailable(t *testing.
 	}
 
 	form := url.Values{}
-	form.Set("id", "morning-planning")
+	form.Set("id", "daily-review")
 	req := httptest.NewRequest(http.MethodPost, "/settings/schedules/run", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
@@ -184,7 +181,7 @@ func TestHandleSettingsScheduleRun_UsesSchedulerRuntimeWhenAvailable(t *testing.
 	if rec.Code != http.StatusFound {
 		t.Fatalf("expected 302, got %d body=%s", rec.Code, rec.Body.String())
 	}
-	if runtime.ranTaskID != "morning-planning" {
+	if runtime.ranTaskID != "daily-review" {
 		t.Fatalf("expected scheduler runtime called, got %q", runtime.ranTaskID)
 	}
 }

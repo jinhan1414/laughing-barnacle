@@ -4,12 +4,6 @@ import "strings"
 
 const (
 	ActionSkillPrefix = "skill:"
-
-	ScheduledSkillNightReflectionEvolution = "night-reflection-evolution"
-	ScheduledSkillMorningPlanning          = "morning-planning"
-
-	ActionNightReflectionEvolution = ActionSkillPrefix + ScheduledSkillNightReflectionEvolution
-	ActionMorningPlanning          = ActionSkillPrefix + ScheduledSkillMorningPlanning
 )
 
 func IsSupportedAction(action string) bool {
@@ -38,14 +32,6 @@ func SkillIDFromAction(action string) (string, bool) {
 		return "", false
 	}
 	return skillID, true
-}
-
-func IsNightReflectionSkillID(skillID string) bool {
-	return strings.TrimSpace(skillID) == ScheduledSkillNightReflectionEvolution
-}
-
-func IsMorningPlanningSkillID(skillID string) bool {
-	return strings.TrimSpace(skillID) == ScheduledSkillMorningPlanning
 }
 
 func validateActionIdentifier(id string) bool {

@@ -1,7 +1,6 @@
 package mcp
 
 import (
-	"laughing-barnacle/internal/routine"
 	"laughing-barnacle/internal/scheduler"
 	"os"
 	"path/filepath"
@@ -68,10 +67,10 @@ func TestStoreUpsertScheduledTaskAndMarkRun(t *testing.T) {
 	}
 
 	if err := store.UpsertScheduledTask(scheduler.Task{
-		ID:          "morning-planning",
-		Name:        "晨间规划",
-		Description: "更新后的晨间任务",
-		Action:      routine.ActionMorningPlanning,
+		ID:          "daily-review",
+		Name:        "日终复盘",
+		Description: "更新后的复盘任务",
+		Action:      "skill:daily-review",
 		CronExpr:    "0 9 * * *",
 		Enabled:     true,
 	}); err != nil {
@@ -79,14 +78,14 @@ func TestStoreUpsertScheduledTaskAndMarkRun(t *testing.T) {
 	}
 
 	runAt := time.Date(2026, 2, 17, 9, 0, 0, 0, time.Local)
-	if err := store.MarkScheduledTaskRun("morning-planning", runAt, "success", ""); err != nil {
+	if err := store.MarkScheduledTaskRun("daily-review", runAt, "success", ""); err != nil {
 		t.Fatalf("MarkScheduledTaskRun error: %v", err)
 	}
 
 	tasks := store.ListScheduledTasks()
 	found := false
 	for _, task := range tasks {
-		if task.ID != "morning-planning" {
+		if task.ID != "daily-review" {
 			continue
 		}
 		found = true
@@ -101,7 +100,7 @@ func TestStoreUpsertScheduledTaskAndMarkRun(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Fatalf("expected updated morning task")
+		t.Fatalf("expected updated daily task")
 	}
 }
 
@@ -112,13 +111,13 @@ func TestStoreDeleteScheduledTask(t *testing.T) {
 		t.Fatalf("NewStore error: %v", err)
 	}
 
-	if err := store.DeleteScheduledTask("morning-planning"); err != nil {
+	if err := store.DeleteScheduledTask("daily-review"); err != nil {
 		t.Fatalf("DeleteScheduledTask error: %v", err)
 	}
 
 	for _, task := range store.ListScheduledTasks() {
-		if task.ID == "morning-planning" {
-			t.Fatalf("expected morning-planning deleted")
+		if task.ID == "daily-review" {
+			t.Fatalf("expected daily-review deleted")
 		}
 	}
 }
@@ -132,7 +131,7 @@ func TestStoreUpsertScheduledTask_InvalidCronRejected(t *testing.T) {
 
 	err = store.UpsertScheduledTask(scheduler.Task{
 		Name:     "bad task",
-		Action:   routine.ActionMorningPlanning,
+		Action:   "skill:daily-review",
 		CronExpr: "invalid-cron",
 		Enabled:  true,
 	})

@@ -202,17 +202,10 @@ func (s *Server) validateScheduleActionSkill(action string) error {
 
 func displayScheduleAction(action string) string {
 	action = routine.NormalizeAction(strings.TrimSpace(action))
-	switch action {
-	case routine.ActionNightReflectionEvolution:
-		return "夜间复盘与进化"
-	case routine.ActionMorningPlanning:
-		return "晨间规划"
-	default:
-		if skillID, ok := routine.SkillIDFromAction(action); ok {
-			return "Skill 执行：" + skillID
-		}
-		return action
+	if skillID, ok := routine.SkillIDFromAction(action); ok {
+		return "Skill 执行：" + skillID
 	}
+	return action
 }
 
 func parseJSONArgsList(raw string) ([]string, error) {

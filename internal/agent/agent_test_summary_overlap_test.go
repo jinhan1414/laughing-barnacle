@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"laughing-barnacle/internal/conversation"
-	"laughing-barnacle/internal/routine"
 	"strings"
 	"testing"
 	"time"
@@ -215,18 +214,6 @@ func TestHandleUserMessage_SleepWindowDoesNotRunReflectionOrEvolution(t *testing
 	agentSvc.nowFn = func() time.Time {
 		return time.Date(2026, 2, 14, 2, 10, 0, 0, time.Local)
 	}
-	updater := &mockPromptUpdater{}
-	habits := &mockHabits{}
-	skills := &mockSkills{}
-	agentSvc.SetPromptUpdater(updater)
-	agentSvc.SetHabitProvider(habits)
-	agentSvc.SetSkillProvider(&mockSkills{
-		promptByID: map[string]string{
-			routine.ScheduledSkillNightReflectionEvolution: "---\nname: \"夜间复盘\"\ndescription: \"night\"\n---\n\n执行夜间复盘",
-		},
-	})
-	agentSvc.SetSkillProvider(skills)
-
 	reply, err := agentSvc.HandleUserMessage(context.Background(), "帮我明天继续优化服务")
 	if err != nil {
 		t.Fatalf("HandleUserMessage error: %v", err)
@@ -236,17 +223,5 @@ func TestHandleUserMessage_SleepWindowDoesNotRunReflectionOrEvolution(t *testing
 	}
 	if len(fakeLLM.calls) != 1 || fakeLLM.calls[0].Purpose != "chat_reply" {
 		t.Fatalf("expected only chat reply call, got %+v", fakeLLM.calls)
-	}
-	if updater.calls != 0 {
-		t.Fatalf("expected no prompt evolution update, got %d", updater.calls)
-	}
-	if habits.lastSleepReviewDate != "" {
-		t.Fatalf("expected no sleep review date update, got %q", habits.lastSleepReviewDate)
-	}
-	if habits.lastPromptEvolutionDate != "" {
-		t.Fatalf("expected no prompt evolution date update, got %q", habits.lastPromptEvolutionDate)
-	}
-	if len(skills.upserts) != 0 {
-		t.Fatalf("expected no evolved skills, got %d", len(skills.upserts))
 	}
 }
