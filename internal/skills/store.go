@@ -71,9 +71,10 @@ var builtinSkills = []Skill{
 		Description: "当用户要求调用已接入外部 Agent 完成任务时使用",
 		Prompt: strings.TrimSpace(
 			"目标：基于已接入 A2A Agent 完成任务编排与结果回读。\n" +
-				"步骤 1：先读索引：curl -sS http://127.0.0.1:8080/api/a2a/agents，优先选 enabled=true 且最相关的 agent_id。\n" +
+				"步骤 1：优先使用系统已注入的“已启用 A2A Agent 索引”选择最相关且 enabled=true 的 agent_id（默认不额外读取列表）。\n" +
 				"步骤 2：如索引不足，再读单个详情：curl -sS \"http://127.0.0.1:8080/api/a2a/agents/read?id=<agent_id>\"。\n" +
 				"步骤 3：调用内置 A2A 工具执行：a2a__send -> 按需 a2a__get -> 需要中断时 a2a__cancel。\n" +
+				"约束：仅在用户明确要求刷新列表或执行前需要一致性校验时，才读取列表：curl -sS http://127.0.0.1:8080/api/a2a/agents。\n" +
 				"约束：禁止一次性读取全部 Agent 详情；单轮默认只读 1 个详情，不足再补读。\n" +
 				"约束：只基于工具回读结果汇报，不得在无执行证据时声称“已完成”。",
 		),

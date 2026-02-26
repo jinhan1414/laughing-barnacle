@@ -82,3 +82,32 @@ func TestBuiltinMaintenanceSkills_UseJSONProtocol(t *testing.T) {
 		}
 	}
 }
+
+func TestBuiltinA2ATaskOrchestrator_UsesInjectedIndexFirst(t *testing.T) {
+	root := t.TempDir()
+	store, err := NewStore(filepath.Join(root, "skills"), filepath.Join(root, "skills_state.json"))
+	if err != nil {
+		t.Fatalf("NewStore error: %v", err)
+	}
+
+	if err := store.SetLocalAPIBaseURL(":9080"); err != nil {
+		t.Fatalf("SetLocalAPIBaseURL error: %v", err)
+	}
+
+	prompt, ok := store.ReadEnabledSkillPrompt("a2a-task-orchestrator")
+	if !ok {
+		t.Fatalf("expected builtin skill prompt to be readable")
+	}
+	if !strings.Contains(prompt, "系统已注入的“已启用 A2A Agent 索引”") {
+		t.Fatalf("expected injected-index first hint, got %q", prompt)
+	}
+	if !strings.Contains(prompt, "/api/a2a/agents/read?id=<agent_id>") {
+		t.Fatalf("expected detail-read hint, got %q", prompt)
+	}
+	if !strings.Contains(prompt, "仅在用户明确要求刷新列表或执行前需要一致性校验时") {
+		t.Fatalf("expected on-demand list refresh constraint, got %q", prompt)
+	}
+	if strings.Contains(prompt, "步骤 1：先读索引：curl -sS http://127.0.0.1:9080/api/a2a/agents") {
+		t.Fatalf("expected no mandatory list-read first step, got %q", prompt)
+	}
+}

@@ -83,9 +83,9 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 		if len(a2aIndex) > 0 {
 			var b strings.Builder
 			b.WriteString(fmt.Sprintf("A2A 已接入 Agent 索引（渐进式披露）：共 %d 条。\n", len(a2aIndex)))
-			b.WriteString("读取规则：先读索引，再按需读取单个 Agent 详情，禁止一次性拉取全部 AgentCard 正文。\n")
-			b.WriteString(fmt.Sprintf("按需读取列表：curl -s \"%s/api/a2a/agents\"。\n", localAPIBaseURL))
+			b.WriteString("读取规则：本索引是本轮固定上下文主来源，先基于索引选择 agent_id；禁止一次性拉取全部 AgentCard 正文。\n")
 			b.WriteString(fmt.Sprintf("按需读取详情：curl -s \"%s/api/a2a/agents/read?id=<agent_id>\"。\n", localAPIBaseURL))
+			b.WriteString(fmt.Sprintf("仅在明确需要刷新列表或执行前做一致性校验时，才读取列表：curl -s \"%s/api/a2a/agents\"。\n", localAPIBaseURL))
 			b.WriteString("单轮默认只读取 1 个最相关 Agent 详情；若仍不足，再按需补读。\n")
 			for i, line := range a2aIndex {
 				line = trimRunes(strings.TrimSpace(line), maxSingleSkillPromptRunes)

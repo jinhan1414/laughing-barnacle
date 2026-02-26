@@ -51,6 +51,12 @@ func TestHandleUserMessage_IncludesA2AIndexProgressiveDisclosure(t *testing.T) {
 	if !strings.Contains(content, "/api/a2a/agents/read?id=<agent_id>") {
 		t.Fatalf("expected a2a read hint, got %q", content)
 	}
+	if !strings.Contains(content, "本索引是本轮固定上下文主来源") {
+		t.Fatalf("expected fixed-context hint in a2a index prompt, got %q", content)
+	}
+	if !strings.Contains(content, "仅在明确需要刷新列表或执行前做一致性校验时") {
+		t.Fatalf("expected refresh-on-demand hint in a2a index prompt, got %q", content)
+	}
 	if strings.Contains(content, "agent_card_json") {
 		t.Fatalf("should not inject full agent card content, got %q", content)
 	}
