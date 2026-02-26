@@ -8,9 +8,13 @@
 ## What Changes
 - 新增原生 `A2AProvider` 注入点，与 `MemoryProvider` 同级。
 - 在内置工具层新增 `a2a__send`、`a2a__get`、`a2a__cancel`，由 `callBuiltinTool` 直接执行。
-- 将 Skill 角色限定为“何时调用哪个 Agent”的策略提示，不承担 A2A 协议执行。
+- 新增两个 A2A 相关 Skill：
+  - `a2a-config-maintainer`：维护接入（注册、更新、启停、删除、回读校验）
+  - `a2a-task-orchestrator`：按用户目标选择并调用已接入 A2A Agent
+- Skill 仅负责策略编排，不承担 A2A 协议执行。
 - 增加 A2A Agent 注册表（allowlist + 凭证配置），通过 `agent_id` 路由目标 Agent。
 - 增加 A2A 注册内置工具 `a2a__register`，支持“用户提供 agent 信息 -> 自动登记 -> 返回 agent_id”。
+- 在对话上下文新增 A2A 索引注入（渐进式披露）：首轮仅注入已接入 agent 索引与读取规则，详情按需读取。
 - 增加 A2A 执行证据字段，确保任务 ID、状态与结果可追踪。
 - 提供本机 `codex` CLI 包装 Agent 的联调方案，作为 A2A POC。
 
@@ -20,5 +24,7 @@
   - `internal/agent/*`（Provider 注入、builtin tool 定义与分发）
   - `internal/a2a/*`（A2A client/provider/registry，新增模块）
   - `internal/mcp/store*.go` 或同等设置持久化层（A2A registry 配置落盘）
+  - `internal/skills/*`（新增 A2A 维护与使用 Skill）
   - `internal/web/*`（A2A 设置与查询 API，若纳入设置页）
+  - `internal/agent/reply_generation.go`（A2A 索引渐进式披露注入）
   - `README.md` / `docs/*`（运维与联调文档）

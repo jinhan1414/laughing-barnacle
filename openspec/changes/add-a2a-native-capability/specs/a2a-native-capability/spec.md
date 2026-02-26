@@ -64,6 +64,40 @@
 - **THEN** 模型通过 `a2a__*` 内置工具执行协议调用
 - **AND** Skill 内容不包含直接执行 A2A 请求的成功承诺
 
+### Requirement: Two Dedicated A2A Skills
+系统 MUST 提供两个 A2A 专用 Skill：`a2a-config-maintainer` 与 `a2a-task-orchestrator`，并保持职责分离。
+
+#### Scenario: Config maintainer handles onboarding intent
+- **WHEN** 用户要求添加或维护 A2A 接入
+- **THEN** `a2a-config-maintainer` 负责触发登记/维护编排
+- **AND** 实际写操作通过受控请求接口或内置工具完成
+
+#### Scenario: Task orchestrator handles execution intent
+- **WHEN** 用户要求调用外部 Agent 完成任务
+- **THEN** `a2a-task-orchestrator` 负责选择 `agent_id` 并编排 `a2a__send/get/cancel`
+- **AND** 不跨用配置维护职责
+
+### Requirement: Progressive Disclosure for Connected A2A Agents
+系统 MUST 在对话上下文中暴露已接入 A2A Agent 索引，并遵循渐进式披露原则。
+
+#### Scenario: Inject A2A index only
+- **WHEN** 本轮请求构建系统上下文且存在已接入 A2A Agent
+- **THEN** 系统注入仅含索引字段（如 `agent_id/name/description/status`）的 A2A 索引
+- **AND** 不注入完整 AgentCard 正文
+
+#### Scenario: Read details on demand
+- **WHEN** 索引信息不足以完成当前任务
+- **THEN** 模型按需读取单个目标 Agent 的详情
+- **AND** 默认单轮最多先读取 1 个 Agent 详情，不足再补充
+
+### Requirement: Request-Based Maintenance Consistency
+系统 MUST 让 A2A 接入维护沿用现有“请求式维护”链路，保持与其他系统维护能力一致。
+
+#### Scenario: Register/update through controlled endpoints
+- **WHEN** 触发 A2A 接入登记或更新
+- **THEN** 系统通过受控请求端点完成校验与持久化
+- **AND** 返回可回读验证的结果而非仅提示词承诺
+
 ### Requirement: Execution Evidence for A2A Calls
 系统 MUST 在工具执行证据中记录 A2A 关键字段，支持完整回读校验。
 

@@ -49,9 +49,11 @@
 - 失败策略：校验失败、网络失败、持久化失败均显式报错，不做静默降级。
 
 ### Decision 4: Skill 仅提供策略，不执行协议
-- Skill 可以提示“何时该调用哪个 `agent_id`”。
-- Skill 不包含 A2A HTTP 调用脚本，不返回伪造执行结果。
-- 原因：保持 Skill 渐进式披露定位，避免执行链路漂移到 prompt。
+- 拆分两个 Skill：
+  - `a2a-config-maintainer`：识别“接入/维护 A2A Agent”请求并编排登记链路
+  - `a2a-task-orchestrator`：识别“调用外部 Agent 完成任务”请求并编排调用链路
+- 两个 Skill 都不直接执行 A2A 协议；协议调用必须经内置 `a2a__*` 工具或受控请求接口。
+- 原因：复用现有“维护类 Skill”模式，同时保留可审计执行链路。
 
 ### Decision 5: 明确任务状态映射与证据回写
 - `a2a__send/get/cancel` 统一返回结构化文本（含 `agent_id/task_id/status/artifacts/error`）。
@@ -67,6 +69,21 @@
   - 必填能力字段完整（至少可发现通信端点）
   - URL 合法且协议受控（生产默认 `https`，本地开发允许 `http://127.0.0.1`/`http://localhost`）
 - 不在 prompt 中保存明文密钥；若有 `auth_token`，写入配置存储并在展示层脱敏。
+
+### Decision 7: A2A 接入信息按渐进式披露注入上下文
+- 在回复构建阶段注入 `A2A_INDEX`（仅索引级）：
+  - 展示已接入 agent 的最小字段：`agent_id/name/description/status`
+  - 展示按需读取接口：`/api/a2a/agents`、`/api/a2a/agents/read?id=<agent_id>`
+- 默认规则：
+  - 每轮只注入索引，不注入完整 AgentCard
+  - 单轮默认只读取 1 个最相关 agent 详情，不足再补读
+  - 禁止一次性拉取全部 AgentCard 正文
+- 原因：与 Skill/Memory 的渐进式披露一致，降低 token 开销并保持 LLM 稳定。
+
+### Decision 8: A2A 维护沿用请求式执行链路
+- A2A 接入维护与现有维护能力一致，走受控请求端点（例如 `/settings/a2a/save`、`/settings/a2a/toggle`、`/settings/a2a/delete`）。
+- Skill 只负责触发与参数组织，请求执行与写入由服务端完成并回读校验。
+- 原因：统一维护入口与审计方式，避免 prompt 侧写操作。
 
 ## Alternatives Considered
 - 方案 A：通过 MCP bridge 接 A2A  
@@ -87,12 +104,13 @@
 ## Migration Plan
 1. 先合入规格与接口骨架（不改变默认行为）。
 2. 引入 A2A provider 与 builtin tools（含 `a2a__register`），默认可关闭。
-3. 增加 registry 与设置入口（或配置文件入口）。
-4. 增加“用户提供 Agent 信息 -> 自动登记”链路测试。
-5. 增加 codex-local-a2a-agent 联调脚本与用例。
-6. 回归测试通过后再开放给主流程使用。
+3. 增加 registry 与请求式维护入口（或配置文件入口）。
+4. 增加 A2A 双 Skill（维护/使用）并接入渐进式披露索引。
+5. 增加“用户提供 Agent 信息 -> 自动登记”链路测试。
+6. 增加 codex-local-a2a-agent 联调脚本与用例。
+7. 回归测试通过后再开放给主流程使用。
 
 ## Open Questions
-- A2A registry 首版放设置页还是仅环境变量/配置文件？
+- A2A registry 首版只提供设置页入口，还是同时开放 API-only 模式？
 - `a2a__send` 首版是否支持 `await_terminal` 参数，还是坚持 `send + get` 分步？
 - codex 包装 Agent 的输出协议是否需要强制 JSON schema？
