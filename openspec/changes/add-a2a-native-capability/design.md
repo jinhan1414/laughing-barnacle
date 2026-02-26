@@ -24,7 +24,6 @@
 
 ### Decision 2: A2A 作为内置工具，不走 MCP
 - 新增 builtin tools：
-  - `a2a__register(agent_card_url?, agent_card_json?, alias?, auth_token?)`
   - `a2a__send(agent_id, message, session_id?, metadata?)`
   - `a2a__get(agent_id, task_id)`
   - `a2a__cancel(agent_id, task_id)`
@@ -37,12 +36,11 @@
 - 原因：降低 SSRF 与错误路由风险，便于运维管理与审计。
 
 ### Decision 3.1: 用户提供 Agent 信息后支持自动登记
-- 触发条件：用户明确表达“接入/添加该 Agent”并提供 `agent_card_url` 或 `agent_card_json`。
+- 触发条件：用户明确表达“接入/添加该 Agent”并提供 `endpoint` 或 `agent_card_url`。
 - 执行流程：
-  1. 模型调用 `a2a__register`
-  2. provider 拉取/解析 AgentCard 并校验必填字段
-  3. 落盘到 registry，生成或返回稳定 `agent_id`
-  4. 返回登记结果（`agent_id/name/base_url/enabled`）
+  1. 模型调用受控维护接口 `POST /api/a2a/agents/save`（JSON body）
+  2. 服务端校验参数并落盘 registry
+  3. 模型回读 `GET /api/a2a/agents` 校验最终状态
 - 幂等策略：
   - 同一 `agent_card_url` 或同一规范化 `base_url` 重复登记时返回既有 `agent_id`
   - 不生成重复记录
@@ -61,12 +59,10 @@
 - 原因：匹配现有“执行证据优先”策略。
 
 ### Decision 6: 注册校验与最小安全边界
-- `a2a__register` 输入约束：
-  - `agent_card_url` 与 `agent_card_json` 二选一，至少提供一个
-  - 可选 `alias`；空值时回退 AgentCard `name`
+- A2A 维护接口输入约束：
+  - `endpoint` 必填，`id/name/description/agent_card_url/auth_token/enabled` 可选
 - Provider 校验：
-  - AgentCard 结构可解析
-  - 必填能力字段完整（至少可发现通信端点）
+  - 必填字段完整（至少包含通信端点）
   - URL 合法且协议受控（生产默认 `https`，本地开发允许 `http://127.0.0.1`/`http://localhost`）
 - 不在 prompt 中保存明文密钥；若有 `auth_token`，写入配置存储并在展示层脱敏。
 
@@ -81,7 +77,8 @@
 - 原因：与 Skill/Memory 的渐进式披露一致，降低 token 开销并保持 LLM 稳定。
 
 ### Decision 8: A2A 维护沿用请求式执行链路
-- A2A 接入维护与现有维护能力一致，走受控请求端点（例如 `/settings/a2a/save`、`/settings/a2a/toggle`、`/settings/a2a/delete`）。
+- A2A 接入维护与现有维护能力一致，走受控 JSON 请求端点（`/api/a2a/agents/save|toggle|delete`）。
+- 设置页继续使用表单端点（`/settings/a2a/*`）供普通用户操作，后端保持兼容。
 - Skill 只负责触发与参数组织，请求执行与写入由服务端完成并回读校验。
 - 原因：统一维护入口与审计方式，避免 prompt 侧写操作。
 
@@ -103,10 +100,10 @@
 
 ## Migration Plan
 1. 先合入规格与接口骨架（不改变默认行为）。
-2. 引入 A2A provider 与 builtin tools（含 `a2a__register`），默认可关闭。
+2. 引入 A2A provider 与 builtin tools（`a2a__send/get/cancel`），默认可关闭。
 3. 增加 registry 与请求式维护入口（或配置文件入口）。
 4. 增加 A2A 双 Skill（维护/使用）并接入渐进式披露索引。
-5. 增加“用户提供 Agent 信息 -> 自动登记”链路测试。
+5. 增加“用户提供 Agent 信息 -> JSON 维护接口自动登记”链路测试。
 6. 增加 codex-local-a2a-agent 联调脚本与用例。
 7. 回归测试通过后再开放给主流程使用。
 

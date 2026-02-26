@@ -13,7 +13,7 @@
   - `a2a-task-orchestrator`：按用户目标选择并调用已接入 A2A Agent
 - Skill 仅负责策略编排，不承担 A2A 协议执行。
 - 增加 A2A Agent 注册表（allowlist + 凭证配置），通过 `agent_id` 路由目标 Agent。
-- 增加 A2A 注册内置工具 `a2a__register`，支持“用户提供 agent 信息 -> 自动登记 -> 返回 agent_id”。
+- 维护链路统一走 JSON 受控接口（`/api/a2a/agents/save|toggle|delete`），支持“用户提供 agent 信息 -> 自动登记 -> 回读校验”。
 - 在对话上下文新增 A2A 索引注入（渐进式披露）：首轮仅注入已接入 agent 索引与读取规则，详情按需读取。
 - 增加 A2A 执行证据字段，确保任务 ID、状态与结果可追踪。
 - 提供本机 `codex` CLI 包装 Agent 的联调方案，作为 A2A POC。

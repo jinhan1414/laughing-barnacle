@@ -13,12 +13,7 @@
 - **AND** 禁止静默降级为 Skill 脚本或 mock 结果
 
 ### Requirement: Builtin A2A Tool Execution
-系统 MUST 提供内置工具 `a2a__register`、`a2a__send`、`a2a__get`、`a2a__cancel`，并由 `callBuiltinTool` 直接分发执行。
-
-#### Scenario: Register agent from user-provided info
-- **WHEN** 用户提供 Agent 信息且模型调用 `a2a__register`
-- **THEN** 系统完成注册并返回 `agent_id`
-- **AND** 注册结果可立即被后续 `a2a__send` 使用
+系统 MUST 提供内置工具 `a2a__send`、`a2a__get`、`a2a__cancel`，并由 `callBuiltinTool` 直接分发执行。
 
 #### Scenario: Send task to remote agent
 - **WHEN** 模型调用 `a2a__send` 且参数合法
@@ -39,22 +34,22 @@
 - **AND** 不发起外部网络请求
 
 ### Requirement: Autonomous A2A Agent Onboarding
-系统 MUST 支持“用户提供 AgentCard 信息后，数字分身自主完成登记接入”，且该流程可追踪、可校验、可幂等。
+系统 MUST 支持“用户提供 Agent 信息后，数字分身通过受控维护接口自主完成登记接入”，且该流程可追踪、可校验、可幂等。
 
-#### Scenario: Register by agent card url
-- **WHEN** 用户提供 `agent_card_url` 并要求接入该 Agent
-- **THEN** 系统拉取并校验 AgentCard 后写入 registry
-- **AND** 返回 `agent_id/name/base_url/enabled`
+#### Scenario: Register by request-based maintenance API
+- **WHEN** 用户提供 `endpoint`/`agent_card_url` 并要求接入该 Agent
+- **THEN** 系统调用受控维护接口完成写入 registry
+- **AND** 通过 `GET /api/a2a/agents` 回读校验最终状态
 
-#### Scenario: Reject invalid agent card
-- **WHEN** `agent_card_url` 无法访问或返回非法 AgentCard
+#### Scenario: Reject invalid input on maintenance API
+- **WHEN** 维护接口收到缺失 `endpoint` 等非法输入
 - **THEN** 系统返回显式错误
 - **AND** 不写入 registry
 
 #### Scenario: Idempotent repeated registration
 - **WHEN** 用户重复提供同一 Agent 信息要求接入
-- **THEN** 系统返回已存在的 `agent_id`
-- **AND** 不产生重复注册记录
+- **THEN** 系统更新既有记录或返回既有 `agent_id`
+- **AND** 不产生重复注册记录（同 endpoint/card 签名）
 
 ### Requirement: Skill Strategy Only
 系统 MUST 将 Skill 限定为“策略提示层”，A2A 协议执行必须由内置工具与 provider 完成。
@@ -70,7 +65,7 @@
 #### Scenario: Config maintainer handles onboarding intent
 - **WHEN** 用户要求添加或维护 A2A 接入
 - **THEN** `a2a-config-maintainer` 负责触发登记/维护编排
-- **AND** 实际写操作通过受控请求接口或内置工具完成
+- **AND** 实际写操作通过受控请求接口完成（JSON body）
 
 #### Scenario: Task orchestrator handles execution intent
 - **WHEN** 用户要求调用外部 Agent 完成任务
@@ -95,7 +90,7 @@
 
 #### Scenario: Register/update through controlled endpoints
 - **WHEN** 触发 A2A 接入登记或更新
-- **THEN** 系统通过受控请求端点完成校验与持久化
+- **THEN** 系统通过 JSON 受控请求端点（`/api/a2a/agents/save|toggle|delete`）完成校验与持久化
 - **AND** 返回可回读验证的结果而非仅提示词承诺
 
 ### Requirement: Execution Evidence for A2A Calls

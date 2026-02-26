@@ -15,7 +15,8 @@ func (a *Agent) buildToolRuntimePrompt() string {
 				"使用 --data-urlencode 时，每个字段都必须写成 --data-urlencode \"key=value\"（禁止省略双引号）。\n" +
 				"在 cmd + /settings/*/save 场景，优先使用单条 -d \"k=v&k2=v2\"（值先 URL 编码），避免 -F 与多段参数拆分。\n" +
 				"保存定时任务时，/settings/schedules/save 必填字段固定为：id,name,description,action=skill:<skill_id>,cron_expr,enabled=on（禁止使用 cron/prompt/action=reminder）。\n" +
-				"A2A 接入维护统一使用 /settings/a2a/save、/settings/a2a/toggle、/settings/a2a/delete；查询使用 GET /api/a2a/agents（详情 /api/a2a/agents/read?id=<agent_id>）。",
+				"A2A 接入维护统一使用 JSON 接口：POST /api/a2a/agents/save、/api/a2a/agents/toggle、/api/a2a/agents/delete；查询使用 GET /api/a2a/agents（详情 /api/a2a/agents/read?id=<agent_id>）。\n" +
+				"A2A JSON 写入必须带 -H \"Content-Type: application/json\"，并使用单条 -d \"{\\\"key\\\":...}\"。",
 		)
 	case "bash", "sh":
 		return strings.TrimSpace(
@@ -24,7 +25,7 @@ func (a *Agent) buildToolRuntimePrompt() string {
 				"定时任务列表接口固定为 GET /api/schedules（禁止 /api/schedules/list）。\n" +
 				"创建/更新 Skill 固定使用 POST /settings/skills/save（禁止 /api/skills/save）。\n" +
 				"保存定时任务时，/settings/schedules/save 必填字段固定为：id,name,description,action=skill:<skill_id>,cron_expr,enabled=on（禁止使用 cron/prompt/action=reminder）。\n" +
-				"A2A 接入维护统一使用 /settings/a2a/save、/settings/a2a/toggle、/settings/a2a/delete；查询使用 GET /api/a2a/agents（详情 /api/a2a/agents/read?id=<agent_id>）。",
+				"A2A 接入维护统一使用 JSON 接口：POST /api/a2a/agents/save、/api/a2a/agents/toggle、/api/a2a/agents/delete；查询使用 GET /api/a2a/agents（详情 /api/a2a/agents/read?id=<agent_id>）。",
 		)
 	default:
 		return strings.TrimSpace(
@@ -32,7 +33,7 @@ func (a *Agent) buildToolRuntimePrompt() string {
 				"定时任务列表接口固定为 GET /api/schedules（禁止 /api/schedules/list）；" +
 				"创建/更新 Skill 固定使用 POST /settings/skills/save（禁止 /api/skills/save）；" +
 				"保存定时任务时，/settings/schedules/save 必填字段固定为 id,name,description,action=skill:<skill_id>,cron_expr,enabled=on；" +
-				"A2A 接入维护统一使用 /settings/a2a/save、/settings/a2a/toggle、/settings/a2a/delete，查询使用 /api/a2a/agents 与 /api/a2a/agents/read?id=<agent_id>。",
+				"A2A 接入维护统一使用 JSON 接口 /api/a2a/agents/save|toggle|delete，查询使用 /api/a2a/agents 与 /api/a2a/agents/read?id=<agent_id>。",
 		)
 	}
 }

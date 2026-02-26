@@ -194,8 +194,7 @@ func normalizeCommandForShell(shellName, command string) string {
 	command = strings.TrimSpace(command)
 	command = normalizeLocalAPIEndpointAliases(command)
 	if shellName == "cmd" {
-		command = strings.ReplaceAll(command, `\"`, `"`)
-		command = strings.ReplaceAll(command, `\'`, `'`)
+		command = normalizeEscapedCmdQuotes(command)
 	}
 	command = rewriteCmdCurlSettingsPost(command)
 	if shellName != "cmd" {

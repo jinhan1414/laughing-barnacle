@@ -51,12 +51,12 @@ var builtinSkills = []Skill{
 		Description: "当用户要求新增/修改/删除/启停 A2A Agent 接入时使用",
 		Prompt: strings.TrimSpace(
 			"目标：用最少命令维护 A2A 接入，默认命令预算 3-4 条。\n" +
-				"硬性约束：写接口必须使用 POST + 表单字段（--data-urlencode），禁止 JSON body。\n" +
+				"硬性约束：A2A 写接口必须使用 JSON body（Content-Type: application/json），禁止 --data-urlencode 表单写入。\n" +
 				"步骤 1（必做）：先查现状：curl -sS http://127.0.0.1:8080/api/a2a/agents。\n" +
 				"步骤 2（按需执行一个写分支）：\n" +
-				"  a) 新增/更新：curl -sS -X POST http://127.0.0.1:8080/settings/a2a/save --data-urlencode 'id=<optional_agent_id>' --data-urlencode 'name=<agent_name>' --data-urlencode 'description=<desc>' --data-urlencode 'endpoint=<a2a_endpoint>' --data-urlencode 'agent_card_url=<optional_card_url>' --data-urlencode 'auth_token=<optional_token>' --data-urlencode 'enabled=on'。\n" +
-				"  b) 启停：curl -sS -X POST http://127.0.0.1:8080/settings/a2a/toggle --data-urlencode 'id=<agent_id>' --data-urlencode 'enabled=true|false'。\n" +
-				"  c) 删除：curl -sS -X POST http://127.0.0.1:8080/settings/a2a/delete --data-urlencode 'id=<agent_id>'。\n" +
+				"  a) 新增/更新：curl -sS -X POST http://127.0.0.1:8080/api/a2a/agents/save -H \"Content-Type: application/json\" -d \"{\\\"id\\\":\\\"<optional_agent_id>\\\",\\\"name\\\":\\\"<agent_name>\\\",\\\"description\\\":\\\"<desc>\\\",\\\"endpoint\\\":\\\"<a2a_endpoint>\\\",\\\"agent_card_url\\\":\\\"<optional_card_url>\\\",\\\"auth_token\\\":\\\"<optional_token>\\\",\\\"enabled\\\":true}\"。\n" +
+				"  b) 启停：curl -sS -X POST http://127.0.0.1:8080/api/a2a/agents/toggle -H \"Content-Type: application/json\" -d \"{\\\"id\\\":\\\"<agent_id>\\\",\\\"enabled\\\":true}\"。\n" +
+				"  c) 删除：curl -sS -X POST http://127.0.0.1:8080/api/a2a/agents/delete -H \"Content-Type: application/json\" -d \"{\\\"id\\\":\\\"<agent_id>\\\"}\"。\n" +
 				"步骤 3（必做）：回读校验：curl -sS http://127.0.0.1:8080/api/a2a/agents；必要时再读单个详情：curl -sS \"http://127.0.0.1:8080/api/a2a/agents/read?id=<agent_id>\"。\n" +
 				"默认自主闭环：目标明确时直接执行；仅在 endpoint/card_url 缺失、删除对象歧义或鉴权信息缺失时追问。",
 		),

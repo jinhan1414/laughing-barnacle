@@ -14,6 +14,17 @@ func TestNormalizeCommandForShell_CmdUnescapesQuotes(t *testing.T) {
 	}
 }
 
+func TestNormalizeCommandForShell_CmdKeepsJSONDataEscapes(t *testing.T) {
+	raw := `curl -sS -X POST \"http://127.0.0.1:9080/api/a2a/agents/toggle\" -H \"Content-Type: application/json\" -d "{\"id\":\"http-127-0-0-1-9091-a2a-rpc\",\"enabled\":true}"`
+	got := normalizeCommandForShell("cmd", raw)
+	if !strings.Contains(got, `-H "Content-Type: application/json"`) {
+		t.Fatalf("expected json content-type header to be unescaped, got %q", got)
+	}
+	if !strings.Contains(got, `-d "{\"id\":\"http-127-0-0-1-9091-a2a-rpc\",\"enabled\":true}"`) {
+		t.Fatalf("expected json payload escapes preserved, got %q", got)
+	}
+}
+
 func TestShouldHintCmdCurlQuoteFix(t *testing.T) {
 	if !shouldHintCmdCurlQuoteFix("cmd", 3, `curl -s \"http://127.0.0.1:9080/api/schedules\"`, "") {
 		t.Fatalf("expected quote-fix hint for cmd curl exit=3 with empty stderr")

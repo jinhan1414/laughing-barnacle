@@ -6,12 +6,13 @@
 
 ## 2. Implementation
 - [ ] 2.1 在 `internal/agent` 增加 `A2AProvider` 接口、注入与 setter
-- [ ] 2.2 增加 builtin tools：`a2a__register` / `a2a__send` / `a2a__get` / `a2a__cancel`
+- [ ] 2.2 增加 builtin tools：`a2a__send` / `a2a__get` / `a2a__cancel`
 - [ ] 2.3 在 `callBuiltinTool` 中接入 A2A 调用与参数校验
 - [ ] 2.4 新增 `internal/a2a` 模块（client/provider/registry）
 - [ ] 2.5 增加 A2A registry 配置持久化与查询入口
+- [ ] 2.5.1 提供 JSON 维护端点：`/api/a2a/agents/save|toggle|delete`
 - [ ] 2.6 保证 ToolCall 结果包含 `agent_id/task_id/status` 等执行证据
-- [ ] 2.7 支持“用户提供 agent_card 信息后自动登记并返回 agent_id”
+- [ ] 2.7 支持“用户提供 agent 信息后通过 JSON 维护接口自动登记并回读校验”
 - [ ] 2.8 新增 Skill：`a2a-config-maintainer` 与 `a2a-task-orchestrator`
 - [ ] 2.9 在上下文中注入 A2A 索引（与 Skill/Memory 同级渐进式披露）
 

@@ -3,11 +3,16 @@ $ErrorActionPreference = "Stop"
 $serviceBase = "http://127.0.0.1:8080"
 $a2aBase = "http://127.0.0.1:9091"
 
-curl -sS -X POST "$serviceBase/settings/a2a/save" `
-  --data-urlencode "name=codex-local" `
-  --data-urlencode "description=Local Codex CLI A2A wrapper" `
-  --data-urlencode "endpoint=$a2aBase/a2a/rpc" `
-  --data-urlencode "agent_card_url=$a2aBase/.well-known/agent-card.json" `
-  --data-urlencode "enabled=on"
+$payload = @{
+  name = "codex-local"
+  description = "Local Codex CLI A2A wrapper"
+  endpoint = "$a2aBase/a2a/rpc"
+  agent_card_url = "$a2aBase/.well-known/agent-card.json"
+  enabled = $true
+} | ConvertTo-Json -Compress
+
+curl -sS -X POST "$serviceBase/api/a2a/agents/save" `
+  -H "Content-Type: application/json" `
+  -d "$payload"
 
 Write-Host "A2A agent registered. Verify with: curl -sS $serviceBase/api/a2a/agents"

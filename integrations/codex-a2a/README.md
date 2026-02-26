@@ -6,7 +6,7 @@
 
 - `codex_a2a_agent.py`：A2A 包装服务（JSON-RPC）
 - `run.ps1`：本地启动脚本
-- `register_local_agent.ps1`：向当前项目服务登记 A2A agent
+- `register_local_agent.ps1`：通过 JSON API 向当前项目服务登记 A2A agent
 - `state/tasks.json`：任务状态持久化文件（自动创建）
 - `state/output/`：每个任务的 Codex 输出文件（自动创建）
 

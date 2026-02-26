@@ -39,7 +39,7 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 - 用户长期规则：关于定时任务等执行链路优化，固定采用“方案1（仅靠模型能力）”；不引入其他替代执行方式，保持能力随模型增强而增强。
 - 用户长期规则：数字分身产品面向普通用户，默认应支持并优先处理日常化、口语化的自然指令，不要求用户具备专业技术背景。
 - 用户长期规则：A2A 后续开发固定为“维护走请求式链路、执行走内置工具”：
-  - A2A 接入维护（新增/修改/启停/删除）必须通过 `/settings/a2a/save|toggle|delete` + `/api/a2a/agents*` 回读校验，禁止新增或暴露 `a2a__register`。
+  - A2A 接入维护（新增/修改/启停/删除）必须优先通过 JSON 接口 `/api/a2a/agents/save|toggle|delete`，并通过 `/api/a2a/agents*` 回读校验；设置页表单仅作为兼容入口。
   - 内置 A2A 工具仅保留 `a2a__send` / `a2a__get` / `a2a__cancel`，用于调用已接入 agent。
   - 设置页必须可见当前已接入 A2A 列表与状态，保证普通用户可直接查看与维护。
 - 用户长期规则：需长期记住 A2A 基础知识并按“代码现状优先”解释：
