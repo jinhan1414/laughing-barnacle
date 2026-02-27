@@ -3,7 +3,7 @@
 基于 Go 的简化 AI Agent Web 聊天服务：
 - 单全局会话（无 session）持续多轮聊天
 - Agent 自动压缩上下文（loop）
-- LLM 提供商采用 Cerber（按 OpenAI 兼容 Chat Completions 调用）
+- LLM 通过独立 `llm-gateway` 统一路由，内置 `cerber` 与 `openai-codex` adapters
 - Agent 工具调用支持 MCP（Model Context Protocol）与内置工具
 - 内置工具包含 `linux__bash` 与 A2A（`a2a__send` / `a2a__get` / `a2a__cancel`）
 - 支持 MCP `streamable_http` / `sse` / `stdio` 三种连接类型
@@ -32,7 +32,8 @@
 - `internal/config`: 环境配置与校验
 - `internal/agent`: 对话主流程与自动压缩 loop
 - `internal/llm`: LLM 抽象
-- `internal/llm/cerber`: Cerber 客户端
+- `internal/llmgateway`: LLM 网关（Canonical 契约、provider 路由、adapter registry）
+- `internal/llm/cerber`: Cerber provider 适配实现（供网关 adapter 复用）
 - `internal/mcp`: MCP 服务配置存储与工具调用
 - `internal/memory`: MemoryFS 统一记忆存储与沉淀 worker
 - `internal/llmlog`: LLM 调用日志内存存储
@@ -48,7 +49,7 @@
 ### 1. 前置依赖
 
 - Go `1.22+`
-- 可用的 `CERBER_API_KEY`（必填，缺失会启动失败）
+- 默认 provider 为 `cerber` 时，需要可用的 `LLM_GATEWAY_CERBER_API_KEY`
 
 ### 2. 准备环境变量
 
@@ -61,7 +62,7 @@ cp .env.example .env
 然后编辑 `.env`，至少填写：
 
 ```env
-CERBER_API_KEY=your_real_api_key
+LLM_GATEWAY_CERBER_API_KEY=your_real_api_key
 ```
 
 ### 3. 启动服务
@@ -113,7 +114,7 @@ go build ./...
 docker buildx build --platform linux/arm64 -t laughing-barnacle:local --load .
 docker run --rm -p 8080:8080 \
   -v $(pwd)/data:/data \
-  -e CERBER_API_KEY=your_api_key_here \
+  -e LLM_GATEWAY_CERBER_API_KEY=your_api_key_here \
   laughing-barnacle:local
 ```
 
@@ -179,11 +180,19 @@ A2A 执行链路稳定性策略（代码现状）：
 - `APP_CONVERSATION_FILE`: 对话历史持久化文件路径
 - `APP_MEMORY_FILE`: 记忆持久化文件路径（bbolt）
 - `APP_LLM_LOG_FILE`: LLM 调用日志持久化文件路径
-- `CERBER_BASE_URL`: Cerber 服务地址
-- `CERBER_API_KEY`: Cerber API Key（必填）
-- `CERBER_MODEL`: 默认模型
+- `LLM_GATEWAY_DEFAULT_PROVIDER`: 默认 provider（`cerber` / `openai-codex`）
+- `LLM_GATEWAY_DEFAULT_MODEL`: 默认模型 ID（不含 provider 前缀）
+- `AGENT_LLM_MODEL`: Agent 默认模型引用（推荐 `provider/model`）
+- `LLM_GATEWAY_REQUEST_TIMEOUT`: 网关请求超时
+- `LLM_GATEWAY_CERBER_BASE_URL`: Cerber 服务地址
+- `LLM_GATEWAY_CERBER_API_KEY`: Cerber API Key（默认 provider 为 `cerber` 时必填）
+- `LLM_GATEWAY_CERBER_MAX_RETRIES`: Cerber 重试次数
+- `LLM_GATEWAY_OPENAI_CODEX_BASE_URL`: Codex API 地址
+- `LLM_GATEWAY_OPENAI_CODEX_API_KEY`: Codex token（可选）
+- `LLM_GATEWAY_OPENAI_CODEX_AUTH_FILE_PATH`: Codex 认证文件路径（显式路径优先）
+- `LLM_GATEWAY_OPENAI_CODEX_TRANSPORT`: Codex transport（默认 `auto`）
+- 兼容迁移：旧 `CERBER_*` 仍可映射到 `LLM_GATEWAY_CERBER_*`，启动日志会输出显式迁移告警
 - `CERBER_TEMPERATURE`: 采样温度
-- `CERBER_TIMEOUT`: LLM 请求超时
 - `MCP_HTTP_TIMEOUT`: MCP HTTP 调用超时
 - `MCP_PROTOCOL_VERSION`: MCP 协议版本（默认 `2025-06-18`）
 - `MCP_TOOL_CACHE_TTL`: MCP 工具列表缓存时长
@@ -201,7 +210,7 @@ A2A 执行链路稳定性策略（代码现状）：
 - `AGENT_MEMORY_FAILED_RETRY_AFTER`: failed segment 进入重试的最短等待时间（默认 `2m`）
 - `AGENT_MEMORY_EXTRACTION_USE_LLM`: 是否启用 LLM 结构化提取（默认 `true`）
 - `AGENT_MEMORY_EXTRACTION_FALLBACK`: LLM 提取失败后是否回退规则提取（默认 `true`）
-- `AGENT_MEMORY_EXTRACTION_MODEL`: 记忆提取模型（默认复用 `CERBER_MODEL`）
+- `AGENT_MEMORY_EXTRACTION_MODEL`: 记忆提取模型（默认复用 `AGENT_LLM_MODEL`）
 - `AGENT_MEMORY_EXTRACTION_TEMPERATURE`: 记忆提取温度（默认 `0`）
 - Agent 提示词统一通过设置页管理（单一来源，可编辑、可重置为内置默认）
 - `APP_LLM_LOG_LIMIT`: 内存日志上限

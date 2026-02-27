@@ -15,6 +15,9 @@ import (
 	"laughing-barnacle/internal/config"
 	"laughing-barnacle/internal/conversation"
 	"laughing-barnacle/internal/llm/cerber"
+	"laughing-barnacle/internal/llmgateway"
+	cerberadapter "laughing-barnacle/internal/llmgateway/adapters/cerber"
+	openaicodexadapter "laughing-barnacle/internal/llmgateway/adapters/openaicodex"
 	"laughing-barnacle/internal/llmlog"
 	"laughing-barnacle/internal/mcp"
 	"laughing-barnacle/internal/memory"
@@ -33,6 +36,9 @@ func run() error {
 	cfg, err := config.Load()
 	if err != nil {
 		return err
+	}
+	for _, warning := range cfg.StartupWarnings {
+		log.Printf("config warning: %s", warning)
 	}
 
 	logStore, err := llmlog.NewStoreWithFile(cfg.LLMLogLimit, cfg.LLMLogFile)
@@ -69,15 +75,32 @@ func run() error {
 	mcpToolProvider := mcp.NewToolProvider(mcpStore, mcpHTTPClient, cfg.MCPToolCacheTTL)
 	a2aProvider := a2a.NewProvider(mcpStore, cfg.MCPRequestTimeout)
 
-	llmClient := cerber.NewClient(cerber.Config{
-		BaseURL:        cfg.CerberBaseURL,
-		APIKey:         cfg.CerberAPIKey,
-		Timeout:        cfg.RequestTimeout,
-		LogStore:       logStore,
-		MaxRetries:     cfg.CerberMaxRetries,
-		RetryBaseDelay: cfg.CerberRetryBaseDelay,
-		RetryMaxDelay:  cfg.CerberRetryMaxDelay,
-	})
+	llmClient, err := llmgateway.NewClient(llmgateway.Config{
+		DefaultProvider: cfg.LLMGatewayDefaultProvider,
+		DefaultModel:    cfg.LLMGatewayDefaultModel,
+	},
+		cerberadapter.New(cerber.Config{
+			BaseURL:        cfg.LLMGatewayCerberBaseURL,
+			APIKey:         cfg.LLMGatewayCerberAPIKey,
+			Timeout:        cfg.RequestTimeout,
+			LogStore:       logStore,
+			MaxRetries:     cfg.LLMGatewayCerberMaxRetries,
+			RetryBaseDelay: cfg.LLMGatewayCerberRetryBaseDelay,
+			RetryMaxDelay:  cfg.LLMGatewayCerberRetryMaxDelay,
+		}),
+		openaicodexadapter.New(openaicodexadapter.Config{
+			BaseURL:      cfg.LLMGatewayOpenAICodexBaseURL,
+			APIToken:     cfg.LLMGatewayOpenAICodexAPIToken,
+			AuthFilePath: cfg.LLMGatewayOpenAICodexAuthFilePath,
+			Timeout:      cfg.RequestTimeout,
+			Transport:    cfg.LLMGatewayOpenAICodexTransport,
+			LogStore:     logStore,
+			MaxRetries:   cfg.LLMGatewayOpenAICodexMaxRetries,
+		}),
+	)
+	if err != nil {
+		return err
+	}
 	if cfg.MemoryExtractionUseLLM {
 		memoryStore.SetSegmentExtractor(
 			memory.NewLLMSegmentExtractor(llmClient, cfg.MemoryExtractionModel, cfg.MemoryExtractionTemperature),
@@ -86,7 +109,7 @@ func run() error {
 	}
 
 	agentSvc := agent.New(agent.Config{
-		Model:                      cfg.CerberModel,
+		Model:                      cfg.AgentModel,
 		LocalAPIBaseURL:            cfg.LocalAPIBaseURL,
 		Temperature:                cfg.Temperature,
 		MaxRecentMessages:          cfg.MaxRecentMessages,

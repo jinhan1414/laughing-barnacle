@@ -12,25 +12,39 @@ import (
 )
 
 type Config struct {
-	Addr                        string
-	LocalAPIBaseURL             string
-	SettingsFile                string
-	SkillsDir                   string
-	SkillsStateFile             string
-	ConversationFile            string
-	MemoryFile                  string
-	LLMLogFile                  string
-	CerberBaseURL               string
-	CerberAPIKey                string
-	CerberModel                 string
-	CerberMaxRetries            int
-	CerberRetryBaseDelay        time.Duration
-	CerberRetryMaxDelay         time.Duration
-	RequestTimeout              time.Duration
+	Addr             string
+	LocalAPIBaseURL  string
+	SettingsFile     string
+	SkillsDir        string
+	SkillsStateFile  string
+	ConversationFile string
+	MemoryFile       string
+	LLMLogFile       string
+
+	AgentModel      string
+	Temperature     float64
+	RequestTimeout  time.Duration
+	LLMLogLimit     int
+	StartupWarnings []string
+
+	LLMGatewayDefaultProvider string
+	LLMGatewayDefaultModel    string
+
+	LLMGatewayCerberBaseURL        string
+	LLMGatewayCerberAPIKey         string
+	LLMGatewayCerberMaxRetries     int
+	LLMGatewayCerberRetryBaseDelay time.Duration
+	LLMGatewayCerberRetryMaxDelay  time.Duration
+
+	LLMGatewayOpenAICodexBaseURL      string
+	LLMGatewayOpenAICodexAPIToken     string
+	LLMGatewayOpenAICodexAuthFilePath string
+	LLMGatewayOpenAICodexTransport    string
+	LLMGatewayOpenAICodexMaxRetries   int
+
 	MCPRequestTimeout           time.Duration
 	MCPProtocolVersion          string
 	MCPToolCacheTTL             time.Duration
-	Temperature                 float64
 	MaxRecentMessages           int
 	CompressionTriggerMessages  int
 	CompressionTriggerChars     int
@@ -47,28 +61,53 @@ type Config struct {
 	MemoryExtractionFallback    bool
 	MemoryExtractionModel       string
 	MemoryExtractionTemperature float64
-	LLMLogLimit                 int
-	AgentSystemPrompt           string
-	CompressionSystemPrompt     string
+
+	AgentSystemPrompt       string
+	CompressionSystemPrompt string
 }
 
 func Load() (Config, error) {
-	cfg := Config{
-		Addr:                        envOrDefault("APP_ADDR", ":8080"),
-		SettingsFile:                envOrDefault("APP_SETTINGS_FILE", "./data/settings.json"),
-		SkillsDir:                   envOrDefault("APP_SKILLS_DIR", "./data/skills"),
-		SkillsStateFile:             envOrDefault("APP_SKILLS_STATE_FILE", "./data/skills_state.json"),
-		ConversationFile:            envOrDefault("APP_CONVERSATION_FILE", "./data/conversation.json"),
-		MemoryFile:                  envOrDefault("APP_MEMORY_FILE", "./data/memory.db"),
-		LLMLogFile:                  envOrDefault("APP_LLM_LOG_FILE", "./data/llm_logs.json"),
-		CerberBaseURL:               envOrDefault("CERBER_BASE_URL", "https://api.cerber.ai"),
-		CerberAPIKey:                os.Getenv("CERBER_API_KEY"),
-		CerberModel:                 envOrDefault("CERBER_MODEL", "gpt-4o-mini"),
-		CerberMaxRetries:            envInt("CERBER_MAX_RETRIES", 2),
-		CerberRetryBaseDelay:        envDuration("CERBER_RETRY_BASE_DELAY", 700*time.Millisecond),
-		CerberRetryMaxDelay:         envDuration("CERBER_RETRY_MAX_DELAY", 8*time.Second),
-		Temperature:                 envFloat("CERBER_TEMPERATURE", 0.2),
-		RequestTimeout:              envDuration("CERBER_TIMEOUT", 45*time.Second),
+	llmEnv := loadLLMGatewayEnv()
+	cfg := newConfig(llmEnv)
+	cfg.LocalAPIBaseURL = localapi.ResolveBaseURL(cfg.Addr)
+	if err := cfg.validate(); err != nil {
+		return Config{}, err
+	}
+	return cfg, nil
+}
+
+func newConfig(llmEnv llmGatewayEnv) Config {
+	defaultModelRef := llmEnv.DefaultProvider + "/" + llmEnv.DefaultModel
+	return Config{
+		Addr:             envOrDefault("APP_ADDR", ":8080"),
+		SettingsFile:     envOrDefault("APP_SETTINGS_FILE", "./data/settings.json"),
+		SkillsDir:        envOrDefault("APP_SKILLS_DIR", "./data/skills"),
+		SkillsStateFile:  envOrDefault("APP_SKILLS_STATE_FILE", "./data/skills_state.json"),
+		ConversationFile: envOrDefault("APP_CONVERSATION_FILE", "./data/conversation.json"),
+		MemoryFile:       envOrDefault("APP_MEMORY_FILE", "./data/memory.db"),
+		LLMLogFile:       envOrDefault("APP_LLM_LOG_FILE", "./data/llm_logs.json"),
+
+		AgentModel:      envOrDefault("AGENT_LLM_MODEL", defaultModelRef),
+		Temperature:     envFloat("CERBER_TEMPERATURE", 0.2),
+		RequestTimeout:  llmEnv.RequestTimeout,
+		LLMLogLimit:     envInt("APP_LLM_LOG_LIMIT", 500),
+		StartupWarnings: append([]string(nil), llmEnv.Warnings...),
+
+		LLMGatewayDefaultProvider: llmEnv.DefaultProvider,
+		LLMGatewayDefaultModel:    llmEnv.DefaultModel,
+
+		LLMGatewayCerberBaseURL:        llmEnv.CerberBaseURL,
+		LLMGatewayCerberAPIKey:         llmEnv.CerberAPIKey,
+		LLMGatewayCerberMaxRetries:     llmEnv.CerberMaxRetries,
+		LLMGatewayCerberRetryBaseDelay: llmEnv.CerberRetryBaseDelay,
+		LLMGatewayCerberRetryMaxDelay:  llmEnv.CerberRetryMaxDelay,
+
+		LLMGatewayOpenAICodexBaseURL:      llmEnv.OpenAICodexBaseURL,
+		LLMGatewayOpenAICodexAPIToken:     llmEnv.OpenAICodexAPIToken,
+		LLMGatewayOpenAICodexAuthFilePath: llmEnv.OpenAICodexAuthFilePath,
+		LLMGatewayOpenAICodexTransport:    llmEnv.OpenAICodexTransport,
+		LLMGatewayOpenAICodexMaxRetries:   llmEnv.OpenAICodexMaxRetries,
+
 		MCPRequestTimeout:           envDuration("MCP_HTTP_TIMEOUT", 20*time.Second),
 		MCPProtocolVersion:          envOrDefault("MCP_PROTOCOL_VERSION", "2025-06-18"),
 		MCPToolCacheTTL:             envDuration("MCP_TOOL_CACHE_TTL", 30*time.Second),
@@ -86,84 +125,111 @@ func Load() (Config, error) {
 		MemoryFailedRetryAfter:      envDuration("AGENT_MEMORY_FAILED_RETRY_AFTER", 2*time.Minute),
 		MemoryExtractionUseLLM:      envBool("AGENT_MEMORY_EXTRACTION_USE_LLM", true),
 		MemoryExtractionFallback:    envBool("AGENT_MEMORY_EXTRACTION_FALLBACK", true),
-		MemoryExtractionModel:       envOrDefault("AGENT_MEMORY_EXTRACTION_MODEL", envOrDefault("CERBER_MODEL", "gpt-4o-mini")),
+		MemoryExtractionModel:       envOrDefault("AGENT_MEMORY_EXTRACTION_MODEL", defaultModelRef),
 		MemoryExtractionTemperature: envFloat("AGENT_MEMORY_EXTRACTION_TEMPERATURE", 0),
-		LLMLogLimit:                 envInt("APP_LLM_LOG_LIMIT", 500),
-		AgentSystemPrompt: envOrDefault("AGENT_SYSTEM_PROMPT",
-			agentprompt.DefaultSystemPrompt),
-		CompressionSystemPrompt: envOrDefault("AGENT_COMPRESSION_SYSTEM_PROMPT",
-			agentprompt.DefaultCompressionSystemPrompt),
-	}
-	cfg.LocalAPIBaseURL = localapi.ResolveBaseURL(cfg.Addr)
 
-	if cfg.CerberAPIKey == "" {
-		return Config{}, fmt.Errorf("CERBER_API_KEY is required")
+		AgentSystemPrompt:       envOrDefault("AGENT_SYSTEM_PROMPT", agentprompt.DefaultSystemPrompt),
+		CompressionSystemPrompt: envOrDefault("AGENT_COMPRESSION_SYSTEM_PROMPT", agentprompt.DefaultCompressionSystemPrompt),
 	}
-	if cfg.MaxRecentMessages <= 0 {
-		return Config{}, fmt.Errorf("AGENT_MAX_RECENT_MESSAGES must be > 0")
-	}
-	if cfg.CerberMaxRetries < 0 {
-		return Config{}, fmt.Errorf("CERBER_MAX_RETRIES must be >= 0")
-	}
-	if cfg.CerberRetryBaseDelay <= 0 {
-		return Config{}, fmt.Errorf("CERBER_RETRY_BASE_DELAY must be > 0")
-	}
-	if cfg.CerberRetryMaxDelay <= 0 {
-		return Config{}, fmt.Errorf("CERBER_RETRY_MAX_DELAY must be > 0")
-	}
-	if cfg.CerberRetryMaxDelay < cfg.CerberRetryBaseDelay {
-		return Config{}, fmt.Errorf("CERBER_RETRY_MAX_DELAY must be >= CERBER_RETRY_BASE_DELAY")
-	}
-	if cfg.KeepRecentAfterCompression < 0 {
-		return Config{}, fmt.Errorf("AGENT_KEEP_RECENT_AFTER_COMPRESSION must be >= 0")
-	}
-	if cfg.MaxCompressionLoopsPerTurn <= 0 {
-		return Config{}, fmt.Errorf("AGENT_MAX_COMPRESSION_LOOPS must be > 0")
-	}
-	if cfg.MaxToolCallRounds <= 0 {
-		return Config{}, fmt.Errorf("AGENT_MAX_TOOL_CALL_ROUNDS must be > 0")
-	}
-	if cfg.LLMLogLimit <= 0 {
-		return Config{}, fmt.Errorf("APP_LLM_LOG_LIMIT must be > 0")
-	}
-	if cfg.LLMLogFile == "" {
-		return Config{}, fmt.Errorf("APP_LLM_LOG_FILE is required")
-	}
-	if cfg.ConversationFile == "" {
-		return Config{}, fmt.Errorf("APP_CONVERSATION_FILE is required")
-	}
-	if cfg.MemoryFile == "" {
-		return Config{}, fmt.Errorf("APP_MEMORY_FILE is required")
-	}
-	if cfg.MemoryIdleWindow <= 0 {
-		return Config{}, fmt.Errorf("AGENT_MEMORY_IDLE_WINDOW must be > 0")
-	}
-	if cfg.MemoryMaxSegmentWindow <= 0 {
-		return Config{}, fmt.Errorf("AGENT_MEMORY_MAX_SEGMENT_WINDOW must be > 0")
-	}
-	if cfg.MemoryMaxSegmentMessages <= 0 {
-		return Config{}, fmt.Errorf("AGENT_MEMORY_MAX_SEGMENT_MESSAGES must be > 0")
-	}
-	if cfg.MemoryWorkerInterval <= 0 {
-		return Config{}, fmt.Errorf("AGENT_MEMORY_WORKER_INTERVAL must be > 0")
-	}
-	if cfg.MemoryTrashTTL <= 0 {
-		return Config{}, fmt.Errorf("AGENT_MEMORY_TRASH_TTL must be > 0")
-	}
-	if cfg.MemoryFailedRetryAfter <= 0 {
-		return Config{}, fmt.Errorf("AGENT_MEMORY_FAILED_RETRY_AFTER must be > 0")
-	}
-	if cfg.MemoryExtractionUseLLM && strings.TrimSpace(cfg.MemoryExtractionModel) == "" {
-		return Config{}, fmt.Errorf("AGENT_MEMORY_EXTRACTION_MODEL is required when AGENT_MEMORY_EXTRACTION_USE_LLM=true")
-	}
-	if cfg.SkillsDir == "" {
-		return Config{}, fmt.Errorf("APP_SKILLS_DIR is required")
-	}
-	if cfg.SkillsStateFile == "" {
-		return Config{}, fmt.Errorf("APP_SKILLS_STATE_FILE is required")
-	}
+}
 
-	return cfg, nil
+func (c Config) validate() error {
+	if err := c.validateGateway(); err != nil {
+		return err
+	}
+	if err := c.validateAgentRuntime(); err != nil {
+		return err
+	}
+	return c.validateStorage()
+}
+
+func (c Config) validateGateway() error {
+	switch c.LLMGatewayDefaultProvider {
+	case "cerber", "openai-codex":
+	default:
+		return fmt.Errorf("LLM_GATEWAY_DEFAULT_PROVIDER must be one of: cerber, openai-codex")
+	}
+	if c.LLMGatewayDefaultProvider == "cerber" && strings.TrimSpace(c.LLMGatewayCerberAPIKey) == "" {
+		return fmt.Errorf("LLM_GATEWAY_CERBER_API_KEY is required when default provider is cerber")
+	}
+	if c.LLMGatewayCerberMaxRetries < 0 {
+		return fmt.Errorf("LLM_GATEWAY_CERBER_MAX_RETRIES must be >= 0")
+	}
+	if c.LLMGatewayOpenAICodexMaxRetries < 0 {
+		return fmt.Errorf("LLM_GATEWAY_OPENAI_CODEX_MAX_RETRIES must be >= 0")
+	}
+	if c.RequestTimeout <= 0 {
+		return fmt.Errorf("LLM_GATEWAY_REQUEST_TIMEOUT must be > 0")
+	}
+	if c.LLMGatewayCerberRetryBaseDelay <= 0 {
+		return fmt.Errorf("LLM_GATEWAY_CERBER_RETRY_BASE_DELAY must be > 0")
+	}
+	if c.LLMGatewayCerberRetryMaxDelay <= 0 {
+		return fmt.Errorf("LLM_GATEWAY_CERBER_RETRY_MAX_DELAY must be > 0")
+	}
+	if c.LLMGatewayCerberRetryMaxDelay < c.LLMGatewayCerberRetryBaseDelay {
+		return fmt.Errorf("LLM_GATEWAY_CERBER_RETRY_MAX_DELAY must be >= LLM_GATEWAY_CERBER_RETRY_BASE_DELAY")
+	}
+	return nil
+}
+
+func (c Config) validateAgentRuntime() error {
+	if c.MaxRecentMessages <= 0 {
+		return fmt.Errorf("AGENT_MAX_RECENT_MESSAGES must be > 0")
+	}
+	if c.KeepRecentAfterCompression < 0 {
+		return fmt.Errorf("AGENT_KEEP_RECENT_AFTER_COMPRESSION must be >= 0")
+	}
+	if c.MaxCompressionLoopsPerTurn <= 0 {
+		return fmt.Errorf("AGENT_MAX_COMPRESSION_LOOPS must be > 0")
+	}
+	if c.MaxToolCallRounds <= 0 {
+		return fmt.Errorf("AGENT_MAX_TOOL_CALL_ROUNDS must be > 0")
+	}
+	if c.MemoryIdleWindow <= 0 {
+		return fmt.Errorf("AGENT_MEMORY_IDLE_WINDOW must be > 0")
+	}
+	if c.MemoryMaxSegmentWindow <= 0 {
+		return fmt.Errorf("AGENT_MEMORY_MAX_SEGMENT_WINDOW must be > 0")
+	}
+	if c.MemoryMaxSegmentMessages <= 0 {
+		return fmt.Errorf("AGENT_MEMORY_MAX_SEGMENT_MESSAGES must be > 0")
+	}
+	if c.MemoryWorkerInterval <= 0 {
+		return fmt.Errorf("AGENT_MEMORY_WORKER_INTERVAL must be > 0")
+	}
+	if c.MemoryTrashTTL <= 0 {
+		return fmt.Errorf("AGENT_MEMORY_TRASH_TTL must be > 0")
+	}
+	if c.MemoryFailedRetryAfter <= 0 {
+		return fmt.Errorf("AGENT_MEMORY_FAILED_RETRY_AFTER must be > 0")
+	}
+	if c.MemoryExtractionUseLLM && strings.TrimSpace(c.MemoryExtractionModel) == "" {
+		return fmt.Errorf("AGENT_MEMORY_EXTRACTION_MODEL is required when AGENT_MEMORY_EXTRACTION_USE_LLM=true")
+	}
+	return nil
+}
+
+func (c Config) validateStorage() error {
+	if c.LLMLogLimit <= 0 {
+		return fmt.Errorf("APP_LLM_LOG_LIMIT must be > 0")
+	}
+	if c.LLMLogFile == "" {
+		return fmt.Errorf("APP_LLM_LOG_FILE is required")
+	}
+	if c.ConversationFile == "" {
+		return fmt.Errorf("APP_CONVERSATION_FILE is required")
+	}
+	if c.MemoryFile == "" {
+		return fmt.Errorf("APP_MEMORY_FILE is required")
+	}
+	if c.SkillsDir == "" {
+		return fmt.Errorf("APP_SKILLS_DIR is required")
+	}
+	if c.SkillsStateFile == "" {
+		return fmt.Errorf("APP_SKILLS_STATE_FILE is required")
+	}
+	return nil
 }
 
 func envOrDefault(key, fallback string) string {

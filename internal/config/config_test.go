@@ -69,3 +69,35 @@ func TestLoad_LocalAPIBaseURLFollowsAPPAddr(t *testing.T) {
 		t.Fatalf("expected LocalAPIBaseURL to follow APP_ADDR, got %q", cfg.LocalAPIBaseURL)
 	}
 }
+
+func TestLoad_LegacyCerberEnvMappedWithWarning(t *testing.T) {
+	t.Setenv("CERBER_API_KEY", "legacy-key")
+	t.Setenv("LLM_GATEWAY_CERBER_API_KEY", "")
+	t.Setenv("LLM_GATEWAY_DEFAULT_PROVIDER", "cerber")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load error: %v", err)
+	}
+	if cfg.LLMGatewayCerberAPIKey != "legacy-key" {
+		t.Fatalf("expected mapped legacy API key, got %q", cfg.LLMGatewayCerberAPIKey)
+	}
+	if len(cfg.StartupWarnings) == 0 {
+		t.Fatalf("expected legacy mapping warning")
+	}
+}
+
+func TestLoad_UsesGatewayDefaultModelRefByDefault(t *testing.T) {
+	t.Setenv("CERBER_API_KEY", "test-key")
+	t.Setenv("AGENT_LLM_MODEL", "")
+	t.Setenv("LLM_GATEWAY_DEFAULT_PROVIDER", "openai-codex")
+	t.Setenv("LLM_GATEWAY_DEFAULT_MODEL", "gpt-5-codex")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load error: %v", err)
+	}
+	if cfg.AgentModel != "openai-codex/gpt-5-codex" {
+		t.Fatalf("expected provider/model default ref, got %q", cfg.AgentModel)
+	}
+}
