@@ -124,8 +124,6 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 
 	recentMessages := trimMessagesForRequest(messages, a.cfg.MaxRecentMessages, maxRecentContextRunes, maxContextMessageRunes)
 	requestMessages = appendHistoryMessagesWithToolCalls(requestMessages, recentMessages)
-	latestUserInput := latestUserMessageText(recentMessages)
-	requiresToolEvidence := shouldRequireRuntimeToolEvidence(latestUserInput)
 	requestMessages = removeRuntimeDateContextUserMessages(requestMessages)
 	requestMessages = append(requestMessages, llm.Message{
 		Role:    "user",
@@ -161,8 +159,6 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 	executedCalls := make([]conversation.ToolCall, 0)
 	usageTotal := conversation.TokenUsage{}
 	hasUsage := false
-	enforcedEvidence := false
-	enforcedExecutionClaimValidation := false
 
 	toolRounds := 0
 	for {
@@ -179,29 +175,6 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 		usageTotal, hasUsage = mergeTokenUsage(usageTotal, hasUsage, resp.Usage)
 
 		if len(resp.ToolCalls) == 0 {
-			if requiresToolEvidence && len(executedCalls) == 0 {
-				if !enforcedEvidence {
-					enforcedEvidence = true
-					requestMessages = append(requestMessages, llm.Message{
-						Role:    "system",
-						Content: "上一条回答缺少工具证据。针对此类“实时状态/配置变更”问题，必须先调用工具查询或执行，再基于工具结果回复。",
-					})
-					continue
-				}
-				return "", executedCalls, usageOrNil(usageTotal, hasUsage), fmt.Errorf("需要先调用工具获取实时数据后再回答")
-			}
-			if needsExecutionClaimCorrection(resp.Content, executedCalls) {
-				if !enforcedExecutionClaimValidation {
-					enforcedExecutionClaimValidation = true
-					requestMessages = append(requestMessages, llm.Message{
-						Role: "system",
-						Content: "上一条回答包含未验证或自相矛盾的执行结论。只有在工具结果显示“写操作成功且已回读验证”后，才能声称“已创建/已修改/已启用/已删除”。" +
-							"若未满足条件，必须明确说明未完成，并继续调用工具完成执行与校验。",
-					})
-					continue
-				}
-				return "", executedCalls, usageOrNil(usageTotal, hasUsage), fmt.Errorf("回答包含未验证的执行成功结论，请先调用工具并基于结果回答")
-			}
 			return resp.Content, executedCalls, usageOrNil(usageTotal, hasUsage), nil
 		}
 		if toolRounds >= maxRounds {
