@@ -4,8 +4,8 @@
 - 单全局会话（无 session）持续多轮聊天
 - Agent 自动压缩上下文（loop）
 - LLM 提供商采用 Cerber（按 OpenAI 兼容 Chat Completions 调用）
-- Agent 工具调用仅通过 MCP（Model Context Protocol）服务
-- 内置唯一本地工具 `linux__bash`（其他能力通过 MCP 工具扩展）
+- Agent 工具调用支持 MCP（Model Context Protocol）与内置工具
+- 内置工具包含 `linux__bash` 与 A2A（`a2a__send` / `a2a__get` / `a2a__cancel`）
 - 支持 MCP `streamable_http` / `sse` / `stdio` 三种连接类型
 - 支持按 MCP 服务内单工具启用/禁用
 - 支持在设置页配置 Agent Skills（可启用/禁用的系统级技能指令）
@@ -153,9 +153,14 @@ docker run --rm -p 8080:8080 \
 2. 进入自动压缩 loop（达到阈值则触发压缩）
 3. 用“摘要 + 最近消息”调用 LLM 生成回复
 4. 若模型返回工具调用，则通过 `linux__bash` 或已启用 MCP 服务执行并回填结果，再继续推理
-5. 若模型命中 A2A 调用能力，则通过内置 `a2a__register` / `a2a__send` / `a2a__get` / `a2a__cancel` 执行
-5. 将已启用 Skills 的指令注入系统提示词后生成回复
-6. 追加助手回复
+5. 若模型命中 A2A 调用能力，则通过内置 `a2a__send` / `a2a__get` / `a2a__cancel` 执行
+6. 将已启用 Skills 的指令注入系统提示词后生成回复
+7. 追加助手回复
+
+A2A 执行链路稳定性策略（代码现状）：
+- 同轮中若 A2A 返回 `status: working/submitted`，后端直接返回“任务仍在执行中（含 task_id）”，不再继续同轮轮询。
+- 同轮中若 A2A 工具报错（如 EOF），后端直接返回错误摘要，不再追加一次 LLM 收尾调用。
+- 目的：避免同轮反复 `a2a__get` 把 `/chat/send` 的 2 分钟上下文耗尽并触发 `context deadline exceeded`。
 
 此外，服务进程启动后会注册后台 Cron 调度：
 - 所有任务由设置中心的 Cron 表达式驱动（5 段：分 时 日 月 周），默认不内置任务，由用户按需创建

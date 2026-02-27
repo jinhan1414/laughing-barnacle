@@ -46,4 +46,8 @@ Keep this managed block so 'openspec update' can refresh the instructions.
   - A2A 是 Agent 与 Agent 的通信协议能力；在本系统中，维护链路走 HTTP 请求，执行链路走内置 `a2a__send/get/cancel`。
   - 资料优先级：`openspec/changes/add-a2a-native-capability/`（proposal/design/spec）> `integrations/codex-a2a/README.md`（本地联调）> `internal/agent|internal/a2a|internal/web`（最终运行实现，以此为准）。
   - 若文档与代码冲突，统一以当前主干代码行为和测试为准，并在答复中显式指出差异。
+- 用户长期规则：A2A 执行链路固定采用“进行中/错误直返，禁止同轮轮询扩张”：
+  - 当 `a2a__*` 返回 `status: working/submitted` 时，后端当轮必须直接向用户返回当前状态（含 `task_id`），不再继续同轮 `a2a__get` 轮询。
+  - 当 `a2a__*` 返回工具错误（如 `EOF`）时，后端当轮必须直接返回错误摘要，不再追加 LLM 二次收尾调用。
+  - 目标是避免工具回合在单轮内持续扩张导致 `/chat/send` 请求触发 `context deadline exceeded`。
 - 用户长期规则：当且仅当确认当前任务已完成时，必须且只发送一次 `curl -X POST "https://ntfy.sh/jincs5658944s" -d "done"`；未完成、失败或中断时禁止发送；发送后需在回复末尾写“已发送 done 通知”。

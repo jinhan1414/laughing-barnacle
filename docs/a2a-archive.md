@@ -1,6 +1,6 @@
 # A2A（Agent2Agent Protocol）归档
 
-更新时间：2026-02-26  
+更新时间：2026-02-27  
 归档目的：沉淀 A2A 协议核心信息，供后续架构讨论与实现查询。
 
 ## 1. 一句话定义
@@ -106,3 +106,18 @@ A2A 是用于 **Agent 与 Agent 协作** 的开放协议，定义发现、认证
 - ACP 并入公告（LF AI & Data）：https://lfaidata.foundation/communityblog/2025/08/29/acp-joins-forces-with-a2a-under-the-linux-foundations-lf-ai-data/
 - ACP 仓库（已归档）：https://github.com/i-am-bee/acp
 - ACP 并入讨论公告（2025-08-15）：https://github.com/i-am-bee/acp/discussions/702
+
+## 12. 本项目执行链路稳定性方案（代码现状）
+
+适用范围：`internal/agent` + `internal/a2a` + `integrations/codex-a2a`。
+
+- A2A 任务进行中短路：
+  - 当工具结果为 `status: working` 或 `status: submitted` 时，后端直接返回“任务仍在执行中（含 task_id）”。
+  - 同轮禁止继续 `a2a__send/get/cancel` 轮询，不再追加 LLM 二次收尾。
+- A2A 工具错误短路：
+  - 当 `a2a__*` 返回工具错误（典型如 `EOF`）时，后端直接返回错误摘要，不再进入额外 LLM 回合。
+- codex-local 服务健壮性：
+  - `run.ps1` 启动前清理旧监听进程，服务端口独占绑定，避免多实例导致随机 `EOF/Empty reply`。
+  - `codex` 子进程输出固定 UTF-8 解码并 `errors=replace`，避免 Windows 编码差异触发 `UnicodeDecodeError`。
+- 目标：
+  - 防止同轮工具回合持续占用 `/chat/send` 上下文，降低 `context deadline exceeded` 概率。

@@ -21,6 +21,13 @@ cd integrations/codex-a2a
 
 启动脚本会自动解析 `codex.cmd/codex.exe` 并显式传给服务（`--codex-bin`），避免服务进程 PATH 与交互终端不一致导致的 `codex cli not found in PATH`。
 同时会先清理旧的 `codex_a2a_agent.py` 监听进程；服务端口使用独占绑定，避免多实例并发监听同一端口导致随机 `EOF/Empty reply`。
+`codex` 子进程输出统一按 UTF-8 解码（`errors=replace`），避免 Windows 默认编码导致 `UnicodeDecodeError` 使任务线程异常。
+
+## 当前处理方案（明确约定）
+
+- A2A 任务返回 `status: working/submitted` 时，主服务当轮直接返回“任务仍在执行中（含 task_id）”，不再同轮继续 `a2a__get` 轮询。
+- A2A 工具报错（如 `EOF`）时，主服务当轮直接返回错误摘要，不再追加 LLM 二次收尾。
+- 该方案用于防止同轮工具回合持续占用请求上下文而触发 `context deadline exceeded`。
 
 ## 手动登记到数字分身
 

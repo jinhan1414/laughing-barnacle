@@ -29,6 +29,19 @@ TBD - created by archiving change add-a2a-native-capability. Update Purpose afte
 - **THEN** 系统返回对应任务状态或取消结果
 - **AND** 任务不存在或状态非法时返回显式错误
 
+### Requirement: In-Progress/Error Short-Circuit for A2A Tool Rounds
+系统 MUST 在 A2A 任务进行中或 A2A 工具报错时直接返回确定性回复，避免同轮工具回合持续扩张导致请求超时。
+
+#### Scenario: Return direct status when task is still running
+- **WHEN** 本轮仅执行 A2A 工具且返回 `status: working/submitted`
+- **THEN** 后端直接返回“任务仍在执行中（含 `task_id`）”
+- **AND** 禁止继续同轮 `a2a__send/get/cancel` 轮询
+
+#### Scenario: Return direct error on A2A tool failure
+- **WHEN** 本轮仅执行 A2A 工具且出现工具错误（如 `EOF`）
+- **THEN** 后端直接返回错误摘要
+- **AND** 不再追加 LLM 二次收尾调用
+
 ### Requirement: Agent Routing by Registry Allowlist
 系统 MUST 通过本地 A2A registry 使用 `agent_id` 路由目标 Agent，禁止模型直接指定任意 URL。
 
@@ -109,4 +122,3 @@ TBD - created by archiving change add-a2a-native-capability. Update Purpose afte
 - **WHEN** 任一 `a2a__*` 调用完成（成功或失败）
 - **THEN** `ToolCall.Result` 中可追溯 `agent_id/task_id/status`
 - **AND** 失败原因可用于链路排查（触发条件 -> 动作计划 -> 工具调用 -> 接口返回 -> 回读校验 -> 最终回复）
-
