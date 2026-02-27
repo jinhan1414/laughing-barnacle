@@ -68,9 +68,9 @@
             </div>
           </article>
           {{else if eq .Kind "event"}}
-          <article class="mb-2.5 flex justify-center" data-chat-message="1" data-created-at="{{.CreatedAt.Unix}}" data-created-at-us="{{.CreatedAt.UnixMicro}}">
+          <article class="mb-2.5 flex justify-center" data-chat-message="1" data-created-at="{{.CreatedAt.Unix}}" data-created-at-us="{{.CreatedAt.UnixMicro}}" data-event-type="{{.EventType}}">
             <details class="w-full max-w-[86%] rounded-xl border border-dashed border-slate-300 bg-slate-100/95 px-3 py-2 text-[12px] leading-5 text-slate-600">
-              <summary class="cursor-pointer list-none font-medium text-slate-500">已压缩上下文，点击展开摘要</summary>
+              <summary class="cursor-pointer list-none font-medium text-slate-500">{{if eq .EventType "context_compression"}}已压缩上下文，点击展开摘要{{else if eq .EventType "async_task_status"}}后台任务状态更新{{else}}系统事件{{end}}</summary>
               <div class="mt-1 js-chat-content whitespace-pre-wrap break-words transition-[max-height] duration-200">{{.Content}}</div>
               <button type="button" class="js-chat-toggle mt-1 hidden text-[11px] font-medium text-slate-500">展开</button>
               <div class="mt-1 text-[11px] text-slate-500">Tokens: -</div>
@@ -345,7 +345,17 @@
         return "Tokens: 总 " + total + " | 输 " + prompt + " | 出 " + completion;
       }
 
-      function appendEventMessage(content, createdAtUs) {
+      function eventSummaryLabel(eventType) {
+        if (eventType === "context_compression") {
+          return "已压缩上下文，点击展开摘要";
+        }
+        if (eventType === "async_task_status") {
+          return "后台任务状态更新";
+        }
+        return "系统事件";
+      }
+
+      function appendEventMessage(content, createdAtUs, eventType) {
         var text = (content || "").trim();
         if (!text) {
           return;
@@ -362,13 +372,14 @@
         article.setAttribute("data-chat-message", "1");
         article.setAttribute("data-created-at", String(Math.floor(createdAtMs / 1000)));
         article.setAttribute("data-created-at-us", String(createdAtUs));
+        article.setAttribute("data-event-type", eventType || "");
 
         var details = document.createElement("details");
         details.className = "w-full max-w-[86%] rounded-xl border border-dashed border-slate-300 bg-slate-100/95 px-3 py-2 text-[12px] leading-5 text-slate-600";
 
         var summary = document.createElement("summary");
         summary.className = "cursor-pointer list-none font-medium text-slate-500";
-        summary.textContent = "已压缩上下文，点击展开摘要";
+        summary.textContent = eventSummaryLabel(eventType || "");
 
         var body = document.createElement("div");
         body.className = "mt-1 js-chat-content whitespace-pre-wrap break-words";
@@ -591,7 +602,7 @@
                 continue;
               }
               if (item.kind === "event") {
-                appendEventMessage(item.content, item.created_at_us);
+                appendEventMessage(item.content, item.created_at_us, item.event_type || "");
               }
             }
           })

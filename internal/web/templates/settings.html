@@ -238,6 +238,51 @@
               <div class="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm text-slate-500">暂无 A2A Agent。先在上方添加一个并启用。</div>
             {{end}}
           </div>
+        {{else if eq .ActiveSection "async_tasks"}}
+          <h2 class="text-base font-semibold">后台任务</h2>
+          <p class="mt-1 text-sm leading-6 text-slate-500">展示后台任务全量清单及执行日志，便于普通用户查看进度和排障。</p>
+
+          <div class="mt-4 space-y-3">
+            {{if .AsyncTasks}}
+              {{range .AsyncTasks}}
+                <article class="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <div class="flex flex-wrap items-center justify-between gap-2">
+                    <div class="text-sm font-semibold text-slate-800">{{.ID}} <span class="text-xs font-normal text-slate-500">({{.TaskType}})</span></div>
+                    <span class="rounded-full border px-2 py-0.5 text-xs border-slate-200 bg-white text-slate-600">{{.Status}}</span>
+                  </div>
+                  <div class="mt-2 text-xs leading-6 text-slate-500">
+                    request: {{.Request}}<br>
+                    agent_id: {{if .AgentID}}{{.AgentID}}{{else}}-{{end}}<br>
+                    remote_task_id: {{if .RemoteTaskID}}{{.RemoteTaskID}}{{else}}-{{end}}<br>
+                    created: {{if .CreatedAt}}{{.CreatedAt}}{{else}}-{{end}}<br>
+                    updated: {{if .UpdatedAt}}{{.UpdatedAt}}{{else}}-{{end}}
+                  </div>
+                  {{if .Result}}
+                    <div class="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-2 text-xs text-emerald-700">result: {{.Result}}</div>
+                  {{end}}
+                  {{if .Error}}
+                    <div class="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-2 py-2 text-xs text-rose-700">error: {{.Error}}</div>
+                  {{end}}
+                  <div class="mt-2 rounded-xl border border-slate-200 bg-white p-2">
+                    <div class="text-xs font-medium text-slate-600">执行日志（全量）</div>
+                    <div class="mt-1 space-y-1">
+                      {{if .Logs}}
+                        {{range .Logs}}
+                          <div class="rounded-lg border border-slate-100 bg-slate-50 px-2 py-1 text-[11px] leading-5 text-slate-600">
+                            [{{.Cursor}}] {{if .CreatedAt}}{{.CreatedAt}}{{else}}-{{end}} | {{.Level}} | {{.Message}}
+                          </div>
+                        {{end}}
+                      {{else}}
+                        <div class="text-xs text-slate-500">暂无日志</div>
+                      {{end}}
+                    </div>
+                  </div>
+                </article>
+              {{end}}
+            {{else}}
+              <div class="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm text-slate-500">暂无后台任务。</div>
+            {{end}}
+          </div>
         {{else if eq .ActiveSection "memory"}}
           <h2 class="text-base font-semibold">MemoryFS 可视化</h2>
           <p class="mt-1 text-sm leading-6 text-slate-500">展示统一记忆命名空间的节点与沉淀分段状态。读取接口：`/api/memory/index`、`/api/memory/read`、`/api/memory/section`。</p>

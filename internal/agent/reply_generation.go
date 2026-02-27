@@ -20,12 +20,13 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 	})
 	responseStylePrompt := "回答策略：默认简洁直答（3-6 行）。仅当用户明确要求“详细/方案/步骤/复盘/计划/总结”时再展开，避免无关模板、表格和冗长铺垫。"
 	builtinToolDefs := []llm.ToolDefinition{linuxBashToolDefinition()}
-	if a.a2a != nil {
-		builtinToolDefs = append(builtinToolDefs, a2aBuiltinToolDefinitions()...)
+	if a.asyncTasks != nil {
+		builtinToolDefs = append(builtinToolDefs, asyncTaskBuiltinToolDefinitions()...)
 	}
 	skillIndexPrompt := ""
 	memoryIndexPrompt := ""
 	a2aIndexPrompt := ""
+	asyncTaskIndexPrompt := ""
 	if a.skills != nil {
 		allSkillIndex := a.skills.ListEnabledSkillIndex()
 		if len(allSkillIndex) > 0 {
@@ -103,6 +104,30 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 			}
 		}
 	}
+	if a.asyncTasks != nil {
+		asyncIndex := a.asyncTasks.ListIndexLines(20, a.nowFn())
+		if len(asyncIndex) > 0 {
+			var b strings.Builder
+			b.WriteString(fmt.Sprintf("后台任务索引（固定注入，当天+运行中）：共 %d 条。\n", len(asyncIndex)))
+			b.WriteString("执行规则：任务发起统一使用 async_task__submit；查询与取消使用 async_task__get/cancel。\n")
+			b.WriteString("参数约束：submit 必填 task_type,request；task_type=a2a 时必须提供 agent_id,agent_input。\n")
+			b.WriteString("详情读取规则：默认不带日志；仅在必要时通过 async_task__get(include_logs=true, log_cursor, log_limit<=200) 按需读取。\n")
+			for i, line := range asyncIndex {
+				line = trimRunes(strings.TrimSpace(line), maxSingleSkillPromptRunes)
+				if line == "" {
+					continue
+				}
+				b.WriteString(fmt.Sprintf("%d. %s\n", i+1, line))
+			}
+			asyncTaskIndexPrompt = strings.TrimSpace(b.String())
+			if asyncTaskIndexPrompt != "" {
+				requestMessages = append(requestMessages, llm.Message{
+					Role:    "system",
+					Content: asyncTaskIndexPrompt,
+				})
+			}
+		}
+	}
 	requestMessages = append(requestMessages, llm.Message{
 		Role:    "system",
 		Content: responseStylePrompt,
@@ -114,7 +139,7 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 			Content: runtimePrompt,
 		})
 	}
-	summary = pruneSummaryOverlap(summary, systemPrompt, skillIndexPrompt, memoryIndexPrompt, a2aIndexPrompt, responseStylePrompt, runtimePrompt)
+	summary = pruneSummaryOverlap(summary, systemPrompt, skillIndexPrompt, memoryIndexPrompt, a2aIndexPrompt, asyncTaskIndexPrompt, responseStylePrompt, runtimePrompt)
 	if strings.TrimSpace(summary) != "" {
 		requestMessages = append(requestMessages, llm.Message{
 			Role:    "system",
@@ -212,31 +237,20 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 			ToolCalls: resp.ToolCalls,
 		})
 
-		onlyA2ATools := len(resp.ToolCalls) > 0
-		seenA2AInProgress := false
-		seenToolError := false
-
 		for _, call := range resp.ToolCalls {
 			result, callErr := a.callTool(ctx, call)
 			if callErr != nil {
 				result = "tool execution error: " + callErr.Error()
-				seenToolError = true
 			}
 			callName := strings.TrimSpace(call.Function.Name)
 			if callName == "" {
 				callName = "(unknown)"
-			}
-			if !isA2ABuiltinTool(callName) {
-				onlyA2ATools = false
 			}
 			callArgs := strings.TrimSpace(call.Function.Arguments)
 			if callArgs == "" {
 				callArgs = "{}"
 			}
 			trimmedResult := strings.TrimSpace(trimRunes(result, maxContextMessageRunes))
-			if isA2ABuiltinTool(callName) && isA2AInProgressResult(trimmedResult) {
-				seenA2AInProgress = true
-			}
 			callRecord := conversation.ToolCall{
 				ID:        strings.TrimSpace(call.ID),
 				Name:      callName,
@@ -258,22 +272,6 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 				ToolCallID: toolCallID,
 				Content:    trimmedResult,
 			})
-		}
-
-		if onlyA2ATools && seenA2AInProgress && !seenToolError {
-			taskID := latestA2AProgressTaskID(executedCalls)
-			if strings.TrimSpace(taskID) == "" {
-				return "A2A 任务仍在执行中，请稍后重试查询。", executedCalls, usageOrNil(usageTotal, hasUsage), nil
-			}
-			return fmt.Sprintf("A2A 任务仍在执行中（task_id: %s），请稍后重试查询。", taskID), executedCalls, usageOrNil(usageTotal, hasUsage), nil
-		}
-
-		if onlyA2ATools && seenToolError {
-			errText := latestA2AToolError(executedCalls)
-			if strings.TrimSpace(errText) == "" {
-				errText = "a2a tool execution error"
-			}
-			return "A2A 调用失败：" + errText, executedCalls, usageOrNil(usageTotal, hasUsage), nil
 		}
 	}
 }

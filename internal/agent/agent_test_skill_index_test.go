@@ -88,7 +88,7 @@ func TestHandleUserMessage_IncludesSkillIndexForProgressiveDisclosure(t *testing
 	}
 }
 
-func TestHandleUserMessage_UsesOnlyBuiltinLinuxBashTool(t *testing.T) {
+func TestHandleUserMessage_UsesBuiltinLinuxAndAsyncTaskTools(t *testing.T) {
 	store := conversation.NewStore()
 	fakeLLM := &mockLLM{
 		responses: map[string][]string{
@@ -116,12 +116,22 @@ func TestHandleUserMessage_UsesOnlyBuiltinLinuxBashTool(t *testing.T) {
 	}
 
 	firstCall := fakeLLM.calls[0]
-	if len(firstCall.Tools) != 1 {
-		t.Fatalf("expected exactly one builtin tool, got %d", len(firstCall.Tools))
+	if len(firstCall.Tools) != 4 {
+		t.Fatalf("expected 4 builtin tools, got %d", len(firstCall.Tools))
 	}
+	seen := map[string]bool{}
 	for _, tool := range firstCall.Tools {
-		if tool.Function.Name != builtinLinuxBashToolName {
-			t.Fatalf("unexpected builtin tool: %s", tool.Function.Name)
+		seen[tool.Function.Name] = true
+	}
+	required := []string{
+		builtinLinuxBashToolName,
+		builtinAsyncTaskSubmitToolName,
+		builtinAsyncTaskGetToolName,
+		builtinAsyncTaskCancelToolName,
+	}
+	for _, name := range required {
+		if !seen[name] {
+			t.Fatalf("missing builtin tool: %s", name)
 		}
 	}
 }

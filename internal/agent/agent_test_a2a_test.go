@@ -2,11 +2,11 @@ package agent
 
 import (
 	"context"
-	"fmt"
 	"laughing-barnacle/internal/conversation"
 	"laughing-barnacle/internal/llm"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestHandleUserMessage_IncludesA2AIndexProgressiveDisclosure(t *testing.T) {
@@ -63,21 +63,21 @@ func TestHandleUserMessage_IncludesA2AIndexProgressiveDisclosure(t *testing.T) {
 	}
 }
 
-func TestHandleUserMessage_A2ASendBuiltinToolCall(t *testing.T) {
+func TestHandleUserMessage_A2ASubmitRunsViaAsyncTaskTool(t *testing.T) {
 	store := conversation.NewStore()
 	fakeLLM := &mockLLM{
 		responses: map[string][]string{
-			"chat_reply": {""},
+			"chat_reply": {"", "已转后台处理"},
 		},
 		toolCalls: map[string][][]llm.ToolCall{
 			"chat_reply": {
 				{
 					{
-						ID:   "a2a_send_1",
+						ID:   "async_submit_1",
 						Type: "function",
 						Function: llm.ToolFunctionCall{
-							Name:      builtinA2ASendToolName,
-							Arguments: `{"agent_id":"codex-local","message":"请修复这个 bug"}`,
+							Name:      builtinAsyncTaskSubmitToolName,
+							Arguments: `{"task_type":"a2a","request":"调用codex修复bug","agent_id":"codex-local","agent_input":"请修复这个 bug","notify_on_finish":false}`,
 						},
 					},
 				},
@@ -100,8 +100,13 @@ func TestHandleUserMessage_A2ASendBuiltinToolCall(t *testing.T) {
 	agentSvc.SetA2AProvider(&mockA2A{
 		send: A2ATaskResult{
 			AgentID: "codex-local",
-			TaskID:  "task-123",
+			TaskID:  "remote-123",
 			Status:  "submitted",
+		},
+		get: A2ATaskResult{
+			AgentID: "codex-local",
+			TaskID:  "remote-123",
+			Status:  "succeeded",
 		},
 	})
 
@@ -109,29 +114,52 @@ func TestHandleUserMessage_A2ASendBuiltinToolCall(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HandleUserMessage error: %v", err)
 	}
-	if !strings.Contains(reply, "task_id: task-123") {
+	if reply != "已转后台处理" {
 		t.Fatalf("unexpected reply: %q", reply)
 	}
-	if len(fakeLLM.calls) != 1 {
-		t.Fatalf("expected 1 llm call, got %d", len(fakeLLM.calls))
+	if len(fakeLLM.calls) != 2 {
+		t.Fatalf("expected 2 llm calls, got %d", len(fakeLLM.calls))
+	}
+	toolResultFound := false
+	for _, msg := range fakeLLM.calls[1].Messages {
+		if msg.Role == "tool" &&
+			strings.Contains(msg.Content, "async_task_id:") &&
+			strings.Contains(msg.Content, "task_type: a2a") {
+			toolResultFound = true
+			break
+		}
+	}
+	if !toolResultFound {
+		t.Fatalf("expected async_task tool result in second llm call")
+	}
+
+	_, messages := store.Snapshot()
+	if len(messages) != 2 {
+		t.Fatalf("expected user + assistant messages, got %d", len(messages))
+	}
+	if len(messages[0].ToolCalls) != 1 {
+		t.Fatalf("expected one tool call recorded, got %d", len(messages[0].ToolCalls))
+	}
+	if messages[0].ToolCalls[0].Name != builtinAsyncTaskSubmitToolName {
+		t.Fatalf("unexpected tool name: %s", messages[0].ToolCalls[0].Name)
 	}
 }
 
-func TestHandleUserMessage_A2AInProgressStopsFurtherPolling(t *testing.T) {
+func TestHandleUserMessage_A2AInProgressDoesNotBlockCurrentTurn(t *testing.T) {
 	store := conversation.NewStore()
 	fakeLLM := &mockLLM{
 		responses: map[string][]string{
-			"chat_reply": {""},
+			"chat_reply": {"", "任务已在后台执行"},
 		},
 		toolCalls: map[string][][]llm.ToolCall{
 			"chat_reply": {
 				{
 					{
-						ID:   "a2a_send_1",
+						ID:   "async_submit_1",
 						Type: "function",
 						Function: llm.ToolFunctionCall{
-							Name:      builtinA2ASendToolName,
-							Arguments: `{"agent_id":"codex-local","message":"请分析项目"}`,
+							Name:      builtinAsyncTaskSubmitToolName,
+							Arguments: `{"task_type":"a2a","request":"分析项目","agent_id":"codex-local","agent_input":"请分析项目","notify_on_finish":false}`,
 						},
 					},
 				},
@@ -154,42 +182,60 @@ func TestHandleUserMessage_A2AInProgressStopsFurtherPolling(t *testing.T) {
 	agentSvc.SetA2AProvider(&mockA2A{
 		send: A2ATaskResult{
 			AgentID: "codex-local",
-			TaskID:  "task-888",
+			TaskID:  "remote-888",
 			Status:  "working",
 			Message: "submitted",
 		},
 	})
 
+	start := time.Now()
 	reply, err := agentSvc.HandleUserMessage(context.Background(), "用 codex agent 分析项目")
 	if err != nil {
 		t.Fatalf("HandleUserMessage error: %v", err)
 	}
-	if !strings.Contains(reply, "task_id: task-888") {
-		t.Fatalf("expected direct in-progress reply with task id, got %q", reply)
+	if reply != "任务已在后台执行" {
+		t.Fatalf("unexpected reply: %q", reply)
 	}
-	if len(fakeLLM.calls) != 1 {
-		t.Fatalf("expected 1 llm call (tool round only), got %d", len(fakeLLM.calls))
+	if time.Since(start) > time.Second {
+		t.Fatalf("current turn should not block for async polling")
+	}
+	if len(fakeLLM.calls) != 2 {
+		t.Fatalf("expected 2 llm calls, got %d", len(fakeLLM.calls))
+	}
+	hasAsyncStatus := false
+	for _, msg := range fakeLLM.calls[1].Messages {
+		if msg.Role != "tool" || !strings.Contains(msg.Content, "async_task_id:") {
+			continue
+		}
+		if strings.Contains(msg.Content, "status: submitted") || strings.Contains(msg.Content, "status: working") {
+			hasAsyncStatus = true
+			break
+		}
+	}
+	if !hasAsyncStatus {
+		t.Fatalf("expected async task status in tool result")
 	}
 }
 
-func TestHandleUserMessage_A2AToolErrorReturnsDirectReply(t *testing.T) {
+func TestHandleUserMessage_AsyncTaskSubmitValidationErrorReturnsToModel(t *testing.T) {
 	store := conversation.NewStore()
 	fakeLLM := &mockLLM{
 		responses: map[string][]string{
-			"chat_reply": {""},
+			"chat_reply": {"", "参数不完整，请补充后重试"},
 		},
 		toolCalls: map[string][][]llm.ToolCall{
 			"chat_reply": {
 				{
 					{
-						ID:   "a2a_get_1",
+						ID:   "async_submit_1",
 						Type: "function",
 						Function: llm.ToolFunctionCall{
-							Name:      builtinA2AGetToolName,
-							Arguments: `{"agent_id":"codex-local","task_id":"task-err"}`,
+							Name:      builtinAsyncTaskSubmitToolName,
+							Arguments: `{"task_type":"a2a","request":"查任务","agent_id":"codex-local"}`,
 						},
 					},
 				},
+				nil,
 			},
 		},
 	}
@@ -205,21 +251,26 @@ func TestHandleUserMessage_A2AToolErrorReturnsDirectReply(t *testing.T) {
 		SystemPrompt:               "system",
 		CompressionSystemPrompt:    "compressor",
 	}, store, fakeLLM, nil)
-	agentSvc.SetA2AProvider(&mockA2A{
-		err: fmt.Errorf("call a2a method tasks/get: Post \"http://127.0.0.1:9091/a2a/rpc\": EOF"),
-	})
-
 	reply, err := agentSvc.HandleUserMessage(context.Background(), "查一下任务状态")
 	if err != nil {
 		t.Fatalf("HandleUserMessage error: %v", err)
 	}
-	if !strings.Contains(reply, "A2A 调用失败") {
-		t.Fatalf("expected direct a2a error reply, got %q", reply)
+	if reply != "参数不完整，请补充后重试" {
+		t.Fatalf("unexpected reply: %q", reply)
 	}
-	if !strings.Contains(reply, "EOF") {
-		t.Fatalf("expected reply contains root error, got %q", reply)
+	if len(fakeLLM.calls) != 2 {
+		t.Fatalf("expected 2 llm calls, got %d", len(fakeLLM.calls))
 	}
-	if len(fakeLLM.calls) != 1 {
-		t.Fatalf("expected 1 llm call, got %d", len(fakeLLM.calls))
+	toolErrorFound := false
+	for _, msg := range fakeLLM.calls[1].Messages {
+		if msg.Role == "tool" &&
+			strings.Contains(msg.Content, "tool execution error:") &&
+			strings.Contains(msg.Content, "agent_id and agent_input are required when task_type=a2a") {
+			toolErrorFound = true
+			break
+		}
+	}
+	if !toolErrorFound {
+		t.Fatalf("expected tool error returned to model in second llm call")
 	}
 }

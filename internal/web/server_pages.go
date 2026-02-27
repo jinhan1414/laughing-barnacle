@@ -20,7 +20,7 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 	if section == "" {
 		section = "mcp"
 	}
-	if section != "mcp" && section != "a2a" && section != "llm" && section != "security" && section != "skills" && section != "schedules" && section != "memory" {
+	if section != "mcp" && section != "a2a" && section != "async_tasks" && section != "llm" && section != "security" && section != "skills" && section != "schedules" && section != "memory" {
 		section = "mcp"
 	}
 
@@ -29,6 +29,7 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 		Sections: []settingsSection{
 			{Key: "mcp", Title: "MCP 服务", Description: "管理 Agent 可用的 MCP 工具服务"},
 			{Key: "a2a", Title: "A2A 接入", Description: "管理已接入的 A2A Agent 注册信息"},
+			{Key: "async_tasks", Title: "后台任务", Description: "查看后台任务清单与全量执行日志"},
 			{Key: "memory", Title: "记忆模块", Description: "可视化查看 MemoryFS 命名空间、节点与沉淀分段"},
 			{Key: "schedules", Title: "定时任务", Description: "统一管理系统 Cron 定时任务"},
 			{Key: "llm", Title: "提示词策略", Description: "配置 Agent 系统提示词与压缩提示词"},
@@ -93,6 +94,40 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 				view.UpdatedAt = item.UpdatedAt.Format("2006-01-02 15:04:05")
 			}
 			data.A2AAgents = append(data.A2AAgents, view)
+		}
+	} else if section == "async_tasks" {
+		allTasks := s.agent.ListAsyncTasks()
+		data.AsyncTasks = make([]asyncTaskView, 0, len(allTasks))
+		for _, task := range allTasks {
+			view := asyncTaskView{
+				ID:           task.ID,
+				TaskType:     task.TaskType,
+				Status:       task.Status,
+				Request:      task.Request,
+				AgentID:      task.AgentID,
+				RemoteTaskID: task.RemoteTaskID,
+				Result:       task.Result,
+				Error:        task.Error,
+			}
+			if !task.CreatedAt.IsZero() {
+				view.CreatedAt = task.CreatedAt.Format("2006-01-02 15:04:05")
+			}
+			if !task.UpdatedAt.IsZero() {
+				view.UpdatedAt = task.UpdatedAt.Format("2006-01-02 15:04:05")
+			}
+			view.Logs = make([]asyncTaskLogView, 0, len(task.Logs))
+			for _, log := range task.Logs {
+				item := asyncTaskLogView{
+					Cursor:  log.Cursor,
+					Level:   log.Level,
+					Message: log.Message,
+				}
+				if !log.CreatedAt.IsZero() {
+					item.CreatedAt = log.CreatedAt.Format("2006-01-02 15:04:05")
+				}
+				view.Logs = append(view.Logs, item)
+			}
+			data.AsyncTasks = append(data.AsyncTasks, view)
 		}
 	} else if section == "skills" {
 		allSkills := s.skillStore.ListSkills()

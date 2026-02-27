@@ -48,6 +48,7 @@ func (s *Server) handleAPIChatUpdates(w http.ResponseWriter, r *http.Request) {
 		}
 		updates = append(updates, apiChatUpdate{
 			Kind:        item.Kind,
+			EventType:   item.EventType,
 			Content:     item.Content,
 			CreatedAtUS: createdAtUS,
 			Usage:       toAPITokenUsage(item.Usage),

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"regexp"
 	"sync"
 	"time"
@@ -65,9 +66,6 @@ const (
 	maxReplayHistoryToolCalls  = 2
 	maxAssistantReplyRunes     = 2200
 	runtimeDateContextMarker   = "[[RUNTIME_DATE_CONTEXT]]"
-	builtinA2ASendToolName     = "a2a__send"
-	builtinA2AGetToolName      = "a2a__get"
-	builtinA2ACancelToolName   = "a2a__cancel"
 )
 
 var (
@@ -95,27 +93,31 @@ type ChatGreetingInput struct {
 }
 
 type Agent struct {
-	cfg     Config
-	llm     llm.Client
-	tools   ToolProvider
-	skills  SkillProvider
-	memory  MemoryProvider
-	a2a     A2AProvider
-	prompts PromptProvider
-	updater PromptUpdater
-	store   *conversation.Store
-	nowFn   func() time.Time
-	mu      sync.Mutex
+	cfg        Config
+	llm        llm.Client
+	tools      ToolProvider
+	skills     SkillProvider
+	memory     MemoryProvider
+	a2a        A2AProvider
+	asyncTasks *AsyncTaskManager
+	prompts    PromptProvider
+	updater    PromptUpdater
+	store      *conversation.Store
+	nowFn      func() time.Time
+	mu         sync.Mutex
 }
 
 func New(cfg Config, store *conversation.Store, llmClient llm.Client, tools ToolProvider) *Agent {
-	return &Agent{
+	agentSvc := &Agent{
 		cfg:   cfg,
 		llm:   llmClient,
 		tools: tools,
 		store: store,
 		nowFn: time.Now,
 	}
+	agentSvc.asyncTasks = newAsyncTaskManager(llmClient, cfg.Model, agentSvc.nowFn)
+	agentSvc.asyncTasks.SetHooks(agentSvc.onAsyncTaskStatusChanged, agentSvc.onAsyncTaskCompleted)
+	return agentSvc
 }
 
 func (a *Agent) SetSkillProvider(provider SkillProvider) {
@@ -134,6 +136,9 @@ func (a *Agent) SetA2AProvider(provider A2AProvider) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.a2a = provider
+	if a.asyncTasks != nil {
+		a.asyncTasks.SetA2AProvider(provider)
+	}
 }
 
 func (a *Agent) SetPromptProvider(provider PromptProvider) {
@@ -152,4 +157,18 @@ func (a *Agent) GetEffectivePrompts() (systemPrompt string, compressionSystemPro
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.resolvePromptsLocked()
+}
+
+func (a *Agent) ListAsyncTasks() []AsyncTask {
+	if a == nil || a.asyncTasks == nil {
+		return nil
+	}
+	return a.asyncTasks.ListTasks()
+}
+
+func (a *Agent) GetAsyncTask(input AsyncTaskGetInput) (AsyncTask, error) {
+	if a == nil || a.asyncTasks == nil {
+		return AsyncTask{}, fmt.Errorf("async task manager not configured")
+	}
+	return a.asyncTasks.Get(input)
 }

@@ -53,6 +53,7 @@ type chatPageData struct {
 
 type chatTimelineItem struct {
 	Kind           string
+	EventType      string
 	Content        string
 	ToolCalls      []conversation.ToolCall
 	Usage          *conversation.TokenUsage
@@ -105,6 +106,7 @@ type settingsPageData struct {
 	MemoryPending  []memoryPendingView
 	MemorySegments []memorySegmentView
 	Schedules      []scheduledTaskView
+	AsyncTasks     []asyncTaskView
 	AgentPrompts   agentPromptsView
 	Success        string
 	Error          string
@@ -220,6 +222,27 @@ type scheduledTaskView struct {
 	LastMessage string
 }
 
+type asyncTaskView struct {
+	ID           string
+	TaskType     string
+	Status       string
+	Request      string
+	AgentID      string
+	RemoteTaskID string
+	Result       string
+	Error        string
+	CreatedAt    string
+	UpdatedAt    string
+	Logs         []asyncTaskLogView
+}
+
+type asyncTaskLogView struct {
+	Cursor    int
+	CreatedAt string
+	Level     string
+	Message   string
+}
+
 type apiMCPService struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
@@ -275,6 +298,7 @@ type apiMemoryIndexItem struct {
 
 type apiChatUpdate struct {
 	Kind        string         `json:"kind"`
+	EventType   string         `json:"event_type,omitempty"`
 	Content     string         `json:"content"`
 	CreatedAtUS int64          `json:"created_at_us"`
 	Usage       *apiTokenUsage `json:"usage,omitempty"`

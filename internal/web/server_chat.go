@@ -120,12 +120,14 @@ func buildChatTimeline(messages []conversation.Message, events []conversation.Ev
 	}
 
 	for _, evt := range events {
-		if strings.TrimSpace(evt.Type) != "context_compression" {
+		eventType := strings.TrimSpace(evt.Type)
+		if eventType != "context_compression" && eventType != "async_task_status" {
 			continue
 		}
 		all = append(all, timelineWithSeq{
 			item: chatTimelineItem{
 				Kind:      "event",
+				EventType: eventType,
 				Content:   evt.Content,
 				CreatedAt: evt.CreatedAt,
 			},
