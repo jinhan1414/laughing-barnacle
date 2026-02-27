@@ -43,8 +43,8 @@ func TestAdapter_DefaultTransportAndNoForcedStore(t *testing.T) {
 	if requestBody["transport"] != "auto" {
 		t.Fatalf("expected default transport=auto, got %v", requestBody["transport"])
 	}
-	if _, ok := requestBody["store"]; ok {
-		t.Fatalf("store should be omitted when no explicit store option is provided")
+	if requestBody["store"] != false {
+		t.Fatalf("expected codex default store=false, got %v", requestBody["store"])
 	}
 	if resp.Content != "pong" || resp.Usage.TotalTokens != 5 {
 		t.Fatalf("unexpected response: %+v", resp)
@@ -86,6 +86,52 @@ func TestAdapter_RuntimeTransportAndStoreOverride(t *testing.T) {
 	}
 	if requestBody["store"] != false {
 		t.Fatalf("expected runtime store override=false, got %v", requestBody["store"])
+	}
+}
+
+func TestAdapter_ChatGPTAuthUsesCodexEndpointAndAccountHeader(t *testing.T) {
+	authFile := writeChatGPTAuthFile(t, "chatgpt-access", "acct-123")
+	var capturedPath string
+	var capturedAccountID string
+	var requestBody map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedPath = r.URL.Path
+		capturedAccountID = r.Header.Get("ChatGPT-Account-Id")
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		_, _ = w.Write([]byte(`{"output_text":"ok"}`))
+	}))
+	defer server.Close()
+
+	adapter := New(Config{
+		BaseURL:      server.URL + "/backend-api",
+		AuthFilePath: authFile,
+		Timeout:      2 * time.Second,
+	})
+	_, err := adapter.Chat(context.Background(), llmgateway.CanonicalChatRequest{
+		Purpose: "chat_reply",
+		Model:   "gpt-5-codex",
+		Messages: []llmgateway.CanonicalMessage{
+			{Role: "system", Content: "You are a test assistant."},
+			{Role: "user", Content: "ping"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Chat error: %v", err)
+	}
+	if capturedPath != "/backend-api/codex/responses" {
+		t.Fatalf("expected chatgpt codex path, got %q", capturedPath)
+	}
+	if capturedAccountID != "acct-123" {
+		t.Fatalf("expected ChatGPT-Account-Id header, got %q", capturedAccountID)
+	}
+	if requestBody["instructions"] != "You are a test assistant." {
+		t.Fatalf("expected instructions from system messages, got %v", requestBody["instructions"])
+	}
+	if _, ok := requestBody["prompt_cache_key"].(string); !ok {
+		t.Fatalf("expected prompt_cache_key for chat_reply, got %v", requestBody["prompt_cache_key"])
 	}
 }
 
@@ -179,6 +225,19 @@ func writeAuthFile(t *testing.T, token string) string {
 	content := []byte(`{"access_token":"` + token + `"}`)
 	if err := os.WriteFile(path, content, 0o600); err != nil {
 		t.Fatalf("write auth file: %v", err)
+	}
+	return path
+}
+
+func writeChatGPTAuthFile(t *testing.T, token, accountID string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "auth.json")
+	content := []byte(
+		`{"auth_mode":"chatgpt","tokens":{"access_token":"` + token +
+			`","refresh_token":"r","account_id":"` + accountID + `"}}`,
+	)
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatalf("write chatgpt auth file: %v", err)
 	}
 	return path
 }

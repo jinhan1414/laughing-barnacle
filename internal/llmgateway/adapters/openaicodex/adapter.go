@@ -99,21 +99,22 @@ func (a *Adapter) Chat(ctx context.Context, req llmgateway.CanonicalChatRequest)
 	if len(req.Messages) == 0 {
 		return llmgateway.CanonicalChatResponse{}, invalidRequestError("messages are required")
 	}
-	if a.baseURL == "" {
-		return llmgateway.CanonicalChatResponse{}, invalidRequestError("base_url is required")
-	}
 
-	token, err := a.resolveAuthToken()
+	auth, err := a.resolveAuthContext()
 	if err != nil {
 		return llmgateway.CanonicalChatResponse{}, err
 	}
-	payloadBytes, err := json.Marshal(buildPayload(req, a.transport))
+	payload := buildPayload(req, a.transport, auth)
+	if promptCacheKey := resolvePromptCacheKey(req, auth); promptCacheKey != "" {
+		payload["prompt_cache_key"] = promptCacheKey
+	}
+	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
 		return llmgateway.CanonicalChatResponse{}, invalidRequestError(fmt.Sprintf("marshal request: %v", err))
 	}
 
 	start := time.Now()
-	parsed, statusCode, respBody, callErr, attempts := a.chatWithRetry(ctx, token, payloadBytes)
+	parsed, statusCode, respBody, callErr, attempts := a.chatWithRetry(ctx, auth, payloadBytes)
 	a.appendLog(req, payloadBytes, respBody, statusCode, time.Since(start), callErr, attempts)
 	if callErr != nil {
 		return llmgateway.CanonicalChatResponse{}, callErr

@@ -9,20 +9,22 @@ import (
 
 const defaultCodexInstructions = "You are a helpful assistant."
 
+type normalizedInputMessage struct {
+	Role    string
+	Content string
+}
+
 func buildPayload(
 	req llmgateway.CanonicalChatRequest,
 	fallbackTransport string,
 	auth authContext,
 ) map[string]any {
-	instructions, inputMessages := splitInstructions(req.Messages)
 	chatGPTAuth := isChatGPTAuth(auth)
-	if chatGPTAuth && instructions == "" {
-		instructions = defaultCodexInstructions
-	}
+	instructions, normalizedInput := normalizeInstructionsAndInput(req.Messages, chatGPTAuth)
 	transport := resolveTransport(req.Options.Transport, fallbackTransport)
 	payload := map[string]any{
 		"model": req.Model,
-		"input": toResponsesInput(inputMessages),
+		"input": toResponsesInputFromNormalized(normalizedInput),
 	}
 	if instructions != "" {
 		payload["instructions"] = instructions
@@ -61,6 +63,17 @@ func splitInstructions(messages []llmgateway.CanonicalMessage) (string, []llmgat
 	return strings.TrimSpace(strings.Join(instructions, "\n\n")), input
 }
 
+func normalizeInstructionsAndInput(
+	messages []llmgateway.CanonicalMessage,
+	chatGPTAuth bool,
+) (string, []normalizedInputMessage) {
+	instructions, inputMessages := splitInstructions(messages)
+	if chatGPTAuth && instructions == "" {
+		instructions = defaultCodexInstructions
+	}
+	return instructions, normalizeInputMessages(inputMessages)
+}
+
 func resolveStore(store *bool) bool {
 	if store != nil {
 		return *store
@@ -69,7 +82,24 @@ func resolveStore(store *bool) bool {
 }
 
 func toResponsesInput(messages []llmgateway.CanonicalMessage) []map[string]any {
+	return toResponsesInputFromNormalized(normalizeInputMessages(messages))
+}
+
+func toResponsesInputFromNormalized(messages []normalizedInputMessage) []map[string]any {
 	input := make([]map[string]any, 0, len(messages))
+	for _, msg := range messages {
+		input = append(input, map[string]any{
+			"role": msg.Role,
+			"content": []map[string]any{
+				{"type": contentTypeForRole(msg.Role), "text": msg.Content},
+			},
+		})
+	}
+	return input
+}
+
+func normalizeInputMessages(messages []llmgateway.CanonicalMessage) []normalizedInputMessage {
+	out := make([]normalizedInputMessage, 0, len(messages))
 	for _, msg := range messages {
 		role := strings.ToLower(strings.TrimSpace(msg.Role))
 		if role == "" {
@@ -82,14 +112,12 @@ func toResponsesInput(messages []llmgateway.CanonicalMessage) []map[string]any {
 		if content == "" {
 			continue
 		}
-		input = append(input, map[string]any{
-			"role": role,
-			"content": []map[string]any{
-				{"type": contentTypeForRole(role), "text": content},
-			},
+		out = append(out, normalizedInputMessage{
+			Role:    role,
+			Content: content,
 		})
 	}
-	return input
+	return out
 }
 
 func contentTypeForRole(role string) string {
