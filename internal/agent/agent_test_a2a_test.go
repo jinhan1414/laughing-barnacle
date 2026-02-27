@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"laughing-barnacle/internal/conversation"
 	"laughing-barnacle/internal/llm"
 	"strings"
@@ -66,7 +67,7 @@ func TestHandleUserMessage_A2ASendBuiltinToolCall(t *testing.T) {
 	store := conversation.NewStore()
 	fakeLLM := &mockLLM{
 		responses: map[string][]string{
-			"chat_reply": {"", "a2a done"},
+			"chat_reply": {""},
 		},
 		toolCalls: map[string][][]llm.ToolCall{
 			"chat_reply": {
@@ -108,22 +109,11 @@ func TestHandleUserMessage_A2ASendBuiltinToolCall(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HandleUserMessage error: %v", err)
 	}
-	if reply != "a2a done" {
+	if !strings.Contains(reply, "task_id: task-123") {
 		t.Fatalf("unexpected reply: %q", reply)
 	}
-	if len(fakeLLM.calls) != 2 {
-		t.Fatalf("expected 2 llm calls, got %d", len(fakeLLM.calls))
-	}
-
-	toolResultFound := false
-	for _, msg := range fakeLLM.calls[1].Messages {
-		if msg.Role == "tool" && strings.Contains(msg.Content, "agent_id: codex-local") && strings.Contains(msg.Content, "task_id: task-123") {
-			toolResultFound = true
-			break
-		}
-	}
-	if !toolResultFound {
-		t.Fatalf("expected a2a tool result in second call")
+	if len(fakeLLM.calls) != 1 {
+		t.Fatalf("expected 1 llm call, got %d", len(fakeLLM.calls))
 	}
 }
 
@@ -131,7 +121,7 @@ func TestHandleUserMessage_A2AInProgressStopsFurtherPolling(t *testing.T) {
 	store := conversation.NewStore()
 	fakeLLM := &mockLLM{
 		responses: map[string][]string{
-			"chat_reply": {"", "任务仍在运行，请稍后查询。"},
+			"chat_reply": {""},
 		},
 		toolCalls: map[string][][]llm.ToolCall{
 			"chat_reply": {
@@ -174,13 +164,62 @@ func TestHandleUserMessage_A2AInProgressStopsFurtherPolling(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HandleUserMessage error: %v", err)
 	}
-	if strings.TrimSpace(reply) == "" {
-		t.Fatalf("expected non-empty final reply")
+	if !strings.Contains(reply, "task_id: task-888") {
+		t.Fatalf("expected direct in-progress reply with task id, got %q", reply)
 	}
-	if len(fakeLLM.calls) != 2 {
-		t.Fatalf("expected 2 llm calls (tool + final), got %d", len(fakeLLM.calls))
+	if len(fakeLLM.calls) != 1 {
+		t.Fatalf("expected 1 llm call (tool round only), got %d", len(fakeLLM.calls))
 	}
-	if len(fakeLLM.calls[1].Tools) != 0 {
-		t.Fatalf("expected final call without tools, got %d tools", len(fakeLLM.calls[1].Tools))
+}
+
+func TestHandleUserMessage_A2AToolErrorReturnsDirectReply(t *testing.T) {
+	store := conversation.NewStore()
+	fakeLLM := &mockLLM{
+		responses: map[string][]string{
+			"chat_reply": {""},
+		},
+		toolCalls: map[string][][]llm.ToolCall{
+			"chat_reply": {
+				{
+					{
+						ID:   "a2a_get_1",
+						Type: "function",
+						Function: llm.ToolFunctionCall{
+							Name:      builtinA2AGetToolName,
+							Arguments: `{"agent_id":"codex-local","task_id":"task-err"}`,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	agentSvc := New(Config{
+		Model:                      "test-model",
+		MaxRecentMessages:          10,
+		CompressionTriggerMessages: 99,
+		CompressionTriggerChars:    99999,
+		KeepRecentAfterCompression: 1,
+		MaxCompressionLoopsPerTurn: 1,
+		MaxToolCallRounds:          10,
+		SystemPrompt:               "system",
+		CompressionSystemPrompt:    "compressor",
+	}, store, fakeLLM, nil)
+	agentSvc.SetA2AProvider(&mockA2A{
+		err: fmt.Errorf("call a2a method tasks/get: Post \"http://127.0.0.1:9091/a2a/rpc\": EOF"),
+	})
+
+	reply, err := agentSvc.HandleUserMessage(context.Background(), "查一下任务状态")
+	if err != nil {
+		t.Fatalf("HandleUserMessage error: %v", err)
+	}
+	if !strings.Contains(reply, "A2A 调用失败") {
+		t.Fatalf("expected direct a2a error reply, got %q", reply)
+	}
+	if !strings.Contains(reply, "EOF") {
+		t.Fatalf("expected reply contains root error, got %q", reply)
+	}
+	if len(fakeLLM.calls) != 1 {
+		t.Fatalf("expected 1 llm call, got %d", len(fakeLLM.calls))
 	}
 }

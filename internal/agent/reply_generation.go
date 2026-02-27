@@ -261,19 +261,19 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 		}
 
 		if onlyA2ATools && seenA2AInProgress && !seenToolError {
-			requestMessages = append(requestMessages, llm.Message{
-				Role: "system",
-				Content: "A2A 任务仍在执行中。禁止继续调用 a2a__send / a2a__get / a2a__cancel；" +
-					"请直接向用户汇报当前状态（含 task_id）并提示稍后重试查询。",
-			})
-			finalContent, finalCalls, finalUsage, finalErr := finalWithoutTools()
-			if finalErr != nil {
-				return "", finalCalls, finalUsage, finalErr
+			taskID := latestA2AProgressTaskID(executedCalls)
+			if strings.TrimSpace(taskID) == "" {
+				return "A2A 任务仍在执行中，请稍后重试查询。", executedCalls, usageOrNil(usageTotal, hasUsage), nil
 			}
-			if strings.TrimSpace(finalContent) == "" {
-				return "", finalCalls, finalUsage, fmt.Errorf("a2a task still running")
+			return fmt.Sprintf("A2A 任务仍在执行中（task_id: %s），请稍后重试查询。", taskID), executedCalls, usageOrNil(usageTotal, hasUsage), nil
+		}
+
+		if onlyA2ATools && seenToolError {
+			errText := latestA2AToolError(executedCalls)
+			if strings.TrimSpace(errText) == "" {
+				errText = "a2a tool execution error"
 			}
-			return finalContent, finalCalls, finalUsage, nil
+			return "A2A 调用失败：" + errText, executedCalls, usageOrNil(usageTotal, hasUsage), nil
 		}
 	}
 }
