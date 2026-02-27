@@ -2,6 +2,7 @@
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import threading
 import time
@@ -120,16 +121,38 @@ def parse_user_text(params):
     return ""
 
 
-def task_worker(task_store: TaskStore, task_id: str, prompt: str, workdir: str):
+def resolve_codex_bin(explicit_path: str):
+    candidates = []
+    if explicit_path:
+        candidates.append(explicit_path.strip())
+    env_path = os.environ.get("CODEX_BIN", "").strip()
+    if env_path:
+        candidates.append(env_path)
+    for name in ("codex", "codex.cmd", "codex.exe"):
+        found = shutil.which(name)
+        if found:
+            candidates.append(found)
+    seen = set()
+    for candidate in candidates:
+        normalized = str(Path(candidate).expanduser())
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        if Path(normalized).exists():
+            return normalized
+    return ""
+
+
+def task_worker(task_store: TaskStore, task_id: str, prompt: str, workdir: str, codex_bin: str):
     item = task_store.get(task_id)
     if not item:
         return
     output_file = item["output_file"]
-    cmd = ["codex", "exec", "-C", workdir, "-o", output_file, prompt]
+    cmd = [codex_bin, "exec", "-C", workdir, "-o", output_file, prompt]
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     except FileNotFoundError:
-        task_store.finish(task_id, "failed", "codex cli not found in PATH", [])
+        task_store.finish(task_id, "failed", f"codex cli not found: {codex_bin}", [])
         return
     task_store.set_running(task_id, proc.pid)
     stdout, stderr = proc.communicate()
@@ -200,7 +223,7 @@ class Handler(BaseHTTPRequestHandler):
             task_id = self.server.task_store.create(prompt)
             worker = threading.Thread(
                 target=task_worker,
-                args=(self.server.task_store, task_id, prompt, self.server.workdir),
+                args=(self.server.task_store, task_id, prompt, self.server.workdir, self.server.codex_bin),
                 daemon=True,
             )
             worker.start()
@@ -250,18 +273,23 @@ def main():
     parser.add_argument("--port", type=int, default=9091)
     parser.add_argument("--workdir", required=True)
     parser.add_argument("--state-file", default=str(Path(__file__).parent / "state" / "tasks.json"))
+    parser.add_argument("--codex-bin", default="")
     args = parser.parse_args()
 
     state_file = Path(args.state_file).resolve()
     output_dir = state_file.parent / "output"
     task_store = TaskStore(state_file=state_file, output_dir=output_dir)
+    codex_bin = resolve_codex_bin(args.codex_bin)
+    if not codex_bin:
+        raise SystemExit("codex cli not found. Set --codex-bin or CODEX_BIN, or fix PATH.")
 
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     server.host = args.host
     server.port = args.port
     server.workdir = args.workdir
+    server.codex_bin = codex_bin
     server.task_store = task_store
-    print(f"codex-a2a listening on http://{args.host}:{args.port}")
+    print(f"codex-a2a listening on http://{args.host}:{args.port} (codex={codex_bin})")
     server.serve_forever()
 
 
