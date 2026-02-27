@@ -71,6 +71,10 @@ func resolveStore(store *bool) bool {
 func toResponsesInput(messages []llmgateway.CanonicalMessage) []map[string]any {
 	input := make([]map[string]any, 0, len(messages))
 	for _, msg := range messages {
+		role := strings.ToLower(strings.TrimSpace(msg.Role))
+		if role == "" {
+			role = "user"
+		}
 		content := strings.TrimSpace(msg.Content)
 		if content == "" {
 			content = extractToolCallSummary(msg.ToolCalls)
@@ -79,13 +83,20 @@ func toResponsesInput(messages []llmgateway.CanonicalMessage) []map[string]any {
 			continue
 		}
 		input = append(input, map[string]any{
-			"role": msg.Role,
+			"role": role,
 			"content": []map[string]any{
-				{"type": "input_text", "text": content},
+				{"type": contentTypeForRole(role), "text": content},
 			},
 		})
 	}
 	return input
+}
+
+func contentTypeForRole(role string) string {
+	if role == "assistant" {
+		return "output_text"
+	}
+	return "input_text"
 }
 
 func extractToolCallSummary(calls []llmgateway.CanonicalToolCall) string {
