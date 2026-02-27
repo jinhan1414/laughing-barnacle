@@ -20,6 +20,7 @@ cd integrations/codex-a2a
 默认监听：`http://127.0.0.1:9091`
 
 启动脚本会自动解析 `codex.cmd/codex.exe` 并显式传给服务（`--codex-bin`），避免服务进程 PATH 与交互终端不一致导致的 `codex cli not found in PATH`。
+同时会先清理旧的 `codex_a2a_agent.py` 监听进程；服务端口使用独占绑定，避免多实例并发监听同一端口导致随机 `EOF/Empty reply`。
 
 ## 手动登记到数字分身
 

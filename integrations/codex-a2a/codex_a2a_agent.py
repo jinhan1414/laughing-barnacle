@@ -3,13 +3,13 @@ import argparse
 import json
 import os
 import shutil
+import socket
 import subprocess
 import threading
 import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-
 
 class TaskStore:
     def __init__(self, state_file: Path, output_dir: Path):
@@ -98,6 +98,13 @@ class TaskStore:
             self._persist()
             return dict(item)
 
+class ExclusiveThreadingHTTPServer(ThreadingHTTPServer):
+    allow_reuse_address = False
+
+    def server_bind(self):
+        if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        return super().server_bind()
 
 def utc_now():
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -120,7 +127,6 @@ def parse_user_text(params):
             return text
     return ""
 
-
 def resolve_codex_bin(explicit_path: str):
     candidates = []
     if explicit_path:
@@ -141,7 +147,6 @@ def resolve_codex_bin(explicit_path: str):
         if Path(normalized).exists():
             return normalized
     return ""
-
 
 def task_worker(task_store: TaskStore, task_id: str, prompt: str, workdir: str, codex_bin: str):
     item = task_store.get(task_id)
@@ -170,9 +175,11 @@ def task_worker(task_store: TaskStore, task_id: str, prompt: str, workdir: str, 
     err_text = (stderr or stdout or f"codex exit code {proc.returncode}").strip()
     task_store.finish(task_id, "failed", err_text[:2000], [])
 
-
 class Handler(BaseHTTPRequestHandler):
     server_version = "codex-a2a/0.1"
+
+    def log_message(self, format, *args):
+        return
 
     def _reply_json(self, code: int, payload):
         raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -192,7 +199,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.path != "/.well-known/agent-card.json":
             self._reply_json(404, {"error": "not found"})
             return
-        base = f"http://{self.server.host}:{self.server.port}"
+        base = f"http://{getattr(self.server, 'host', self.server.server_address[0])}:{getattr(self.server, 'port', self.server.server_address[1])}"
         self._reply_json(200, {
             "name": "codex-local",
             "description": "Local Codex CLI A2A wrapper",
@@ -265,8 +272,6 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         self._rpc_err(request_id, f"unsupported method: {method}")
-
-
 def main():
     parser = argparse.ArgumentParser(description="Wrap local Codex CLI as an A2A-compatible agent.")
     parser.add_argument("--host", default="127.0.0.1")
@@ -283,7 +288,7 @@ def main():
     if not codex_bin:
         raise SystemExit("codex cli not found. Set --codex-bin or CODEX_BIN, or fix PATH.")
 
-    server = ThreadingHTTPServer((args.host, args.port), Handler)
+    server = ExclusiveThreadingHTTPServer((args.host, args.port), Handler)
     server.host = args.host
     server.port = args.port
     server.workdir = args.workdir
@@ -291,7 +296,5 @@ def main():
     server.task_store = task_store
     print(f"codex-a2a listening on http://{args.host}:{args.port} (codex={codex_bin})")
     server.serve_forever()
-
-
 if __name__ == "__main__":
     main()
