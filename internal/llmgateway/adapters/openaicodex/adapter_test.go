@@ -130,8 +130,54 @@ func TestAdapter_ChatGPTAuthUsesCodexEndpointAndAccountHeader(t *testing.T) {
 	if requestBody["instructions"] != "You are a test assistant." {
 		t.Fatalf("expected instructions from system messages, got %v", requestBody["instructions"])
 	}
-	if _, ok := requestBody["prompt_cache_key"].(string); !ok {
-		t.Fatalf("expected prompt_cache_key for chat_reply, got %v", requestBody["prompt_cache_key"])
+	if _, ok := requestBody["prompt_cache_key"]; ok {
+		t.Fatalf("expected first chat_reply request without prompt_cache_key, got %v", requestBody["prompt_cache_key"])
+	}
+}
+
+func TestAdapter_ChatReplyReusesPromptCacheKeyFromPreviousResponse(t *testing.T) {
+	authFile := writeChatGPTAuthFile(t, "chatgpt-access", "acct-123")
+	var requestBodies []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var requestBody map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		requestBodies = append(requestBodies, requestBody)
+		if len(requestBodies) == 1 {
+			_, _ = w.Write([]byte(`{"output_text":"first","prompt_cache_key":"server-key-1"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"output_text":"second"}`))
+	}))
+	defer server.Close()
+
+	adapter := New(Config{
+		BaseURL:      server.URL + "/backend-api",
+		AuthFilePath: authFile,
+		Timeout:      2 * time.Second,
+	})
+	req := llmgateway.CanonicalChatRequest{
+		Purpose: "chat_reply",
+		Model:   "gpt-5.3-codex",
+		Messages: []llmgateway.CanonicalMessage{
+			{Role: "user", Content: "你好"},
+		},
+	}
+	if _, err := adapter.Chat(context.Background(), req); err != nil {
+		t.Fatalf("first Chat error: %v", err)
+	}
+	if _, err := adapter.Chat(context.Background(), req); err != nil {
+		t.Fatalf("second Chat error: %v", err)
+	}
+	if len(requestBodies) != 2 {
+		t.Fatalf("expected 2 requests, got %d", len(requestBodies))
+	}
+	if _, ok := requestBodies[0]["prompt_cache_key"]; ok {
+		t.Fatalf("expected first request without prompt_cache_key, got %v", requestBodies[0]["prompt_cache_key"])
+	}
+	if got, ok := requestBodies[1]["prompt_cache_key"].(string); !ok || got != "server-key-1" {
+		t.Fatalf("expected second request prompt_cache_key=server-key-1, got %v", requestBodies[1]["prompt_cache_key"])
 	}
 }
 

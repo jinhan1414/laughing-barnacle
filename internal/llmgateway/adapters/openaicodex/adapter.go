@@ -8,6 +8,7 @@ import (
 	"laughing-barnacle/internal/llmlog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -36,6 +37,8 @@ type Adapter struct {
 	maxRetries     int
 	retryBaseDelay time.Duration
 	retryMaxDelay  time.Duration
+	cacheMu        sync.Mutex
+	promptCacheKey map[string]string
 }
 
 func New(cfg Config) *Adapter {
@@ -51,6 +54,7 @@ func New(cfg Config) *Adapter {
 		maxRetries:     normalizeRetries(cfg.MaxRetries),
 		retryBaseDelay: baseDelay,
 		retryMaxDelay:  maxDelay,
+		promptCacheKey: make(map[string]string),
 	}
 }
 
@@ -105,7 +109,7 @@ func (a *Adapter) Chat(ctx context.Context, req llmgateway.CanonicalChatRequest)
 		return llmgateway.CanonicalChatResponse{}, err
 	}
 	payload := buildPayload(req, a.transport, auth)
-	if promptCacheKey := resolvePromptCacheKey(req, auth); promptCacheKey != "" {
+	if promptCacheKey := a.resolvePromptCacheKey(req, auth); promptCacheKey != "" {
 		payload["prompt_cache_key"] = promptCacheKey
 	}
 	payloadBytes, err := json.Marshal(payload)
@@ -119,6 +123,7 @@ func (a *Adapter) Chat(ctx context.Context, req llmgateway.CanonicalChatRequest)
 	if callErr != nil {
 		return llmgateway.CanonicalChatResponse{}, callErr
 	}
+	a.rememberPromptCacheKey(req, auth, parsed)
 	return parsed, nil
 }
 
