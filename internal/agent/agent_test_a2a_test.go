@@ -126,3 +126,61 @@ func TestHandleUserMessage_A2ASendBuiltinToolCall(t *testing.T) {
 		t.Fatalf("expected a2a tool result in second call")
 	}
 }
+
+func TestHandleUserMessage_A2AInProgressStopsFurtherPolling(t *testing.T) {
+	store := conversation.NewStore()
+	fakeLLM := &mockLLM{
+		responses: map[string][]string{
+			"chat_reply": {"", "任务仍在运行，请稍后查询。"},
+		},
+		toolCalls: map[string][][]llm.ToolCall{
+			"chat_reply": {
+				{
+					{
+						ID:   "a2a_send_1",
+						Type: "function",
+						Function: llm.ToolFunctionCall{
+							Name:      builtinA2ASendToolName,
+							Arguments: `{"agent_id":"codex-local","message":"请分析项目"}`,
+						},
+					},
+				},
+				nil,
+			},
+		},
+	}
+
+	agentSvc := New(Config{
+		Model:                      "test-model",
+		MaxRecentMessages:          10,
+		CompressionTriggerMessages: 99,
+		CompressionTriggerChars:    99999,
+		KeepRecentAfterCompression: 1,
+		MaxCompressionLoopsPerTurn: 1,
+		MaxToolCallRounds:          10,
+		SystemPrompt:               "system",
+		CompressionSystemPrompt:    "compressor",
+	}, store, fakeLLM, nil)
+	agentSvc.SetA2AProvider(&mockA2A{
+		send: A2ATaskResult{
+			AgentID: "codex-local",
+			TaskID:  "task-888",
+			Status:  "working",
+			Message: "submitted",
+		},
+	})
+
+	reply, err := agentSvc.HandleUserMessage(context.Background(), "用 codex agent 分析项目")
+	if err != nil {
+		t.Fatalf("HandleUserMessage error: %v", err)
+	}
+	if strings.TrimSpace(reply) == "" {
+		t.Fatalf("expected non-empty final reply")
+	}
+	if len(fakeLLM.calls) != 2 {
+		t.Fatalf("expected 2 llm calls (tool + final), got %d", len(fakeLLM.calls))
+	}
+	if len(fakeLLM.calls[1].Tools) != 0 {
+		t.Fatalf("expected final call without tools, got %d tools", len(fakeLLM.calls[1].Tools))
+	}
+}

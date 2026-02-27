@@ -159,6 +159,19 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 	executedCalls := make([]conversation.ToolCall, 0)
 	usageTotal := conversation.TokenUsage{}
 	hasUsage := false
+	finalWithoutTools := func() (string, []conversation.ToolCall, *conversation.TokenUsage, error) {
+		finalResp, finalErr := a.llm.Chat(ctx, llm.ChatRequest{
+			Purpose:     "chat_reply",
+			Model:       a.cfg.Model,
+			Messages:    requestMessages,
+			Temperature: a.cfg.Temperature,
+		})
+		if finalErr != nil {
+			return "", executedCalls, usageOrNil(usageTotal, hasUsage), fmt.Errorf("generate reply failed: %w", finalErr)
+		}
+		usageTotal, hasUsage = mergeTokenUsage(usageTotal, hasUsage, finalResp.Usage)
+		return finalResp.Content, executedCalls, usageOrNil(usageTotal, hasUsage), nil
+	}
 
 	toolRounds := 0
 	for {
@@ -182,20 +195,14 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 				Role:    "system",
 				Content: fmt.Sprintf("已达到工具调用上限（%d 轮）。禁止继续调用工具，请仅基于已有对话与工具结果直接回答；若信息不足，请明确说明缺口。", maxRounds),
 			})
-			finalResp, finalErr := a.llm.Chat(ctx, llm.ChatRequest{
-				Purpose:     "chat_reply",
-				Model:       a.cfg.Model,
-				Messages:    requestMessages,
-				Temperature: a.cfg.Temperature,
-			})
+			finalContent, finalCalls, finalUsage, finalErr := finalWithoutTools()
 			if finalErr != nil {
-				return "", executedCalls, usageOrNil(usageTotal, hasUsage), fmt.Errorf("generate reply failed: %w", finalErr)
+				return "", finalCalls, finalUsage, finalErr
 			}
-			usageTotal, hasUsage = mergeTokenUsage(usageTotal, hasUsage, finalResp.Usage)
-			if strings.TrimSpace(finalResp.Content) == "" {
-				return "", executedCalls, usageOrNil(usageTotal, hasUsage), fmt.Errorf("tool call rounds exceeded %d", maxRounds)
+			if strings.TrimSpace(finalContent) == "" {
+				return "", finalCalls, finalUsage, fmt.Errorf("tool call rounds exceeded %d", maxRounds)
 			}
-			return finalResp.Content, executedCalls, usageOrNil(usageTotal, hasUsage), nil
+			return finalContent, finalCalls, finalUsage, nil
 		}
 		toolRounds++
 
@@ -205,20 +212,31 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 			ToolCalls: resp.ToolCalls,
 		})
 
+		onlyA2ATools := len(resp.ToolCalls) > 0
+		seenA2AInProgress := false
+		seenToolError := false
+
 		for _, call := range resp.ToolCalls {
 			result, callErr := a.callTool(ctx, call)
 			if callErr != nil {
 				result = "tool execution error: " + callErr.Error()
+				seenToolError = true
 			}
 			callName := strings.TrimSpace(call.Function.Name)
 			if callName == "" {
 				callName = "(unknown)"
+			}
+			if !isA2ABuiltinTool(callName) {
+				onlyA2ATools = false
 			}
 			callArgs := strings.TrimSpace(call.Function.Arguments)
 			if callArgs == "" {
 				callArgs = "{}"
 			}
 			trimmedResult := strings.TrimSpace(trimRunes(result, maxContextMessageRunes))
+			if isA2ABuiltinTool(callName) && isA2AInProgressResult(trimmedResult) {
+				seenA2AInProgress = true
+			}
 			callRecord := conversation.ToolCall{
 				ID:        strings.TrimSpace(call.ID),
 				Name:      callName,
@@ -240,6 +258,22 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 				ToolCallID: toolCallID,
 				Content:    trimmedResult,
 			})
+		}
+
+		if onlyA2ATools && seenA2AInProgress && !seenToolError {
+			requestMessages = append(requestMessages, llm.Message{
+				Role: "system",
+				Content: "A2A 任务仍在执行中。禁止继续调用 a2a__send / a2a__get / a2a__cancel；" +
+					"请直接向用户汇报当前状态（含 task_id）并提示稍后重试查询。",
+			})
+			finalContent, finalCalls, finalUsage, finalErr := finalWithoutTools()
+			if finalErr != nil {
+				return "", finalCalls, finalUsage, finalErr
+			}
+			if strings.TrimSpace(finalContent) == "" {
+				return "", finalCalls, finalUsage, fmt.Errorf("a2a task still running")
+			}
+			return finalContent, finalCalls, finalUsage, nil
 		}
 	}
 }
