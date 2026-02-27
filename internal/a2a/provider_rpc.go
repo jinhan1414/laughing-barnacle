@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"laughing-barnacle/internal/agent"
 	"laughing-barnacle/internal/mcp"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -24,6 +27,11 @@ type rpcError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
 }
+
+const (
+	maxStatusMethodAttempts = 3
+	retryBaseDelay          = 150 * time.Millisecond
+)
 
 func (p *Provider) Send(ctx context.Context, req agent.A2ASendRequest) (agent.A2ATaskResult, error) {
 	target, err := p.loadEnabledAgent(req.AgentID)
@@ -102,6 +110,28 @@ func (p *Provider) callRPC(ctx context.Context, target mcp.A2AAgent, method stri
 	if err != nil {
 		return nil, fmt.Errorf("encode a2a request: %w", err)
 	}
+	maxAttempts := methodAttemptLimit(method)
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		result, callErr := p.callRPCOnce(ctx, target, method, body)
+		if callErr == nil {
+			return result, nil
+		}
+		lastErr = callErr
+		if !shouldRetryRPCError(callErr) || attempt >= maxAttempts {
+			break
+		}
+		if err := waitRetryBackoff(ctx, attempt); err != nil {
+			return nil, err
+		}
+	}
+	if maxAttempts > 1 {
+		return nil, fmt.Errorf("%w (attempts=%d)", lastErr, maxAttempts)
+	}
+	return nil, lastErr
+}
+
+func (p *Provider) callRPCOnce(ctx context.Context, target mcp.A2AAgent, method string, body []byte) (map[string]any, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target.Endpoint, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("build a2a request: %w", err)
@@ -133,6 +163,43 @@ func (p *Provider) callRPC(ctx context.Context, target mcp.A2AAgent, method stri
 		return nil, fmt.Errorf("decode a2a result: %w", err)
 	}
 	return result, nil
+}
+
+func methodAttemptLimit(method string) int {
+	if strings.EqualFold(strings.TrimSpace(method), "message/send") {
+		return 1
+	}
+	return maxStatusMethodAttempts
+}
+
+func shouldRetryRPCError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, io.EOF) {
+		return true
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && (netErr.Timeout() || netErr.Temporary()) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "eof") ||
+		strings.Contains(msg, "connection reset by peer") ||
+		strings.Contains(msg, "broken pipe") ||
+		strings.Contains(msg, "use of closed network connection")
+}
+
+func waitRetryBackoff(ctx context.Context, attempt int) error {
+	delay := retryBaseDelay * time.Duration(attempt)
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return fmt.Errorf("a2a retry canceled: %w", ctx.Err())
+	case <-timer.C:
+		return nil
+	}
 }
 
 func parseTaskResult(agentID, fallbackTaskID string, result map[string]any) agent.A2ATaskResult {

@@ -19,9 +19,16 @@ func NewProvider(store *mcp.Store, timeout time.Duration) *Provider {
 	if timeout <= 0 {
 		timeout = defaultRequestTimeout
 	}
+	transport := &http.Transport{
+		Proxy:             http.ProxyFromEnvironment,
+		DisableKeepAlives: true,
+	}
 	return &Provider{
 		store: store,
-		http:  &http.Client{Timeout: timeout},
+		http: &http.Client{
+			Timeout:   timeout,
+			Transport: transport,
+		},
 	}
 }
 
