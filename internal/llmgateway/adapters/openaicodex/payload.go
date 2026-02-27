@@ -7,20 +7,65 @@ import (
 	"strings"
 )
 
-func buildPayload(req llmgateway.CanonicalChatRequest, fallbackTransport string) map[string]any {
+const defaultCodexInstructions = "You are a helpful assistant."
+
+func buildPayload(
+	req llmgateway.CanonicalChatRequest,
+	fallbackTransport string,
+	auth authContext,
+) map[string]any {
+	instructions, inputMessages := splitInstructions(req.Messages)
+	chatGPTAuth := isChatGPTAuth(auth)
+	if chatGPTAuth && instructions == "" {
+		instructions = defaultCodexInstructions
+	}
+	transport := resolveTransport(req.Options.Transport, fallbackTransport)
 	payload := map[string]any{
-		"model":       req.Model,
-		"input":       toResponsesInput(req.Messages),
-		"temperature": req.Temperature,
-		"transport":   resolveTransport(req.Options.Transport, fallbackTransport),
+		"model": req.Model,
+		"input": toResponsesInput(inputMessages),
+	}
+	if instructions != "" {
+		payload["instructions"] = instructions
+	}
+	if !chatGPTAuth && transport != "" {
+		payload["transport"] = transport
+	}
+	if !chatGPTAuth {
+		payload["temperature"] = req.Temperature
+	}
+	if chatGPTAuth {
+		payload["stream"] = true
 	}
 	if len(req.Tools) > 0 {
 		payload["tools"] = toResponsesTools(req.Tools)
 	}
-	if req.Options.Store != nil {
-		payload["store"] = *req.Options.Store
-	}
+	payload["store"] = resolveStore(req.Options.Store)
 	return payload
+}
+
+func splitInstructions(messages []llmgateway.CanonicalMessage) (string, []llmgateway.CanonicalMessage) {
+	if len(messages) == 0 {
+		return "", nil
+	}
+	instructions := make([]string, 0, 2)
+	input := make([]llmgateway.CanonicalMessage, 0, len(messages))
+	for _, msg := range messages {
+		if strings.EqualFold(strings.TrimSpace(msg.Role), "system") {
+			if content := strings.TrimSpace(msg.Content); content != "" {
+				instructions = append(instructions, content)
+			}
+			continue
+		}
+		input = append(input, msg)
+	}
+	return strings.TrimSpace(strings.Join(instructions, "\n\n")), input
+}
+
+func resolveStore(store *bool) bool {
+	if store != nil {
+		return *store
+	}
+	return false
 }
 
 func toResponsesInput(messages []llmgateway.CanonicalMessage) []map[string]any {
