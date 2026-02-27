@@ -109,7 +109,6 @@ class ExclusiveThreadingHTTPServer(ThreadingHTTPServer):
 def utc_now():
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
-
 def parse_user_text(params):
     message = params.get("message")
     if not isinstance(message, dict):
@@ -155,7 +154,7 @@ def task_worker(task_store: TaskStore, task_id: str, prompt: str, workdir: str, 
     output_file = item["output_file"]
     cmd = [codex_bin, "exec", "-C", workdir, "-o", output_file, prompt]
     try:
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace")
     except FileNotFoundError:
         task_store.finish(task_id, "failed", f"codex cli not found: {codex_bin}", [])
         return
