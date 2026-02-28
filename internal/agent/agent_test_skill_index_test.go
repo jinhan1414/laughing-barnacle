@@ -259,6 +259,15 @@ func TestHandleUserMessage_IncludesToolRuntimeConstraintsPrompt(t *testing.T) {
 	if !strings.Contains(found, "/api/skills/save|toggle|delete|install") {
 		t.Fatalf("expected skills json endpoint constraint, got %q", found)
 	}
+	if !strings.Contains(found, "执行一致性硬约束（最高优先级）") {
+		t.Fatalf("expected execution consistency hard constraints, got %q", found)
+	}
+	if !strings.Contains(found, "我还未执行") {
+		t.Fatalf("expected explicit not-executed wording for blocked turns, got %q", found)
+	}
+	if !strings.Contains(found, "tool_name 与 call_id（或 task_id）") {
+		t.Fatalf("expected execution evidence fields guidance, got %q", found)
+	}
 	if preferredShellName() == "cmd" {
 		if !strings.Contains(found, "禁止写反斜杠转义引号") {
 			t.Fatalf("expected windows quote escape constraint for cmd shell, got %q", found)
