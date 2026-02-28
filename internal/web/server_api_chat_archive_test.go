@@ -76,7 +76,7 @@ func TestHandleAPIChatArchiveSection_InvalidAndNotFound(t *testing.T) {
 	}
 }
 
-func TestHandleChatPage_RendersArchivePanel(t *testing.T) {
+func TestHandleChatPage_RendersArchiveAsChatStreamScript(t *testing.T) {
 	s := &Server{
 		convStore: conversation.NewStore(),
 		tmpl:      template.Must(template.ParseFS(embeddedTemplates, "templates/*.html")),
@@ -88,8 +88,12 @@ func TestHandleChatPage_RendersArchivePanel(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), `id="chat-archive-panel"`) {
-		t.Fatalf("expected archive panel in chat page")
+	body := rec.Body.String()
+	if strings.Contains(body, `id="chat-archive-panel"`) {
+		t.Fatalf("did not expect archive panel container in chat page")
+	}
+	if !strings.Contains(body, `archiveContainer.id = "chat-archive-stream"`) {
+		t.Fatalf("expected archive chat stream script in chat page")
 	}
 }
 
