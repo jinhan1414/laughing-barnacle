@@ -101,10 +101,7 @@ func toResponsesInputFromNormalized(messages []normalizedInputMessage) []map[str
 func normalizeInputMessages(messages []llmgateway.CanonicalMessage) []normalizedInputMessage {
 	out := make([]normalizedInputMessage, 0, len(messages))
 	for _, msg := range messages {
-		role := strings.ToLower(strings.TrimSpace(msg.Role))
-		if role == "" {
-			role = "user"
-		}
+		role := normalizeCodexInputRole(msg.Role)
 		content := strings.TrimSpace(msg.Content)
 		if content == "" {
 			content = extractToolCallSummary(msg.ToolCalls)
@@ -118,6 +115,16 @@ func normalizeInputMessages(messages []llmgateway.CanonicalMessage) []normalized
 		})
 	}
 	return out
+}
+
+func normalizeCodexInputRole(role string) string {
+	normalized := strings.ToLower(strings.TrimSpace(role))
+	switch normalized {
+	case "assistant", "system", "developer", "user":
+		return normalized
+	default:
+		return "user"
+	}
 }
 
 func contentTypeForRole(role string) string {
@@ -237,10 +244,15 @@ func normalizeUsage(usage codexUsage) llmgateway.CanonicalTokenUsage {
 	if total == 0 {
 		total = prompt + completion
 	}
+	cached := usage.InputTokensDetails.CachedTokens
+	if cached == 0 {
+		cached = usage.PromptTokensDetails.CachedTokens
+	}
 	return llmgateway.CanonicalTokenUsage{
 		PromptTokens:     maxInt(prompt, 0),
 		CompletionTokens: maxInt(completion, 0),
 		TotalTokens:      maxInt(total, 0),
+		CachedTokens:     maxInt(cached, 0),
 	}
 }
 
@@ -272,9 +284,15 @@ type codexContentChunk struct {
 }
 
 type codexUsage struct {
-	InputTokens      int `json:"input_tokens"`
-	OutputTokens     int `json:"output_tokens"`
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-	TotalTokens      int `json:"total_tokens"`
+	InputTokens         int              `json:"input_tokens"`
+	OutputTokens        int              `json:"output_tokens"`
+	PromptTokens        int              `json:"prompt_tokens"`
+	CompletionTokens    int              `json:"completion_tokens"`
+	TotalTokens         int              `json:"total_tokens"`
+	InputTokensDetails  codexTokenDetail `json:"input_tokens_details"`
+	PromptTokensDetails codexTokenDetail `json:"prompt_tokens_details"`
+}
+
+type codexTokenDetail struct {
+	CachedTokens int `json:"cached_tokens"`
 }
