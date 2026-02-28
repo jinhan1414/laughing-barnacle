@@ -21,8 +21,8 @@ func TestSetLocalAPIBaseURL_RewritesBuiltinSkillPrompt(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected builtin skill prompt to be readable")
 	}
-	if !strings.Contains(prompt, "禁止 /api/schedules/list") {
-		t.Fatalf("expected schedules endpoint constraint in schedule skill prompt, got %q", prompt)
+	if !strings.Contains(prompt, "context__read(resource=\"schedules\", action=\"list\")") {
+		t.Fatalf("expected schedules list to route via context__read in schedule skill prompt, got %q", prompt)
 	}
 	if !strings.Contains(prompt, "仅接受 id,name,description,action=skill:<skill_id>,cron_expr,enabled") {
 		t.Fatalf("expected required schedule fields in schedule skill prompt, got %q", prompt)

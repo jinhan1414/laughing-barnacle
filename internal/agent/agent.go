@@ -55,7 +55,7 @@ const (
 	minInjectedSkillScore           = 3
 	maxSkillFocusUserMessages       = 3
 	maxScheduledRecentMessages      = 20
-	builtinLinuxBashToolName        = "linux__bash"
+	builtinLinuxBashToolName        = "bash"
 	builtinContextReadToolName      = "context__read"
 	builtinMaintenanceWriteToolName = "maintenance__write"
 	defaultBashTimeoutSeconds       = 20

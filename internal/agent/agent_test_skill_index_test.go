@@ -79,8 +79,8 @@ func TestHandleUserMessage_IncludesSkillIndexForProgressiveDisclosure(t *testing
 		if msg.Role != "system" {
 			continue
 		}
-		if strings.Contains(msg.Content, "内置工具仅有 linux__bash") {
-			t.Fatalf("linux__bash policy text should not be injected as system context, got %q", msg.Content)
+		if strings.Contains(msg.Content, "内置工具仅有 bash") {
+			t.Fatalf("legacy bash-only policy text should not be injected as system context, got %q", msg.Content)
 		}
 		if strings.Contains(msg.Content, "/api/memory/read?path=/conversation/archive") || strings.Contains(msg.Content, "内置技能 archive_recall") {
 			t.Fatalf("archive recall should not be hardcoded in system prompt, got %q", msg.Content)
@@ -193,7 +193,7 @@ func TestHandleUserMessage_LinuxBashToolCall(t *testing.T) {
 		}
 	}
 	if !foundToolResult {
-		t.Fatalf("expected linux__bash tool result in second call")
+		t.Fatalf("expected bash tool result in second call")
 	}
 
 	_, messages := store.Snapshot()
@@ -252,8 +252,11 @@ func TestHandleUserMessage_IncludesToolRuntimeConstraintsPrompt(t *testing.T) {
 	if strings.Contains(found, "不要再包 command/cmd 键") {
 		t.Fatalf("expected command-only wording removed, got %q", found)
 	}
-	if !strings.Contains(found, "/api/schedules/list") {
-		t.Fatalf("expected schedules list endpoint constraint, got %q", found)
+	if !strings.Contains(found, "# Tool & Environment Constraints (工具与环境硬约束)") {
+		t.Fatalf("expected markdown heading structure for runtime constraints, got %q", found)
+	}
+	if !strings.Contains(found, "context__read(resource=\"schedules\", action=\"list\")") {
+		t.Fatalf("expected schedules list native-tool constraint, got %q", found)
 	}
 	if !strings.Contains(found, "context__read") || !strings.Contains(found, "maintenance__write") {
 		t.Fatalf("expected native tool routing constraints, got %q", found)
@@ -280,16 +283,16 @@ func TestHandleUserMessage_IncludesToolRuntimeConstraintsPrompt(t *testing.T) {
 		if !strings.Contains(found, "禁止写反斜杠转义引号") {
 			t.Fatalf("expected windows quote escape constraint for cmd shell, got %q", found)
 		}
-		if !strings.Contains(found, "禁止通过 linux__bash 执行任何本地 API 读写") {
-			t.Fatalf("expected linux__bash local api prohibition for cmd shell, got %q", found)
+		if !strings.Contains(found, "禁止通过 bash 执行任何本地 API 读写") {
+			t.Fatalf("expected bash local api prohibition for cmd shell, got %q", found)
 		}
 	}
 	if preferredShellName() == "powershell" || preferredShellName() == "pwsh" {
 		if !strings.Contains(found, "Windows PowerShell") {
 			t.Fatalf("expected powershell runtime prompt, got %q", found)
 		}
-		if !strings.Contains(found, "禁止通过 linux__bash 执行任何本地 API 读写") {
-			t.Fatalf("expected linux__bash local api prohibition for powershell shell, got %q", found)
+		if !strings.Contains(found, "禁止通过 bash 执行任何本地 API 读写") {
+			t.Fatalf("expected bash local api prohibition for powershell shell, got %q", found)
 		}
 	}
 }

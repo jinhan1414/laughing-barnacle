@@ -45,4 +45,4 @@
 #### Scenario: Prefer native read/write tools in strategy prompt
 - **WHEN** 系统注入执行策略与工具约束
 - **THEN** 文案将本地 API 的读取与维护写入默认指向原生内置工具
-- **AND** `linux__bash` 仅作为 shell 任务或非 API 命令执行工具保留
+- **AND** `bash` 仅作为 shell 任务或非 API 命令执行工具保留

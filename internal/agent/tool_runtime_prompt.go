@@ -16,53 +16,57 @@ func (a *Agent) buildToolRuntimePrompt() string {
 	switch preferredShellName() {
 	case "powershell", "pwsh":
 		return strings.TrimSpace(
-			"工具执行环境：linux__bash 当前在 Windows PowerShell 下执行。\n" +
-				"linux__bash 仅用于本地 shell 命令（如文件/进程/时间查询），仅保留 command 参数。\n" +
+			"# Tool & Environment Constraints (工具与环境硬约束)\n" +
+				"工具执行环境：bash 当前在 Windows PowerShell 下执行。\n" +
+				"bash 仅用于本地 shell 命令（如文件/进程/时间查询），仅保留 command 参数。\n" +
 				"本地 API 读取必须使用 context__read；本地 API 维护写入必须使用 maintenance__write。\n" +
-				"禁止通过 linux__bash 执行任何本地 API 读写（包括 curl/Invoke-RestMethod）。\n" +
+				"禁止通过 bash 执行任何本地 API 读写（包括 curl/Invoke-RestMethod）。\n" +
 				"context__read 白名单：mcp(list)、skills(list/read)、schedules(list)、a2a(list/read)、memory(index/read/section)、async(list/get)。\n" +
 				"maintenance__write 白名单：mcp(save/toggle/delete)、skills(save/toggle/delete/install)、schedules(save/toggle/delete/run)、a2a(save/toggle/delete)。\n" +
-				"定时任务列表接口固定为 GET /api/schedules（禁止 /api/schedules/list）。\n" +
-				"保存定时任务时，/api/schedules/save 必填字段固定为：id,name,description,action=skill:<skill_id>,cron_expr,enabled（禁止使用 cron/prompt/action=reminder）。\n" +
+				"定时任务列表统一使用 context__read(resource=\"schedules\", action=\"list\")。\n" +
+				"调用 maintenance__write(resource=\"schedules\", operation=\"save\") 时，payload 必填字段固定为：id,name,description,action=skill:<skill_id>,cron_expr,enabled（禁止使用 cron/prompt/action=reminder）。\n" +
 				"A2A 任务执行入口固定为 async_task__submit(task_type=a2a)，查询/取消使用 async_task__get/cancel；禁止使用 a2a__send/get/cancel。\n" +
 				executionConsistencyPrompt,
 		)
 	case "cmd":
 		return strings.TrimSpace(
-			"工具执行环境：linux__bash 当前在 Windows cmd 下执行。\n" +
-				"linux__bash 仅用于本地 shell 命令（如文件/进程/时间查询），仅保留 command 参数。\n" +
+			"# Tool & Environment Constraints (工具与环境硬约束)\n" +
+				"工具执行环境：bash 当前在 Windows cmd 下执行。\n" +
+				"bash 仅用于本地 shell 命令（如文件/进程/时间查询），仅保留 command 参数。\n" +
 				"写 URL 时使用正常双引号，禁止写反斜杠转义引号（如 \\\"http://...\\\"）。\n" +
 				"只能使用 cmd 兼容命令（如 dir/findstr/schtasks/echo），禁止 Linux 命令（如 ls/find/head/grep/uname/crontab）。\n" +
 				"本地 API 读取必须使用 context__read；本地 API 维护写入必须使用 maintenance__write。\n" +
-				"禁止通过 linux__bash 执行任何本地 API 读写（包括 curl）。\n" +
+				"禁止通过 bash 执行任何本地 API 读写（包括 curl）。\n" +
 				"context__read 白名单：mcp(list)、skills(list/read)、schedules(list)、a2a(list/read)、memory(index/read/section)、async(list/get)。\n" +
 				"maintenance__write 白名单：mcp(save/toggle/delete)、skills(save/toggle/delete/install)、schedules(save/toggle/delete/run)、a2a(save/toggle/delete)。\n" +
-				"定时任务列表接口固定为 GET /api/schedules（禁止 /api/schedules/list）。\n" +
-				"保存定时任务时，/api/schedules/save 必填字段固定为：id,name,description,action=skill:<skill_id>,cron_expr,enabled（禁止使用 cron/prompt/action=reminder）。\n" +
+				"定时任务列表统一使用 context__read(resource=\"schedules\", action=\"list\")。\n" +
+				"调用 maintenance__write(resource=\"schedules\", operation=\"save\") 时，payload 必填字段固定为：id,name,description,action=skill:<skill_id>,cron_expr,enabled（禁止使用 cron/prompt/action=reminder）。\n" +
 				"A2A 任务执行入口固定为 async_task__submit(task_type=a2a)，查询/取消使用 async_task__get/cancel；禁止使用 a2a__send/get/cancel。\n" +
 				executionConsistencyPrompt,
 		)
 	case "bash", "sh":
 		return strings.TrimSpace(
-			"工具执行环境：linux__bash 当前在 Linux shell 下执行。\n" +
-				"linux__bash 仅用于本地 shell 命令（如文件/进程/时间查询），仅保留 command 参数。\n" +
+			"# Tool & Environment Constraints (工具与环境硬约束)\n" +
+				"工具执行环境：bash 当前在 Linux shell 下执行。\n" +
+				"bash 仅用于本地 shell 命令（如文件/进程/时间查询），仅保留 command 参数。\n" +
 				"本地 API 读取必须使用 context__read；本地 API 维护写入必须使用 maintenance__write。\n" +
-				"禁止通过 linux__bash 执行任何本地 API 读写（包括 curl）。\n" +
+				"禁止通过 bash 执行任何本地 API 读写（包括 curl）。\n" +
 				"context__read 白名单：mcp(list)、skills(list/read)、schedules(list)、a2a(list/read)、memory(index/read/section)、async(list/get)。\n" +
 				"maintenance__write 白名单：mcp(save/toggle/delete)、skills(save/toggle/delete/install)、schedules(save/toggle/delete/run)、a2a(save/toggle/delete)。\n" +
-				"定时任务列表接口固定为 GET /api/schedules（禁止 /api/schedules/list）。\n" +
-				"保存定时任务时，/api/schedules/save 必填字段固定为：id,name,description,action=skill:<skill_id>,cron_expr,enabled（禁止使用 cron/prompt/action=reminder）。\n" +
+				"定时任务列表统一使用 context__read(resource=\"schedules\", action=\"list\")。\n" +
+				"调用 maintenance__write(resource=\"schedules\", operation=\"save\") 时，payload 必填字段固定为：id,name,description,action=skill:<skill_id>,cron_expr,enabled（禁止使用 cron/prompt/action=reminder）。\n" +
 				"A2A 任务执行入口固定为 async_task__submit(task_type=a2a)，查询/取消使用 async_task__get/cancel；禁止使用 a2a__send/get/cancel。\n" +
 				executionConsistencyPrompt,
 		)
 	default:
 		return strings.TrimSpace(
-			"linux__bash 仅用于本地 shell 命令，禁止用于本地 API 读写；" +
+			"# Tool & Environment Constraints (工具与环境硬约束)\n" +
+				"bash 仅用于本地 shell 命令，禁止用于本地 API 读写；" +
 				"本地 API 读取必须使用 context__read；维护写入必须使用 maintenance__write；" +
 				"context__read 白名单：mcp(list)、skills(list/read)、schedules(list)、a2a(list/read)、memory(index/read/section)、async(list/get)；" +
 				"maintenance__write 白名单：mcp(save/toggle/delete)、skills(save/toggle/delete/install)、schedules(save/toggle/delete/run)、a2a(save/toggle/delete)；" +
-				"定时任务列表接口固定为 GET /api/schedules（禁止 /api/schedules/list）；" +
-				"/api/schedules/save 必填 id,name,description,action=skill:<skill_id>,cron_expr,enabled；" +
+				"定时任务列表统一使用 context__read(resource=\"schedules\", action=\"list\")；" +
+				"maintenance__write(resource=\"schedules\", operation=\"save\") 必填 id,name,description,action=skill:<skill_id>,cron_expr,enabled；" +
 				"A2A 执行入口固定为 async_task__submit(task_type=a2a)，查询/取消使用 async_task__get/cancel，禁止 a2a__send|get|cancel。\n" +
 				executionConsistencyPrompt,
 		)

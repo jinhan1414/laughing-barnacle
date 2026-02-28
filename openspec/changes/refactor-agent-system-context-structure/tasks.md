@@ -1,7 +1,7 @@
 ## 1. Spec & Prompt Contract
 - [x] 1.1 新增 `agent-system-context` 规范，定义分块结构、去重规则与执行证据约束。
 - [x] 1.2 新增 `agent-native-api-tools` 规范，定义 `context__read` 与 `maintenance__write` 的工具契约与白名单边界。
-- [x] 1.3 扩展 `linux-bash-tool-contract`：补充“工具名与真实 shell 环境对齐提示”以及“本地 API 交互默认走原生工具”要求。
+- [x] 1.3 扩展 `bash-tool-contract`：补充“工具名与真实 shell 环境对齐提示”以及“本地 API 交互默认走原生工具”要求。
 - [x] 1.4 扩展 `maintenance-json-interfaces`：补充维护写入优先走 `maintenance__write` 的要求。
 - [x] 1.5 运行 `openspec validate refactor-agent-system-context-structure --strict` 并修复所有校验问题。
 
@@ -15,7 +15,7 @@
 
 ## 3. Validation
 - [x] 3.1 单测：验证请求 system 上下文中“回答策略”不重复注入。
-- [x] 3.2 单测：验证 Windows 场景下 runtime prompt 明确 `linux__bash` 与 PowerShell 的关系，且禁止其承接本地 API 读写。
+- [x] 3.2 单测：验证 Windows 场景下 runtime prompt 明确 `bash` 与 PowerShell 的关系，且禁止其承接本地 API 读写。
 - [x] 3.3 单测：验证 `context__read` 仅允许白名单只读路由，非法路由显式报错。
 - [x] 3.4 单测：验证 `maintenance__write` 的路由、必填字段与 JSON body 校验行为。
 - [x] 3.5 单测：验证维护类提示词优先原生工具，并包含 JSON 协议约束。

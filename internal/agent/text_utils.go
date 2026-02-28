@@ -81,7 +81,7 @@ func buildCurrentDateUserContextPrompt(now time.Time) string {
 		"时间基准（用于相对时间换算）：当前日期 " +
 		now.Format("2006-01-02") +
 		"（时区: " + zoneName +
-		"）。凡涉及“今天/昨天/最近N天/本周/本月”等时间范围，必须以此为准计算后再查询；如需小时/分钟级当前时间，先调用 linux__bash 查询系统时间。"
+		"）。凡涉及“今天/昨天/最近N天/本周/本月”等时间范围，必须以此为准计算后再查询；如需小时/分钟级当前时间，先调用 bash 查询系统时间。"
 }
 
 func removeRuntimeDateContextUserMessages(messages []llm.Message) []llm.Message {

@@ -33,7 +33,7 @@ var builtinSkills = []Skill{
 		Description: "当用户要求新增/修改/删除/启停 MCP 服务时使用",
 		Prompt: strings.TrimSpace(
 			"目标：用最少工具调用维护 MCP 服务，默认预算 3-4 次调用。\n" +
-				"硬性约束：本地 API 读写禁止走 linux__bash；读取用 context__read，写入用 maintenance__write。\n" +
+				"硬性约束：本地 API 读写禁止走 bash；读取用 context__read，写入用 maintenance__write。\n" +
 				"步骤 1（必做）：先查现状：context__read(resource=\"mcp\", action=\"list\")。\n" +
 				"步骤 2（三选一，仅一次写入）：\n" +
 				"  a) 新增/更新 streamable_http：maintenance__write(resource=\"mcp\", operation=\"save\", payload={id,name,transport:\"streamable_http\",endpoint,enabled})。\n" +
@@ -51,7 +51,7 @@ var builtinSkills = []Skill{
 		Description: "当用户要求新增/修改/删除/启停 A2A Agent 接入时使用",
 		Prompt: strings.TrimSpace(
 			"目标：用最少工具调用维护 A2A 接入，默认预算 3-4 次调用。\n" +
-				"硬性约束：本地 API 读写禁止走 linux__bash；读取用 context__read，写入用 maintenance__write。\n" +
+				"硬性约束：本地 API 读写禁止走 bash；读取用 context__read，写入用 maintenance__write。\n" +
 				"步骤 1（必做）：先查现状：context__read(resource=\"a2a\", action=\"list\")。\n" +
 				"步骤 2（按需执行一个写分支）：\n" +
 				"  a) 新增/更新：maintenance__write(resource=\"a2a\", operation=\"save\", payload={id,name,description,endpoint,agent_card_url,auth_token,enabled})。\n" +
@@ -108,7 +108,7 @@ var builtinSkills = []Skill{
 		Description: "当用户要求安装/新增/删除/启停 Skill 时使用",
 		Prompt: strings.TrimSpace(
 			"目标：用最少工具调用维护 Skill，默认预算 3-4 次调用。\n" +
-				"硬性约束：本地 API 读写禁止走 linux__bash；读取用 context__read，写入用 maintenance__write。\n" +
+				"硬性约束：本地 API 读写禁止走 bash；读取用 context__read，写入用 maintenance__write。\n" +
 				"步骤 1（必做）：先查现状：context__read(resource=\"skills\", action=\"list\")。\n" +
 				"步骤 2（按需执行一个写分支）：\n" +
 				"  a) skills.sh 安装：maintenance__write(resource=\"skills\", operation=\"install\", payload={skills_sh_url})。\n" +
@@ -126,13 +126,13 @@ var builtinSkills = []Skill{
 		Description: "当用户要求查看/修改 Cron 定时任务时使用",
 		Prompt: strings.TrimSpace(
 			"目标：以最少工具调用完成定时任务配置并可验证，默认预算 3-4 次调用。\n" +
-				"写入字段硬约束：/api/schedules/save 仅接受 id,name,description,action=skill:<skill_id>,cron_expr,enabled；禁止 cron/prompt/action=reminder。\n" +
-				"硬性约束：本地 API 读写禁止走 linux__bash；读取用 context__read，写入用 maintenance__write。\n" +
+				"写入字段硬约束：maintenance__write(resource=\"schedules\", operation=\"save\") 的 payload 仅接受 id,name,description,action=skill:<skill_id>,cron_expr,enabled；禁止 cron/prompt/action=reminder。\n" +
+				"硬性约束：本地 API 读写禁止走 bash；读取用 context__read，写入用 maintenance__write。\n" +
 				"硬性约束：创建/更新 Skill 固定使用 maintenance__write(resource=\"skills\", operation=\"save\")。\n" +
 				"硬性约束：action 必须是 skill:<skill_id>；skill_id 仅允许 [a-zA-Z0-9_-]，必须使用普通连字符 '-'。\n" +
 				"硬性约束：用户提醒类任务（如打卡/会议/出行提醒）禁止绑定流程性内置 skill（project-memory-maintainer、context-archive-recall、mcp-config-maintainer、skills-config-maintainer、schedule-config-maintainer）。\n" +
 				"硬性约束：提醒类任务必须先创建或复用专用 reminder skill（例如 punch-card-reminder），再用 action=skill:<reminder_skill_id> 绑定。\n" +
-				"硬性约束：定时任务列表接口固定为 GET /api/schedules（禁止 /api/schedules/list）。\n" +
+				"硬性约束：定时任务列表固定使用 context__read(resource=\"schedules\", action=\"list\")。\n" +
 				"步骤 1（必做）：先查技能：context__read(resource=\"skills\", action=\"list\")；仅在需要更新已有任务时再查一次 context__read(resource=\"schedules\", action=\"list\")。\n" +
 				"步骤 2（按分支执行一次写入）：\n" +
 				"  a) skill 不存在：先创建 skill：maintenance__write(resource=\"skills\", operation=\"save\", payload={id,name,description,prompt,enabled})。\n" +

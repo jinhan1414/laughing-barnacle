@@ -49,7 +49,7 @@ func parseLinuxBashArguments(raw string) (linuxBashRequest, error) {
 
 func runLinuxBash(ctx context.Context, req linuxBashRequest) (string, error) {
 	if isLocalAPIShellCommand(req.Command) {
-		return "", fmt.Errorf("local api access via linux__bash is forbidden; use context__read or maintenance__write")
+		return "", fmt.Errorf("local api access via bash is forbidden; use context__read or maintenance__write")
 	}
 
 	timeout := time.Duration(defaultBashTimeoutSeconds) * time.Second

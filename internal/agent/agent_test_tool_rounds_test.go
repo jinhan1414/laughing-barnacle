@@ -85,7 +85,7 @@ func TestHandleUserMessage_WithToolCalls(t *testing.T) {
 		}
 	}
 	if !foundBash || !foundWeather {
-		t.Fatalf("expected both linux__bash and weather__query tools, got %+v", fakeLLM.calls[0].Tools)
+		t.Fatalf("expected both bash and weather__query tools, got %+v", fakeLLM.calls[0].Tools)
 	}
 	if len(fakeTools.calls) != 1 || fakeTools.calls[0].Function.Name != "weather__query" {
 		t.Fatalf("unexpected tool calls: %+v", fakeTools.calls)

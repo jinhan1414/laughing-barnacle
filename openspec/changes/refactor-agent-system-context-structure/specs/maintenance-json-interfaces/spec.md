@@ -13,7 +13,7 @@
 - **AND** 不发起任何维护写入请求
 
 ### Requirement: No Shell Compatibility Path for Maintenance Writes
-系统 MUST 移除维护写入的 shell 兼容路径，不再允许通过 `linux__bash` 拼接命令执行本地 API 写入。
+系统 MUST 移除维护写入的 shell 兼容路径，不再允许通过 `bash` 拼接命令执行本地 API 写入。
 
 #### Scenario: Runtime prompt prohibits shell-based maintenance writes
 - **WHEN** 系统注入维护写入约束
