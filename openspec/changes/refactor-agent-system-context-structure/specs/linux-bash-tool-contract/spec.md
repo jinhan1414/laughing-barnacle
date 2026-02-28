@@ -5,7 +5,7 @@
 #### Scenario: Windows runtime explicitly warns PowerShell semantics
 - **WHEN** 当前可用 shell 为 Windows PowerShell/pwsh
 - **THEN** 运行时提示明确说明 `linux__bash` 实际在 PowerShell 执行
-- **AND** 同时约束命令语法遵循 PowerShell 语义（含 `curl.exe` 规则）
+- **AND** 同时约束命令语法遵循 PowerShell 语义
 
 #### Scenario: Linux runtime keeps shell-specific semantics
 - **WHEN** 当前可用 shell 为 bash/sh
@@ -23,4 +23,4 @@
 #### Scenario: Local API interaction defaults to dedicated tools
 - **WHEN** 模型需要读取索引详情或执行维护写入
 - **THEN** 系统默认引导调用对应原生工具
-- **AND** 不把 `linux__bash + curl` 作为默认首选链路
+- **AND** 禁止通过 `linux__bash` 执行本地 API 读写

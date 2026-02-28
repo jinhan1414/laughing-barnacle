@@ -17,7 +17,7 @@
   - 让维护写入与详情读取优先走结构化原生工具，避免命令行 JSON 转义。
   - 保持执行证据约束与渐进式披露原则，减少无效工具回合。
 - Non-Goals:
-  - 不将 `linux__bash` 改名为 `windows__powershell`（避免破坏现有契约与兼容链路）。
+  - 不将 `linux__bash` 改名为 `windows__powershell`（控制改动面，避免工具标识级变更）。
   - 不引入关键词/正则分流的决策逻辑。
 
 ## Decisions
@@ -28,14 +28,14 @@
 
 - Decision: 保留 `linux__bash` 名称，但新增强制环境警戒
   - 在 Windows 场景显式声明“工具名为 `linux__bash`，但命令在 PowerShell 执行”。
-  - 明确禁止输出 Bash 专属语法并固定 `curl.exe` 规则。
-  - 原因：兼容现有工具契约，同时降低模型望文生义风险。
+  - 明确禁止输出 Bash 专属语法，并限定其用途为 shell 命令执行。
+  - 原因：降低模型望文生义风险，并把 API 交互职责收敛到原生工具。
 
 - Decision: 最小新增两个原生工具并按读写分离
   - 新增 `context__read`：封装只读查询能力，覆盖 Skill/A2A/Memory/Async 的索引与详情读取。
   - 新增 `maintenance__write`：封装维护写能力，覆盖 MCP/Skills/Schedules/A2A 的 save|toggle|delete|run|install。
   - 两个工具均采用结构化参数，由宿主完成 HTTP 组装与 JSON 序列化。
-  - 原因：用最小工具数量消除命令行转义与 shell 语义漂移风险。
+  - 原因：用最小工具数量消除命令行转义与 shell 语义漂移风险，并移除旧兼容路径。
 
 - Decision: 渐进式披露策略保持不变但迁移到原生读取工具
   - 详情读取默认走 `context__read`；
@@ -44,7 +44,7 @@
 
 ## Risks / Trade-offs
 - 风险：未改工具名，仍可能有少量语义误触发。
-  - Mitigation：保留 `linux__bash` 仅用于本地 shell 任务，本地 API 交互默认切换到原生工具。
+  - Mitigation：强约束 `linux__bash` 禁止承接本地 API 读写，只允许原生工具访问本地 API。
 
 - 风险：上下文重排可能影响既有缓存命中。
   - Mitigation：固定段落顺序与标签，更新对应缓存稳定性测试。
