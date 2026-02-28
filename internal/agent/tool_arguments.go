@@ -26,3 +26,12 @@ func readObjectArgument(args map[string]any, key string) map[string]any {
 	}
 	return objectValue
 }
+
+func readBoolArgument(args map[string]any, key string) bool {
+	value, ok := args[key]
+	if !ok {
+		return false
+	}
+	enabled, _ := value.(bool)
+	return enabled
+}

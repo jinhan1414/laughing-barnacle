@@ -4,11 +4,22 @@ import (
 	"context"
 	"laughing-barnacle/internal/conversation"
 	"laughing-barnacle/internal/llm"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
 
 func TestHandleUserMessage_UsesStandardToolExecutionForRuntimeScheduleQuery(t *testing.T) {
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/schedules" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		_, _ = w.Write([]byte(`{"schedules":[]}`))
+	}))
+	t.Cleanup(apiServer.Close)
+
 	store := conversation.NewStore()
 	fakeLLM := &mockLLM{
 		responses: map[string][]string{
@@ -21,8 +32,8 @@ func TestHandleUserMessage_UsesStandardToolExecutionForRuntimeScheduleQuery(t *t
 						ID:   "call_sched_1",
 						Type: "function",
 						Function: llm.ToolFunctionCall{
-							Name:      builtinLinuxBashToolName,
-							Arguments: `"curl -s http://127.0.0.1:8080/api/schedules"`,
+							Name:      builtinContextReadToolName,
+							Arguments: `{"resource":"schedules","action":"list"}`,
 						},
 					},
 				},
@@ -30,17 +41,10 @@ func TestHandleUserMessage_UsesStandardToolExecutionForRuntimeScheduleQuery(t *t
 			},
 		},
 	}
-	prevRunLinuxBashFn := runLinuxBashFn
-	runLinuxBashFn = func(_ context.Context, req linuxBashRequest) (string, error) {
-		if strings.TrimSpace(req.Command) != "curl -s http://127.0.0.1:8080/api/schedules" {
-			t.Fatalf("unexpected command: %q", req.Command)
-		}
-		return "exit_code: 0\nshell: bash\nstdout:\n{\"schedules\":[]}\nstderr:\n(无)", nil
-	}
-	t.Cleanup(func() { runLinuxBashFn = prevRunLinuxBashFn })
 
 	agentSvc := New(Config{
 		Model:                      "test-model",
+		LocalAPIBaseURL:            apiServer.URL,
 		MaxRecentMessages:          10,
 		CompressionTriggerMessages: 99,
 		CompressionTriggerChars:    99999,
@@ -66,7 +70,7 @@ func TestHandleUserMessage_UsesStandardToolExecutionForRuntimeScheduleQuery(t *t
 	if len(messages) != 2 || messages[0].Role != "user" || messages[1].Role != "assistant" {
 		t.Fatalf("unexpected messages: %+v", messages)
 	}
-	if len(messages[0].ToolCalls) != 1 || messages[0].ToolCalls[0].Name != builtinLinuxBashToolName {
+	if len(messages[0].ToolCalls) != 1 || messages[0].ToolCalls[0].Name != builtinContextReadToolName {
 		t.Fatalf("expected one persisted tool call, got %+v", messages[0].ToolCalls)
 	}
 }

@@ -60,8 +60,8 @@ func TestHandleUserMessage_IncludesSkillIndexForProgressiveDisclosure(t *testing
 	if strings.TrimSpace(content) == "" {
 		t.Fatalf("skill index not injected")
 	}
-	if !strings.Contains(content, "/api/skills/read?id=<skill_id>") {
-		t.Fatalf("expected bash curl read hint, got %q", content)
+	if !strings.Contains(content, "context__read(resource=\"skills\", action=\"read\", id=\"<skill_id>\")") {
+		t.Fatalf("expected native context read hint, got %q", content)
 	}
 	if !strings.Contains(content, "无需用户点名") {
 		t.Fatalf("expected proactive skill trigger hint, got %q", content)
@@ -116,8 +116,8 @@ func TestHandleUserMessage_UsesBuiltinLinuxAndAsyncTaskTools(t *testing.T) {
 	}
 
 	firstCall := fakeLLM.calls[0]
-	if len(firstCall.Tools) != 4 {
-		t.Fatalf("expected 4 builtin tools, got %d", len(firstCall.Tools))
+	if len(firstCall.Tools) != 6 {
+		t.Fatalf("expected 6 builtin tools, got %d", len(firstCall.Tools))
 	}
 	seen := map[string]bool{}
 	for _, tool := range firstCall.Tools {
@@ -125,6 +125,8 @@ func TestHandleUserMessage_UsesBuiltinLinuxAndAsyncTaskTools(t *testing.T) {
 	}
 	required := []string{
 		builtinLinuxBashToolName,
+		builtinContextReadToolName,
+		builtinMaintenanceWriteToolName,
 		builtinAsyncTaskSubmitToolName,
 		builtinAsyncTaskGetToolName,
 		builtinAsyncTaskCancelToolName,
@@ -253,11 +255,14 @@ func TestHandleUserMessage_IncludesToolRuntimeConstraintsPrompt(t *testing.T) {
 	if !strings.Contains(found, "/api/schedules/list") {
 		t.Fatalf("expected schedules list endpoint constraint, got %q", found)
 	}
+	if !strings.Contains(found, "context__read") || !strings.Contains(found, "maintenance__write") {
+		t.Fatalf("expected native tool routing constraints, got %q", found)
+	}
 	if !strings.Contains(found, "id,name,description,action=skill:<skill_id>,cron_expr,enabled") {
 		t.Fatalf("expected required schedule save fields constraint, got %q", found)
 	}
-	if !strings.Contains(found, "/api/skills/save|toggle|delete|install") {
-		t.Fatalf("expected skills json endpoint constraint, got %q", found)
+	if !strings.Contains(found, "skills(save/toggle/delete/install)") {
+		t.Fatalf("expected maintenance tool whitelist constraint, got %q", found)
 	}
 	if !strings.Contains(found, "执行一致性硬约束（最高优先级）") {
 		t.Fatalf("expected execution consistency hard constraints, got %q", found)
@@ -275,22 +280,16 @@ func TestHandleUserMessage_IncludesToolRuntimeConstraintsPrompt(t *testing.T) {
 		if !strings.Contains(found, "禁止写反斜杠转义引号") {
 			t.Fatalf("expected windows quote escape constraint for cmd shell, got %q", found)
 		}
-		if !strings.Contains(found, "-H \"Content-Type: application/json\"") {
-			t.Fatalf("expected json content-type constraint for cmd shell, got %q", found)
-		}
-		if !strings.Contains(found, "不要默认使用 --data-urlencode") {
-			t.Fatalf("expected json-first constraint for cmd shell, got %q", found)
+		if !strings.Contains(found, "禁止通过 linux__bash 执行任何本地 API 读写") {
+			t.Fatalf("expected linux__bash local api prohibition for cmd shell, got %q", found)
 		}
 	}
 	if preferredShellName() == "powershell" || preferredShellName() == "pwsh" {
 		if !strings.Contains(found, "Windows PowerShell") {
 			t.Fatalf("expected powershell runtime prompt, got %q", found)
 		}
-		if !strings.Contains(found, "curl.exe") {
-			t.Fatalf("expected curl.exe constraint for powershell shell, got %q", found)
-		}
-		if !strings.Contains(found, "Invoke-RestMethod + ConvertTo-Json") {
-			t.Fatalf("expected powershell json guidance, got %q", found)
+		if !strings.Contains(found, "禁止通过 linux__bash 执行任何本地 API 读写") {
+			t.Fatalf("expected linux__bash local api prohibition for powershell shell, got %q", found)
 		}
 	}
 }

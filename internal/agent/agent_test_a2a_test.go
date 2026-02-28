@@ -49,7 +49,7 @@ func TestHandleUserMessage_IncludesA2AIndexProgressiveDisclosure(t *testing.T) {
 	if strings.TrimSpace(content) == "" {
 		t.Fatalf("expected a2a index prompt injected")
 	}
-	if !strings.Contains(content, "/api/a2a/agents/read?id=<agent_id>") {
+	if !strings.Contains(content, "context__read(resource=\"a2a\", action=\"read\", id=\"<agent_id>\")") {
 		t.Fatalf("expected a2a read hint, got %q", content)
 	}
 	if !strings.Contains(content, "本索引是本轮固定上下文主来源") {

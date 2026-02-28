@@ -48,6 +48,10 @@ func parseLinuxBashArguments(raw string) (linuxBashRequest, error) {
 }
 
 func runLinuxBash(ctx context.Context, req linuxBashRequest) (string, error) {
+	if isLocalAPIShellCommand(req.Command) {
+		return "", fmt.Errorf("local api access via linux__bash is forbidden; use context__read or maintenance__write")
+	}
+
 	timeout := time.Duration(defaultBashTimeoutSeconds) * time.Second
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -253,4 +257,38 @@ func parseCommandToolArgument(raw string) (string, error) {
 		return "", fmt.Errorf("tool argument %q must be non-empty string", "command")
 	}
 	return strings.TrimSpace(command), nil
+}
+
+func isLocalAPIShellCommand(command string) bool {
+	text := strings.ToLower(strings.TrimSpace(command))
+	if text == "" {
+		return false
+	}
+	if !strings.Contains(text, "/api/") {
+		return false
+	}
+	if !strings.Contains(text, "curl") && !strings.Contains(text, "invoke-restmethod") {
+		return false
+	}
+	if !strings.Contains(text, "127.0.0.1") &&
+		!strings.Contains(text, "localhost") &&
+		!strings.Contains(text, "0.0.0.0") {
+		return false
+	}
+
+	blockedPrefixes := []string{
+		"/api/mcp/services",
+		"/api/skills",
+		"/api/schedules",
+		"/api/a2a/agents",
+		"/api/memory/index",
+		"/api/memory/read",
+		"/api/memory/section",
+	}
+	for _, prefix := range blockedPrefixes {
+		if strings.Contains(text, prefix) {
+			return true
+		}
+	}
+	return false
 }

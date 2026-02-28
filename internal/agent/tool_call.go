@@ -27,6 +27,12 @@ func (a *Agent) callBuiltinTool(ctx context.Context, call llm.ToolCall) (result 
 		}
 		out, err := runLinuxBashFn(ctx, req)
 		return out, err, true
+	case builtinContextReadToolName:
+		out, err := a.callContextRead(ctx, call.Function.Arguments)
+		return out, err, true
+	case builtinMaintenanceWriteToolName:
+		out, err := a.callMaintenanceWrite(ctx, call.Function.Arguments)
+		return out, err, true
 	case builtinAsyncTaskSubmitToolName:
 		out, err := a.callAsyncTaskSubmit(ctx, call.Function.Arguments)
 		return out, err, true

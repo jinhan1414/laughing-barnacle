@@ -21,32 +21,17 @@ func TestSetLocalAPIBaseURL_RewritesBuiltinSkillPrompt(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected builtin skill prompt to be readable")
 	}
-	if !strings.Contains(prompt, "http://127.0.0.1:9080/api/skills") {
-		t.Fatalf("expected prompt to use :9080 local api base, got %q", prompt)
-	}
-	if strings.Contains(prompt, legacyLocalAPIBaseURL) {
-		t.Fatalf("expected legacy base url to be replaced, got %q", prompt)
-	}
-	if !strings.Contains(prompt, "仅保留 command 参数") {
-		t.Fatalf("expected command parameter constraint in schedule skill prompt, got %q", prompt)
-	}
 	if !strings.Contains(prompt, "禁止 /api/schedules/list") {
 		t.Fatalf("expected schedules endpoint constraint in schedule skill prompt, got %q", prompt)
-	}
-	if !strings.Contains(prompt, "禁止反斜杠转义引号") {
-		t.Fatalf("expected windows quote escape constraint in schedule skill prompt, got %q", prompt)
 	}
 	if !strings.Contains(prompt, "仅接受 id,name,description,action=skill:<skill_id>,cron_expr,enabled") {
 		t.Fatalf("expected required schedule fields in schedule skill prompt, got %q", prompt)
 	}
-	if !strings.Contains(prompt, "Content-Type: application/json") {
-		t.Fatalf("expected json content-type constraint in schedule skill prompt, got %q", prompt)
+	if !strings.Contains(prompt, "context__read") || !strings.Contains(prompt, "maintenance__write") {
+		t.Fatalf("expected schedule skill prompt to use native tools, got %q", prompt)
 	}
-	if !strings.Contains(prompt, "POST /api/skills/save（JSON）") {
-		t.Fatalf("expected skills save json endpoint constraint in schedule skill prompt, got %q", prompt)
-	}
-	if strings.Contains(prompt, "--data-urlencode") {
-		t.Fatalf("expected schedule skill prompt to remove data-urlencode default, got %q", prompt)
+	if strings.Contains(prompt, "curl") || strings.Contains(prompt, "Invoke-RestMethod") {
+		t.Fatalf("expected schedule skill prompt to remove shell api instructions, got %q", prompt)
 	}
 	if !strings.Contains(prompt, "提醒类任务必须先创建或复用专用 reminder skill") {
 		t.Fatalf("expected reminder skill binding constraint in schedule skill prompt, got %q", prompt)
@@ -64,9 +49,9 @@ func TestBuiltinMaintenanceSkills_UseJSONProtocol(t *testing.T) {
 		id       string
 		contains string
 	}{
-		{id: "mcp-config-maintainer", contains: "/api/mcp/services/save"},
-		{id: "skills-config-maintainer", contains: "/api/skills/save"},
-		{id: "schedule-config-maintainer", contains: "/api/schedules/save"},
+		{id: "mcp-config-maintainer", contains: "maintenance__write(resource=\"mcp\""},
+		{id: "skills-config-maintainer", contains: "maintenance__write(resource=\"skills\""},
+		{id: "schedule-config-maintainer", contains: "maintenance__write(resource=\"schedules\""},
 	}
 
 	for _, tc := range cases {
@@ -77,8 +62,11 @@ func TestBuiltinMaintenanceSkills_UseJSONProtocol(t *testing.T) {
 		if !strings.Contains(prompt, tc.contains) {
 			t.Fatalf("expected prompt %s to contain %q, got %q", tc.id, tc.contains, prompt)
 		}
-		if strings.Contains(prompt, "--data-urlencode") {
-			t.Fatalf("expected prompt %s to avoid data-urlencode default, got %q", tc.id, prompt)
+		if !strings.Contains(prompt, "context__read") {
+			t.Fatalf("expected prompt %s to include context__read, got %q", tc.id, prompt)
+		}
+		if strings.Contains(prompt, "curl") || strings.Contains(prompt, "Invoke-RestMethod") {
+			t.Fatalf("expected prompt %s to avoid shell api calls, got %q", tc.id, prompt)
 		}
 	}
 }
@@ -101,7 +89,7 @@ func TestBuiltinA2ATaskOrchestrator_UsesInjectedIndexFirst(t *testing.T) {
 	if !strings.Contains(prompt, "系统已注入的“已启用 A2A Agent 索引”") {
 		t.Fatalf("expected injected-index first hint, got %q", prompt)
 	}
-	if !strings.Contains(prompt, "/api/a2a/agents/read?id=<agent_id>") {
+	if !strings.Contains(prompt, "context__read(resource=\"a2a\", action=\"read\", id=\"<agent_id>\")") {
 		t.Fatalf("expected detail-read hint, got %q", prompt)
 	}
 	if !strings.Contains(prompt, "仅在用户明确要求刷新列表或执行前需要一致性校验时") {
@@ -113,7 +101,7 @@ func TestBuiltinA2ATaskOrchestrator_UsesInjectedIndexFirst(t *testing.T) {
 	if !strings.Contains(prompt, "禁止出现“调用 <agent_id>”") {
 		t.Fatalf("expected no-dispatch wording for agent_input, got %q", prompt)
 	}
-	if strings.Contains(prompt, "步骤 1：先读索引：curl -sS http://127.0.0.1:9080/api/a2a/agents") {
+	if strings.Contains(prompt, "curl -sS") {
 		t.Fatalf("expected no mandatory list-read first step, got %q", prompt)
 	}
 }

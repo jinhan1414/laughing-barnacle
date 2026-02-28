@@ -50,23 +50,25 @@ type A2AProvider interface {
 }
 
 const (
-	maxInjectedSkillPrompts    = 4
-	maxSingleSkillPromptRunes  = 220
-	minInjectedSkillScore      = 3
-	maxSkillFocusUserMessages  = 3
-	maxScheduledRecentMessages = 20
-	builtinLinuxBashToolName   = "linux__bash"
-	defaultBashTimeoutSeconds  = 20
-	maxBashStdoutRunes         = 4000
-	maxBashStderrRunes         = 2000
-	maxGreetingRecentMessages  = 8
-	maxGreetingTaskStatuses    = 5
-	maxSummaryForRequestRunes  = 1400
-	maxContextMessageRunes     = 900
-	maxRecentContextRunes      = 4200
-	maxReplayHistoryToolCalls  = 2
-	maxAssistantReplyRunes     = 2200
-	runtimeDateContextMarker   = "[[RUNTIME_DATE_CONTEXT]]"
+	maxInjectedSkillPrompts         = 4
+	maxSingleSkillPromptRunes       = 220
+	minInjectedSkillScore           = 3
+	maxSkillFocusUserMessages       = 3
+	maxScheduledRecentMessages      = 20
+	builtinLinuxBashToolName        = "linux__bash"
+	builtinContextReadToolName      = "context__read"
+	builtinMaintenanceWriteToolName = "maintenance__write"
+	defaultBashTimeoutSeconds       = 20
+	maxBashStdoutRunes              = 4000
+	maxBashStderrRunes              = 2000
+	maxGreetingRecentMessages       = 8
+	maxGreetingTaskStatuses         = 5
+	maxSummaryForRequestRunes       = 1400
+	maxContextMessageRunes          = 900
+	maxRecentContextRunes           = 4200
+	maxReplayHistoryToolCalls       = 2
+	maxAssistantReplyRunes          = 2200
+	runtimeDateContextMarker        = "[[RUNTIME_DATE_CONTEXT]]"
 )
 
 var (

@@ -117,7 +117,7 @@ func TestHandleUserMessage_MemoryIndexInjectionIncludesReadHint(t *testing.T) {
 	if strings.TrimSpace(content) == "" {
 		t.Fatalf("expected injected memory index message")
 	}
-	if !strings.Contains(content, "/api/memory/read?path=<path>") {
+	if !strings.Contains(content, "context__read(resource=\"memory\", action=\"read\", path=\"<path>\")") {
 		t.Fatalf("expected memory read hint, got %q", content)
 	}
 	if !strings.Contains(content, "path=/projects/pay-refactor/overview") {

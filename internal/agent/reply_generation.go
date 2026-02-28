@@ -11,15 +11,17 @@ import (
 func (a *Agent) generateReply(ctx context.Context, messages []conversation.Message) (string, []conversation.ToolCall, *conversation.TokenUsage, error) {
 	summary, _ := a.store.Snapshot()
 	systemPrompt, _ := a.resolvePromptsLocked()
-	localAPIBaseURL := a.localAPIBaseURL()
 
 	requestMessages := make([]llm.Message, 0, 2+len(messages))
 	requestMessages = append(requestMessages, llm.Message{
 		Role:    "system",
 		Content: systemPrompt,
 	})
-	responseStylePrompt := "回答策略：默认简洁直答（3-6 行）。仅当用户明确要求“详细/方案/步骤/复盘/计划/总结”时再展开，避免无关模板、表格和冗长铺垫。"
-	builtinToolDefs := []llm.ToolDefinition{linuxBashToolDefinition()}
+	builtinToolDefs := []llm.ToolDefinition{
+		linuxBashToolDefinition(),
+		contextReadToolDefinition(),
+		maintenanceWriteToolDefinition(),
+	}
 	if a.asyncTasks != nil {
 		builtinToolDefs = append(builtinToolDefs, asyncTaskBuiltinToolDefinitions()...)
 	}
@@ -32,7 +34,7 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 		if len(allSkillIndex) > 0 {
 			var b strings.Builder
 			b.WriteString(fmt.Sprintf("已启用技能索引（渐进式披露）：共 %d 条。\n", len(allSkillIndex)))
-			b.WriteString(fmt.Sprintf("如需技能详情，仅在必要时通过 linux__bash 执行：curl -s \"%s/api/skills/read?id=<skill_id>\"。\n", localAPIBaseURL))
+			b.WriteString("如需技能详情，仅在必要时调用：context__read(resource=\"skills\", action=\"read\", id=\"<skill_id>\")。\n")
 			b.WriteString("Skill 调用规则：每轮先按用户请求语义判断是否命中某个 skill_id；一旦命中，无需用户点名，先读取该 skill 详情再执行。\n")
 			b.WriteString("为节省上下文，单轮默认只读取 1 个最相关技能；若仍不足，再按需补充读取。\n")
 			b.WriteString("若未命中或技能不适用，再按普通问答流程回复。\n")
@@ -61,8 +63,8 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 			var b strings.Builder
 			b.WriteString(fmt.Sprintf("MemoryFS 记忆索引（渐进式披露）：共 %d 条。\n", len(memoryIndex)))
 			b.WriteString("读取规则：先读索引，再按需读取文件摘要和分节，禁止一次性拉取全文。\n")
-			b.WriteString(fmt.Sprintf("按需读取：curl -s \"%s/api/memory/read?path=<path>\"。\n", localAPIBaseURL))
-			b.WriteString(fmt.Sprintf("按需分节：curl -s \"%s/api/memory/section?path=<path>&section_id=<id>\"。\n", localAPIBaseURL))
+			b.WriteString("按需读取：context__read(resource=\"memory\", action=\"read\", path=\"<path>\")。\n")
+			b.WriteString("按需分节：context__read(resource=\"memory\", action=\"section\", path=\"<path>\", section_id=\"<id>\")。\n")
 			for i, line := range memoryIndex {
 				line = trimRunes(strings.TrimSpace(line), maxSingleSkillPromptRunes)
 				if line == "" {
@@ -85,8 +87,8 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 			var b strings.Builder
 			b.WriteString(fmt.Sprintf("A2A 已接入 Agent 索引（渐进式披露）：共 %d 条。\n", len(a2aIndex)))
 			b.WriteString("读取规则：本索引是本轮固定上下文主来源，先基于索引选择 agent_id；禁止一次性拉取全部 AgentCard 正文。\n")
-			b.WriteString(fmt.Sprintf("按需读取详情：curl -s \"%s/api/a2a/agents/read?id=<agent_id>\"。\n", localAPIBaseURL))
-			b.WriteString(fmt.Sprintf("仅在明确需要刷新列表或执行前做一致性校验时，才读取列表：curl -s \"%s/api/a2a/agents\"。\n", localAPIBaseURL))
+			b.WriteString("按需读取详情：context__read(resource=\"a2a\", action=\"read\", id=\"<agent_id>\")。\n")
+			b.WriteString("仅在明确需要刷新列表或执行前做一致性校验时，才读取列表：context__read(resource=\"a2a\", action=\"list\")。\n")
 			b.WriteString("单轮默认只读取 1 个最相关 Agent 详情；若仍不足，再按需补读。\n")
 			for i, line := range a2aIndex {
 				line = trimRunes(strings.TrimSpace(line), maxSingleSkillPromptRunes)
@@ -111,7 +113,7 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 			b.WriteString(fmt.Sprintf("后台任务索引（固定注入，当天+运行中）：共 %d 条。\n", len(asyncIndex)))
 			b.WriteString("执行规则：任务发起统一使用 async_task__submit；查询与取消使用 async_task__get/cancel。\n")
 			b.WriteString("参数约束：submit 必填 task_type,request；task_type=a2a 时必须提供 agent_id,agent_input。\n")
-			b.WriteString("详情读取规则：默认不带日志；仅在必要时通过 async_task__get(include_logs=true, log_cursor, log_limit<=200) 按需读取。\n")
+			b.WriteString("详情读取规则：默认通过 context__read(resource=\"async\", action=\"get\", task_id=\"<task_id>\") 读取；仅在必要时附加 include_logs/log_cursor/log_limit。\n")
 			for i, line := range asyncIndex {
 				line = trimRunes(strings.TrimSpace(line), maxSingleSkillPromptRunes)
 				if line == "" {
@@ -128,10 +130,6 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 			}
 		}
 	}
-	requestMessages = append(requestMessages, llm.Message{
-		Role:    "system",
-		Content: responseStylePrompt,
-	})
 	runtimePrompt := strings.TrimSpace(a.buildToolRuntimePrompt())
 	if runtimePrompt != "" {
 		requestMessages = append(requestMessages, llm.Message{
@@ -146,7 +144,7 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 			Content: currentDateContextPrompt,
 		})
 	}
-	summary = pruneSummaryOverlap(summary, systemPrompt, skillIndexPrompt, memoryIndexPrompt, a2aIndexPrompt, asyncTaskIndexPrompt, responseStylePrompt, runtimePrompt)
+	summary = pruneSummaryOverlap(summary, systemPrompt, skillIndexPrompt, memoryIndexPrompt, a2aIndexPrompt, asyncTaskIndexPrompt, runtimePrompt)
 	if strings.TrimSpace(summary) != "" {
 		requestMessages = append(requestMessages, llm.Message{
 			Role:    "system",
