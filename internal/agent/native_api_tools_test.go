@@ -75,7 +75,7 @@ func TestCallMaintenanceWrite_ValidatesRequiredPayload(t *testing.T) {
 		CompressionSystemPrompt:    "compressor",
 	}, conversation.NewStore(), &mockLLM{}, nil)
 
-	_, err := agentSvc.callMaintenanceWrite(context.Background(), `{"resource":"schedules","operation":"save","payload":{"id":"daily"}}`)
+	_, err := agentSvc.callMaintenanceWrite(context.Background(), `{"resource":"schedules","action":"save","payload":{"id":"daily"}}`)
 	if err == nil || !strings.Contains(err.Error(), "payload field") {
 		t.Fatalf("expected required field validation error, got %v", err)
 	}
@@ -111,7 +111,7 @@ func TestCallMaintenanceWrite_SavesSchedule(t *testing.T) {
 		CompressionSystemPrompt:    "compressor",
 	}, conversation.NewStore(), &mockLLM{}, nil)
 
-	out, err := agentSvc.callMaintenanceWrite(context.Background(), `{"resource":"schedules","operation":"save","payload":{"id":"daily-task","name":"daily","description":"desc","action":"skill:daily","cron_expr":"30 8 * * *","enabled":true}}`)
+	out, err := agentSvc.callMaintenanceWrite(context.Background(), `{"resource":"schedules","action":"save","payload":{"id":"daily-task","name":"daily","description":"desc","action":"skill:daily","cron_expr":"30 8 * * *","enabled":true}}`)
 	if err != nil {
 		t.Fatalf("callMaintenanceWrite error: %v", err)
 	}

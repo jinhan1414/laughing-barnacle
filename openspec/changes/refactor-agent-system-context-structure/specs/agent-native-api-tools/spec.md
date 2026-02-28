@@ -24,11 +24,11 @@
 系统 MUST 将 `maintenance__write` 限定为维护写入能力，并通过结构化参数映射到既有 JSON 维护接口。
 
 #### Scenario: Save schedule through maintenance__write
-- **WHEN** 模型调用 `maintenance__write` 且 `resource=schedules`、`operation=save`、`payload` 合法
+- **WHEN** 模型调用 `maintenance__write` 且 `resource=schedules`、`action=save`、`payload` 合法
 - **THEN** 系统执行对应维护写入并返回结构化结果
 - **AND** 写入请求采用 `Content-Type: application/json`
 
-#### Scenario: Enforce required fields by resource and operation
+#### Scenario: Enforce required fields by resource and action
 - **WHEN** `maintenance__write` 收到缺失必填字段的 payload
 - **THEN** 系统返回显式校验错误
 - **AND** 不执行写入

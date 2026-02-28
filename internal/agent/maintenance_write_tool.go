@@ -17,11 +17,11 @@ func maintenanceWriteToolDefinition() llm.ToolDefinition {
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"resource":  map[string]any{"type": "string", "enum": []string{"mcp", "skills", "schedules", "a2a"}},
-					"operation": map[string]any{"type": "string", "enum": []string{"save", "toggle", "delete", "run", "install"}},
-					"payload":   map[string]any{"type": "object"},
+					"resource": map[string]any{"type": "string", "enum": []string{"mcp", "skills", "schedules", "a2a"}},
+					"action":   map[string]any{"type": "string", "enum": []string{"save", "toggle", "delete", "run", "install"}},
+					"payload":  map[string]any{"type": "object"},
 				},
-				"required":             []string{"resource", "operation", "payload"},
+				"required":             []string{"resource", "action", "payload"},
 				"additionalProperties": false,
 			},
 		},
@@ -34,53 +34,53 @@ func (a *Agent) callMaintenanceWrite(ctx context.Context, raw string) (string, e
 		return "", err
 	}
 	resource := strings.ToLower(requireStringArgument(args, "resource"))
-	operation := strings.ToLower(requireStringArgument(args, "operation"))
+	action := strings.ToLower(requireStringArgument(args, "action"))
 	payload := readObjectArgument(args, "payload")
-	if resource == "" || operation == "" {
-		return "", fmt.Errorf("resource and operation are required")
+	if resource == "" || action == "" {
+		return "", fmt.Errorf("resource and action are required")
 	}
 	if len(payload) == 0 {
 		return "", fmt.Errorf("payload is required")
 	}
 
-	path, err := resolveMaintenanceWritePath(resource, operation)
+	path, err := resolveMaintenanceWritePath(resource, action)
 	if err != nil {
 		return "", err
 	}
-	if err := validateMaintenanceWritePayload(resource, operation, payload); err != nil {
+	if err := validateMaintenanceWritePayload(resource, action, payload); err != nil {
 		return "", err
 	}
 	return a.doLocalAPIRequest(ctx, "POST", path, nil, payload)
 }
 
-func resolveMaintenanceWritePath(resource string, operation string) (string, error) {
+func resolveMaintenanceWritePath(resource string, action string) (string, error) {
 	switch resource {
 	case "mcp":
-		switch operation {
+		switch action {
 		case "save", "toggle", "delete":
-			return "/api/mcp/services/" + operation, nil
+			return "/api/mcp/services/" + action, nil
 		}
 	case "skills":
-		switch operation {
+		switch action {
 		case "save", "toggle", "delete", "install":
-			return "/api/skills/" + operation, nil
+			return "/api/skills/" + action, nil
 		}
 	case "schedules":
-		switch operation {
+		switch action {
 		case "save", "toggle", "delete", "run":
-			return "/api/schedules/" + operation, nil
+			return "/api/schedules/" + action, nil
 		}
 	case "a2a":
-		switch operation {
+		switch action {
 		case "save", "toggle", "delete":
-			return "/api/a2a/agents/" + operation, nil
+			return "/api/a2a/agents/" + action, nil
 		}
 	}
-	return "", fmt.Errorf("unsupported operation %q for resource %q", operation, resource)
+	return "", fmt.Errorf("unsupported action %q for resource %q", action, resource)
 }
 
-func validateMaintenanceWritePayload(resource string, operation string, payload map[string]any) error {
-	switch operation {
+func validateMaintenanceWritePayload(resource string, action string, payload map[string]any) error {
+	switch action {
 	case "toggle":
 		return requirePayloadFields(payload, "id", "enabled")
 	case "delete", "run":
@@ -93,7 +93,7 @@ func validateMaintenanceWritePayload(resource string, operation string, payload 
 	case "save":
 		return validateSavePayload(resource, payload)
 	default:
-		return fmt.Errorf("unsupported operation %q", operation)
+		return fmt.Errorf("unsupported action %q", action)
 	}
 }
 

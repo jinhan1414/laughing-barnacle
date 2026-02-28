@@ -36,9 +36,9 @@ var builtinSkills = []Skill{
 				"硬性约束：本地 API 读写禁止走 bash；读取用 context__read，写入用 maintenance__write。\n" +
 				"步骤 1（必做）：先查现状：context__read(resource=\"mcp\", action=\"list\")。\n" +
 				"步骤 2（三选一，仅一次写入）：\n" +
-				"  a) 新增/更新 streamable_http：maintenance__write(resource=\"mcp\", operation=\"save\", payload={id,name,transport:\"streamable_http\",endpoint,enabled})。\n" +
-				"  b) 新增/更新 stdio：maintenance__write(resource=\"mcp\", operation=\"save\", payload={id,name,transport:\"stdio\",command,args,enabled})。\n" +
-				"  c) 启停/删除：maintenance__write(resource=\"mcp\", operation=\"toggle|delete\", payload={id,enabled?})。\n" +
+				"  a) 新增/更新 streamable_http：maintenance__write(resource=\"mcp\", action=\"save\", payload={id,name,transport:\"streamable_http\",endpoint,enabled})。\n" +
+				"  b) 新增/更新 stdio：maintenance__write(resource=\"mcp\", action=\"save\", payload={id,name,transport:\"stdio\",command,args,enabled})。\n" +
+				"  c) 启停/删除：maintenance__write(resource=\"mcp\", action=\"toggle|delete\", payload={id,enabled?})。\n" +
 				"步骤 3（必做）：回读校验：context__read(resource=\"mcp\", action=\"list\")，并仅基于回读结果汇报 diff。\n" +
 				"默认自主闭环：目标明确时直接完成，不要求用户二次确认；仅在关键参数缺失、权限不足或删除对象歧义时追问。",
 		),
@@ -54,9 +54,9 @@ var builtinSkills = []Skill{
 				"硬性约束：本地 API 读写禁止走 bash；读取用 context__read，写入用 maintenance__write。\n" +
 				"步骤 1（必做）：先查现状：context__read(resource=\"a2a\", action=\"list\")。\n" +
 				"步骤 2（按需执行一个写分支）：\n" +
-				"  a) 新增/更新：maintenance__write(resource=\"a2a\", operation=\"save\", payload={id,name,description,endpoint,agent_card_url,auth_token,enabled})。\n" +
-				"  b) 启停：maintenance__write(resource=\"a2a\", operation=\"toggle\", payload={id,enabled})。\n" +
-				"  c) 删除：maintenance__write(resource=\"a2a\", operation=\"delete\", payload={id})。\n" +
+				"  a) 新增/更新：maintenance__write(resource=\"a2a\", action=\"save\", payload={id,name,description,endpoint,agent_card_url,auth_token,enabled})。\n" +
+				"  b) 启停：maintenance__write(resource=\"a2a\", action=\"toggle\", payload={id,enabled})。\n" +
+				"  c) 删除：maintenance__write(resource=\"a2a\", action=\"delete\", payload={id})。\n" +
 				"步骤 3（必做）：回读校验：context__read(resource=\"a2a\", action=\"list\")；必要时再读详情：context__read(resource=\"a2a\", action=\"read\", id=\"<agent_id>\")。\n" +
 				"默认自主闭环：目标明确时直接执行；仅在 endpoint/card_url 缺失、删除对象歧义或鉴权信息缺失时追问。",
 		),
@@ -111,9 +111,9 @@ var builtinSkills = []Skill{
 				"硬性约束：本地 API 读写禁止走 bash；读取用 context__read，写入用 maintenance__write。\n" +
 				"步骤 1（必做）：先查现状：context__read(resource=\"skills\", action=\"list\")。\n" +
 				"步骤 2（按需执行一个写分支）：\n" +
-				"  a) skills.sh 安装：maintenance__write(resource=\"skills\", operation=\"install\", payload={skills_sh_url})。\n" +
-				"  b) 手动新增/更新：maintenance__write(resource=\"skills\", operation=\"save\", payload={id,name,description,prompt,enabled})。\n" +
-				"  c) 启停/删除：maintenance__write(resource=\"skills\", operation=\"toggle|delete\", payload={id,enabled?})。\n" +
+				"  a) skills.sh 安装：maintenance__write(resource=\"skills\", action=\"install\", payload={skills_sh_url})。\n" +
+				"  b) 手动新增/更新：maintenance__write(resource=\"skills\", action=\"save\", payload={id,name,description,prompt,enabled})。\n" +
+				"  c) 启停/删除：maintenance__write(resource=\"skills\", action=\"toggle|delete\", payload={id,enabled?})。\n" +
 				"步骤 3（必做）：回读校验：context__read(resource=\"skills\", action=\"list\")，并仅基于回读结果汇报 diff 与启用状态。\n" +
 				"默认自主闭环：目标明确时直接执行；仅在重名冲突、删除对象不唯一或关键信息缺失时追问。",
 		),
@@ -126,19 +126,19 @@ var builtinSkills = []Skill{
 		Description: "当用户要求查看/修改 Cron 定时任务时使用",
 		Prompt: strings.TrimSpace(
 			"目标：以最少工具调用完成定时任务配置并可验证，默认预算 3-4 次调用。\n" +
-				"写入字段硬约束：maintenance__write(resource=\"schedules\", operation=\"save\") 的 payload 仅接受 id,name,description,action=skill:<skill_id>,cron_expr,enabled；禁止 cron/prompt/action=reminder。\n" +
+				"写入字段硬约束：maintenance__write(resource=\"schedules\", action=\"save\") 的 payload 仅接受 id,name,description,action=skill:<skill_id>,cron_expr,enabled；禁止 cron/prompt/action=reminder。\n" +
 				"硬性约束：本地 API 读写禁止走 bash；读取用 context__read，写入用 maintenance__write。\n" +
-				"硬性约束：创建/更新 Skill 固定使用 maintenance__write(resource=\"skills\", operation=\"save\")。\n" +
+				"硬性约束：创建/更新 Skill 固定使用 maintenance__write(resource=\"skills\", action=\"save\")。\n" +
 				"硬性约束：action 必须是 skill:<skill_id>；skill_id 仅允许 [a-zA-Z0-9_-]，必须使用普通连字符 '-'。\n" +
 				"硬性约束：用户提醒类任务（如打卡/会议/出行提醒）禁止绑定流程性内置 skill（project-memory-maintainer、context-archive-recall、mcp-config-maintainer、skills-config-maintainer、schedule-config-maintainer）。\n" +
 				"硬性约束：提醒类任务必须先创建或复用专用 reminder skill（例如 punch-card-reminder），再用 action=skill:<reminder_skill_id> 绑定。\n" +
 				"硬性约束：定时任务列表固定使用 context__read(resource=\"schedules\", action=\"list\")。\n" +
 				"步骤 1（必做）：先查技能：context__read(resource=\"skills\", action=\"list\")；仅在需要更新已有任务时再查一次 context__read(resource=\"schedules\", action=\"list\")。\n" +
 				"步骤 2（按分支执行一次写入）：\n" +
-				"  a) skill 不存在：先创建 skill：maintenance__write(resource=\"skills\", operation=\"save\", payload={id,name,description,prompt,enabled})。\n" +
-				"  b) skill 已存在但禁用：先启用：maintenance__write(resource=\"skills\", operation=\"toggle\", payload={id,enabled:true})。\n" +
-				"  c) 保存任务：maintenance__write(resource=\"schedules\", operation=\"save\", payload={id,name,description,action,cron_expr,enabled})。\n" +
-				"  d) 立即执行（仅用户明确要求时）：maintenance__write(resource=\"schedules\", operation=\"run\", payload={id})。\n" +
+				"  a) skill 不存在：先创建 skill：maintenance__write(resource=\"skills\", action=\"save\", payload={id,name,description,prompt,enabled})。\n" +
+				"  b) skill 已存在但禁用：先启用：maintenance__write(resource=\"skills\", action=\"toggle\", payload={id,enabled:true})。\n" +
+				"  c) 保存任务：maintenance__write(resource=\"schedules\", action=\"save\", payload={id,name,description,action,cron_expr,enabled})。\n" +
+				"  d) 立即执行（仅用户明确要求时）：maintenance__write(resource=\"schedules\", action=\"run\", payload={id})。\n" +
 				"步骤 3（必做）：回读一次：context__read(resource=\"schedules\", action=\"list\")；仅基于回读结果汇报是否生效。\n" +
 				"失败处理约束：若接口调用失败，只允许重试同一 API 或先查 /healthz；禁止改为目录扫描、系统全盘搜索或 Linux 命令探测。\n" +
 				"禁止写入引用不存在或未启用 skill 的 action。\n" +

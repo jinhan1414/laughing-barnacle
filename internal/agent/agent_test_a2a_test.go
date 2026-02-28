@@ -41,7 +41,7 @@ func TestHandleUserMessage_IncludesA2AIndexProgressiveDisclosure(t *testing.T) {
 
 	content := ""
 	for _, msg := range fakeLLM.calls[0].Messages {
-		if msg.Role == "system" && strings.Contains(msg.Content, "A2A 已接入 Agent 索引（渐进式披露）") {
+		if msg.Role == "system" && strings.Contains(msg.Content, "A2A Agents 索引 (共") {
 			content = msg.Content
 			break
 		}

@@ -52,7 +52,7 @@ func TestHandleUserMessage_IncludesSkillIndexForProgressiveDisclosure(t *testing
 	}
 	content := ""
 	for _, msg := range msgs {
-		if msg.Role == "system" && strings.Contains(msg.Content, "已启用技能索引（渐进式披露）") {
+		if msg.Role == "system" && strings.Contains(msg.Content, "Skills 索引 (共") {
 			content = msg.Content
 			break
 		}

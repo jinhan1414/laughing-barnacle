@@ -41,7 +41,6 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 			}
 			resourceSection++
 			b.WriteString(fmt.Sprintf("## %d. Skills 索引 (共 %d 条)\n", resourceSection, len(allSkillIndex)))
-			b.WriteString(fmt.Sprintf("已启用技能索引（渐进式披露）：共 %d 条。\n", len(allSkillIndex)))
 			b.WriteString("如需技能详情，仅在必要时调用：context__read(resource=\"skills\", action=\"read\", id=\"<skill_id>\")。\n")
 			b.WriteString("Skill 调用规则：每轮先按用户请求语义判断是否命中某个 skill_id；一旦命中，无需用户点名，先读取该 skill 详情再执行。\n")
 			b.WriteString("为节省上下文，单轮默认只读取 1 个最相关技能；若仍不足，再按需补充读取。\n")
@@ -105,7 +104,6 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 			}
 			resourceSection++
 			b.WriteString(fmt.Sprintf("## %d. A2A Agents 索引 (共 %d 条)\n", resourceSection, len(a2aIndex)))
-			b.WriteString(fmt.Sprintf("A2A 已接入 Agent 索引（渐进式披露）：共 %d 条。\n", len(a2aIndex)))
 			b.WriteString("读取规则：本索引是本轮固定上下文主来源，先基于索引选择 agent_id；禁止一次性拉取全部 AgentCard 正文。\n")
 			b.WriteString("按需读取详情：context__read(resource=\"a2a\", action=\"read\", id=\"<agent_id>\")。\n")
 			b.WriteString("仅在明确需要刷新列表或执行前做一致性校验时，才读取列表：context__read(resource=\"a2a\", action=\"list\")。\n")

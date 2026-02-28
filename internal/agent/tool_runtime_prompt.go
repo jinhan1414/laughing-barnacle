@@ -24,7 +24,7 @@ func (a *Agent) buildToolRuntimePrompt() string {
 				"context__read 白名单：mcp(list)、skills(list/read)、schedules(list)、a2a(list/read)、memory(index/read/section)、async(list/get)。\n" +
 				"maintenance__write 白名单：mcp(save/toggle/delete)、skills(save/toggle/delete/install)、schedules(save/toggle/delete/run)、a2a(save/toggle/delete)。\n" +
 				"定时任务列表统一使用 context__read(resource=\"schedules\", action=\"list\")。\n" +
-				"调用 maintenance__write(resource=\"schedules\", operation=\"save\") 时，payload 必填字段固定为：id,name,description,action=skill:<skill_id>,cron_expr,enabled（禁止使用 cron/prompt/action=reminder）。\n" +
+				"调用 maintenance__write(resource=\"schedules\", action=\"save\") 时，payload 必填字段固定为：id,name,description,action=skill:<skill_id>,cron_expr,enabled（禁止使用 cron/prompt/action=reminder）。\n" +
 				"A2A 任务执行入口固定为 async_task__submit(task_type=a2a)，查询/取消使用 async_task__get/cancel；禁止使用 a2a__send/get/cancel。\n" +
 				executionConsistencyPrompt,
 		)
@@ -40,7 +40,7 @@ func (a *Agent) buildToolRuntimePrompt() string {
 				"context__read 白名单：mcp(list)、skills(list/read)、schedules(list)、a2a(list/read)、memory(index/read/section)、async(list/get)。\n" +
 				"maintenance__write 白名单：mcp(save/toggle/delete)、skills(save/toggle/delete/install)、schedules(save/toggle/delete/run)、a2a(save/toggle/delete)。\n" +
 				"定时任务列表统一使用 context__read(resource=\"schedules\", action=\"list\")。\n" +
-				"调用 maintenance__write(resource=\"schedules\", operation=\"save\") 时，payload 必填字段固定为：id,name,description,action=skill:<skill_id>,cron_expr,enabled（禁止使用 cron/prompt/action=reminder）。\n" +
+				"调用 maintenance__write(resource=\"schedules\", action=\"save\") 时，payload 必填字段固定为：id,name,description,action=skill:<skill_id>,cron_expr,enabled（禁止使用 cron/prompt/action=reminder）。\n" +
 				"A2A 任务执行入口固定为 async_task__submit(task_type=a2a)，查询/取消使用 async_task__get/cancel；禁止使用 a2a__send/get/cancel。\n" +
 				executionConsistencyPrompt,
 		)
@@ -54,7 +54,7 @@ func (a *Agent) buildToolRuntimePrompt() string {
 				"context__read 白名单：mcp(list)、skills(list/read)、schedules(list)、a2a(list/read)、memory(index/read/section)、async(list/get)。\n" +
 				"maintenance__write 白名单：mcp(save/toggle/delete)、skills(save/toggle/delete/install)、schedules(save/toggle/delete/run)、a2a(save/toggle/delete)。\n" +
 				"定时任务列表统一使用 context__read(resource=\"schedules\", action=\"list\")。\n" +
-				"调用 maintenance__write(resource=\"schedules\", operation=\"save\") 时，payload 必填字段固定为：id,name,description,action=skill:<skill_id>,cron_expr,enabled（禁止使用 cron/prompt/action=reminder）。\n" +
+				"调用 maintenance__write(resource=\"schedules\", action=\"save\") 时，payload 必填字段固定为：id,name,description,action=skill:<skill_id>,cron_expr,enabled（禁止使用 cron/prompt/action=reminder）。\n" +
 				"A2A 任务执行入口固定为 async_task__submit(task_type=a2a)，查询/取消使用 async_task__get/cancel；禁止使用 a2a__send/get/cancel。\n" +
 				executionConsistencyPrompt,
 		)
@@ -66,7 +66,7 @@ func (a *Agent) buildToolRuntimePrompt() string {
 				"context__read 白名单：mcp(list)、skills(list/read)、schedules(list)、a2a(list/read)、memory(index/read/section)、async(list/get)；" +
 				"maintenance__write 白名单：mcp(save/toggle/delete)、skills(save/toggle/delete/install)、schedules(save/toggle/delete/run)、a2a(save/toggle/delete)；" +
 				"定时任务列表统一使用 context__read(resource=\"schedules\", action=\"list\")；" +
-				"maintenance__write(resource=\"schedules\", operation=\"save\") 必填 id,name,description,action=skill:<skill_id>,cron_expr,enabled；" +
+				"maintenance__write(resource=\"schedules\", action=\"save\") 必填 id,name,description,action=skill:<skill_id>,cron_expr,enabled；" +
 				"A2A 执行入口固定为 async_task__submit(task_type=a2a)，查询/取消使用 async_task__get/cancel，禁止 a2a__send|get|cancel。\n" +
 				executionConsistencyPrompt,
 		)
