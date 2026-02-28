@@ -32,7 +32,7 @@ def build_effective_prompt(user_prompt: str) -> str:
     return DEFAULT_EXECUTION_PREFIX + "\n\n用户任务：\n" + prompt
 
 
-def build_codex_exec_command(codex_bin: str, workdir: Path, prompt: str) -> list[str]:
+def build_codex_exec_command(codex_bin: str, workdir: Path) -> list[str]:
     return [
         codex_bin,
         "exec",
@@ -41,7 +41,7 @@ def build_codex_exec_command(codex_bin: str, workdir: Path, prompt: str) -> list
         "--json",
         "-C",
         str(workdir),
-        prompt,
+        "-",
     ]
 
 

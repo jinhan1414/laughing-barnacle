@@ -87,10 +87,11 @@ class CodexAgentExecutor(AgentExecutor):
         task_workdir: Path,
     ) -> None:
         events_file = self.output_dir / f"{task_id}.events.jsonl"
-        cmd = build_codex_exec_command(self.codex_bin, task_workdir, prompt)
+        cmd = build_codex_exec_command(self.codex_bin, task_workdir)
         try:
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
+                stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -100,7 +101,7 @@ class CodexAgentExecutor(AgentExecutor):
 
         await self._set_process(task_id, proc)
         try:
-            stdout, stderr = await proc.communicate()
+            stdout, stderr = await proc.communicate(input=prompt.encode("utf-8"))
         except asyncio.CancelledError:
             await terminate_process(proc)
             raise

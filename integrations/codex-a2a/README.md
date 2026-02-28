@@ -50,6 +50,7 @@ Agent Card 包含：
 
 - 默认注入最小执行前缀（仅约束“持续执行到可交付结果、失败显式暴露”，不约束业务输出结构）
 - 默认使用高权限执行参数：`codex exec --dangerously-bypass-approvals-and-sandbox --json`
+- prompt 通过 stdin 传入（`codex exec ... -`），避免 Windows `.cmd` 参数换行截断
 - 完成判定基于事件流终态证据（`turn.completed` + 最终 `agent_message`）
 - 仅进程退出码为 0 不足以判定完成；缺失终态证据会显式失败
 

@@ -24,11 +24,11 @@ class CodexExecRuntimeTests(unittest.TestCase):
         self.assertIn("请分析仓库", prompt)
 
     def test_build_codex_exec_command_uses_high_privilege_json_mode(self) -> None:
-        command = build_codex_exec_command("codex", Path("E:/repo"), "do it")
+        command = build_codex_exec_command("codex", Path("E:/repo"))
         self.assertIn("--dangerously-bypass-approvals-and-sandbox", command)
         self.assertIn("--json", command)
         self.assertIn("-C", command)
-        self.assertEqual("do it", command[-1])
+        self.assertEqual("-", command[-1])
 
     def test_resolve_task_workdir_uses_default_when_metadata_missing(self) -> None:
         with TemporaryDirectory() as tmp:
