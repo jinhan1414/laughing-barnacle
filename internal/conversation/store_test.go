@@ -1,9 +1,13 @@
 package conversation
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	bolt "go.etcd.io/bbolt"
 )
 
 func TestStoreWithFile_PersistsSummaryMessagesAndToolCalls(t *testing.T) {
@@ -79,6 +83,7 @@ func TestStoreAppendAssistantUsage_PersistsAndReloads(t *testing.T) {
 		PromptTokens:     120,
 		CompletionTokens: 30,
 		TotalTokens:      150,
+		CachedTokens:     90,
 	})
 
 	_, messages := store.Snapshot()
@@ -90,6 +95,9 @@ func TestStoreAppendAssistantUsage_PersistsAndReloads(t *testing.T) {
 	}
 	if messages[1].Usage.TotalTokens != 150 {
 		t.Fatalf("unexpected usage total: %+v", messages[1].Usage)
+	}
+	if messages[1].Usage.CachedTokens != 90 {
+		t.Fatalf("unexpected usage cached: %+v", messages[1].Usage)
 	}
 
 	_ = store.Close()
@@ -105,6 +113,9 @@ func TestStoreAppendAssistantUsage_PersistsAndReloads(t *testing.T) {
 	}
 	if reloadedMessages[1].Usage == nil || reloadedMessages[1].Usage.TotalTokens != 150 {
 		t.Fatalf("unexpected reloaded usage: %+v", reloadedMessages[1].Usage)
+	}
+	if reloadedMessages[1].Usage.CachedTokens != 90 {
+		t.Fatalf("unexpected reloaded cached usage: %+v", reloadedMessages[1].Usage)
 	}
 }
 
@@ -182,6 +193,93 @@ func TestSetSummaryAndTrim_CreatesArchiveAndSectionLookup(t *testing.T) {
 	}
 	if strings.TrimSpace(section.Content) == "" {
 		t.Fatalf("expected non-empty section content")
+	}
+}
+
+func TestReadArchiveSection_PreservesFullReplayContentForNewArchive(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "conversation.db")
+	store, err := NewStoreWithFile(path)
+	if err != nil {
+		t.Fatalf("NewStoreWithFile error: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	longUserMessage := strings.Repeat("A", 320) + " 完整历史尾巴"
+	store.Append("user", longUserMessage)
+	store.Append("assistant", "收到，我先记录完整上下文")
+	store.Append("user", "继续推进")
+	store.Append("assistant", "好的")
+	store.SetSummaryAndTrim("压缩摘要", 0)
+
+	summary, _, _ := store.SnapshotWithEvents()
+	_, refs := splitSummaryArchiveRefs(summary)
+	if len(refs) == 0 {
+		t.Fatalf("expected archive refs in summary, got %q", summary)
+	}
+
+	section, err := store.ReadArchiveSection(refs[0].ID, "S1")
+	if err != nil {
+		t.Fatalf("ReadArchiveSection error: %v", err)
+	}
+	if section.LegacyIncomplete {
+		t.Fatalf("new archive section should not be marked legacy incomplete")
+	}
+	if len(section.Messages) == 0 {
+		t.Fatalf("expected replay messages in archive section")
+	}
+	if section.Messages[0].Content != longUserMessage {
+		t.Fatalf("expected full replay message, got %q", section.Messages[0].Content)
+	}
+	if !strings.Contains(section.Content, longUserMessage) {
+		t.Fatalf("expected rendered content contains full message, got %q", section.Content)
+	}
+}
+
+func TestReadArchiveSection_LegacyArchiveMarkedIncomplete(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "conversation.db")
+	store, err := NewStoreWithFile(path)
+	if err != nil {
+		t.Fatalf("NewStoreWithFile error: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	record := archiveRecord{
+		ID:                "arc-legacy-001",
+		CreatedAt:         time.Now().UTC(),
+		TrimmedMessageCnt: 2,
+		KeySummary:        []string{"[S1] 旧摘要"},
+		Sections: []archiveSectionItem{
+			{
+				ID:      "S1",
+				Title:   "旧归档",
+				Digest:  "旧摘要",
+				Content: "1. [user] 旧格式内容",
+			},
+		},
+	}
+	encoded, err := json.Marshal(record)
+	if err != nil {
+		t.Fatalf("marshal legacy archive error: %v", err)
+	}
+	if err := store.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bucketArchives))
+		return b.Put([]byte(record.ID), encoded)
+	}); err != nil {
+		t.Fatalf("write legacy archive error: %v", err)
+	}
+
+	section, err := store.ReadArchiveSection(record.ID, "S1")
+	if err != nil {
+		t.Fatalf("ReadArchiveSection error: %v", err)
+	}
+	if !section.LegacyIncomplete {
+		t.Fatalf("legacy archive section should be marked incomplete")
+	}
+	if len(section.Messages) != 0 {
+		t.Fatalf("legacy archive should not have replay messages, got %d", len(section.Messages))
+	}
+	if section.Content != "1. [user] 旧格式内容" {
+		t.Fatalf("unexpected legacy content: %q", section.Content)
 	}
 }
 

@@ -36,7 +36,7 @@
               <div class="rounded-2xl rounded-br-md bg-[#95ec69] px-3 py-2 text-[15px] leading-6 text-slate-900 shadow-[0_1px_1px_rgba(0,0,0,0.08)]">
                 <div class="js-chat-content whitespace-pre-wrap break-words transition-[max-height] duration-200">{{.Content}}</div>
                 <button type="button" class="js-chat-toggle mt-1 hidden text-[12px] font-medium text-emerald-700">展开</button>
-                <div class="mt-1 text-[11px] text-emerald-800/80">Tokens: {{if .Usage}}总 {{.Usage.TotalTokens}} | 输 {{.Usage.PromptTokens}} | 出 {{.Usage.CompletionTokens}}{{else}}-{{end}}</div>
+                <div class="mt-1 text-[11px] text-emerald-800/80">Tokens: {{if .Usage}}总 {{.Usage.TotalTokens}} | 输 {{.Usage.PromptTokens}} | 出 {{.Usage.CompletionTokens}} | 缓 {{.Usage.CachedTokens}}{{else}}-{{end}}</div>
               </div>
               {{if .ToolCalls}}
               <div class="mt-2 space-y-2">
@@ -64,7 +64,7 @@
             <div class="max-w-[78%] rounded-2xl rounded-bl-md border border-slate-200 bg-white px-3 py-2 text-[15px] leading-6 text-slate-900 shadow-[0_1px_1px_rgba(0,0,0,0.08)]">
               <div class="js-chat-content whitespace-pre-wrap break-words transition-[max-height] duration-200">{{.Content}}</div>
               <button type="button" class="js-chat-toggle mt-1 hidden text-[12px] font-medium text-slate-600">展开</button>
-              <div class="mt-1 text-[11px] text-slate-500">Tokens: {{if .Usage}}总 {{.Usage.TotalTokens}} | 输 {{.Usage.PromptTokens}} | 出 {{.Usage.CompletionTokens}}{{else}}-{{end}}</div>
+              <div class="mt-1 text-[11px] text-slate-500">Tokens: {{if .Usage}}总 {{.Usage.TotalTokens}} | 输 {{.Usage.PromptTokens}} | 出 {{.Usage.CompletionTokens}} | 缓 {{.Usage.CachedTokens}}{{else}}-{{end}}</div>
             </div>
           </article>
           {{else if eq .Kind "event"}}
@@ -81,6 +81,11 @@
       {{else}}
       <div class="mx-auto mt-3 w-fit rounded-full bg-slate-200 px-3 py-1 text-xs text-slate-600">还没有消息，输入你的第一句话</div>
       {{end}}
+
+      <section id="chat-archive-panel" class="mt-2 hidden rounded-xl border border-slate-200 bg-white/90 p-2 shadow-sm">
+        <div class="mb-2 text-[12px] font-medium text-slate-600">历史归档</div>
+        <div id="chat-archive-list" class="space-y-2"></div>
+      </section>
 
       {{if .Error}}
       <div class="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
@@ -265,8 +270,11 @@
       var toolPanel = document.getElementById("chat-tool-panel");
       var toolList = document.getElementById("chat-tool-list");
       var toolStatus = document.getElementById("chat-tool-status");
+      var archivePanel = document.getElementById("chat-archive-panel");
+      var archiveList = document.getElementById("chat-archive-list");
       var submitting = false;
       var toolRunning = false;
+      var archiveIndexLoading = false;
       var userInteracted = false;
       var toolStatusTimer = 0;
       var chatTools = [
@@ -327,6 +335,7 @@
         var total = parseInt(usage.total_tokens, 10);
         var prompt = parseInt(usage.prompt_tokens, 10);
         var completion = parseInt(usage.completion_tokens, 10);
+        var cached = parseInt(usage.cached_tokens, 10);
         if (isNaN(total) || total < 0) {
           total = 0;
         }
@@ -336,13 +345,16 @@
         if (isNaN(completion) || completion < 0) {
           completion = 0;
         }
+        if (isNaN(cached) || cached < 0) {
+          cached = 0;
+        }
         if (total === 0) {
           total = prompt + completion;
         }
-        if (total === 0 && prompt === 0 && completion === 0) {
+        if (total === 0 && prompt === 0 && completion === 0 && cached === 0) {
           return "Tokens: -";
         }
-        return "Tokens: 总 " + total + " | 输 " + prompt + " | 出 " + completion;
+        return "Tokens: 总 " + total + " | 输 " + prompt + " | 出 " + completion + " | 缓 " + cached;
       }
 
       function eventSummaryLabel(eventType) {
@@ -391,6 +403,140 @@
         container.appendChild(article);
         updateMessageCursor(createdAtUs, createdAtMs);
         container.scrollTop = container.scrollHeight;
+      }
+
+      function setArchivePanelVisible(visible) {
+        if (!archivePanel) {
+          return;
+        }
+        if (visible) {
+          archivePanel.classList.remove("hidden");
+        } else {
+          archivePanel.classList.add("hidden");
+        }
+      }
+
+      function createArchiveSectionNode(archiveID, section) {
+        var details = document.createElement("details");
+        details.className = "rounded-lg border border-slate-200 bg-slate-50 px-2 py-1";
+        details.setAttribute("data-loaded", "0");
+
+        var summary = document.createElement("summary");
+        summary.className = "cursor-pointer list-none text-[12px] font-medium text-slate-600";
+        var secTitle = (section && section.title) ? section.title : ((section && section.id) ? section.id : "片段");
+        var secDigest = (section && section.digest) ? section.digest : "";
+        summary.textContent = secTitle + (secDigest ? " · " + secDigest : "");
+
+        var body = document.createElement("pre");
+        body.className = "mt-1 whitespace-pre-wrap break-words rounded-md border border-slate-200 bg-white p-2 text-[11px] leading-5 text-slate-700";
+        body.textContent = "展开后加载...";
+
+        details.appendChild(summary);
+        details.appendChild(body);
+
+        details.addEventListener("toggle", function () {
+          if (!details.open || details.getAttribute("data-loaded") === "1") {
+            return;
+          }
+          body.textContent = "加载中...";
+          fetch("/api/chat/archive/section?archive_id=" + encodeURIComponent(archiveID) + "&section_id=" + encodeURIComponent((section && section.id) ? section.id : ""), {
+            method: "GET",
+            headers: { "Accept": "application/json" }
+          })
+            .then(function (resp) {
+              return resp.json().catch(function () {
+                return {};
+              }).then(function (payload) {
+                return { ok: resp.ok, payload: payload || {} };
+              });
+            })
+            .then(function (result) {
+              if (!result.ok) {
+                throw new Error(result.payload.error || "读取归档失败");
+              }
+              var content = (result.payload.content || "").trim();
+              body.textContent = content || "(空内容)";
+              if (result.payload.legacy_incomplete && result.payload.notice) {
+                body.textContent += "\n\n" + String(result.payload.notice);
+              }
+              details.setAttribute("data-loaded", "1");
+            })
+            .catch(function (err) {
+              body.textContent = "加载失败：" + ((err && err.message) ? err.message : "未知错误");
+            });
+        });
+        return details;
+      }
+
+      function renderArchiveIndexes(archives) {
+        if (!archiveList) {
+          return;
+        }
+        archiveList.innerHTML = "";
+        if (!archives || !archives.length) {
+          setArchivePanelVisible(false);
+          return;
+        }
+
+        for (var i = 0; i < archives.length; i++) {
+          var archive = archives[i] || {};
+          var block = document.createElement("details");
+          block.className = "rounded-lg border border-slate-200 bg-slate-50 px-2 py-1";
+
+          var summary = document.createElement("summary");
+          summary.className = "cursor-pointer list-none text-[12px] font-medium text-slate-700";
+          var title = archive.title || archive.archive_id || "未命名归档";
+          var digest = archive.digest || "";
+          var createdAt = archive.created_at || "";
+          summary.textContent = title + (digest ? " · " + digest : "") + (createdAt ? " · " + createdAt : "");
+
+          var body = document.createElement("div");
+          body.className = "mt-1 space-y-1";
+
+          var sections = archive.sections || [];
+          if (!sections.length) {
+            var empty = document.createElement("div");
+            empty.className = "text-[11px] text-slate-500";
+            empty.textContent = "该归档暂无分节内容";
+            body.appendChild(empty);
+          } else {
+            for (var sectionIdx = 0; sectionIdx < sections.length; sectionIdx++) {
+              body.appendChild(createArchiveSectionNode(archive.archive_id || "", sections[sectionIdx]));
+            }
+          }
+
+          block.appendChild(summary);
+          block.appendChild(body);
+          archiveList.appendChild(block);
+        }
+        setArchivePanelVisible(true);
+      }
+
+      function loadArchiveIndexes() {
+        if (!window.fetch || archiveIndexLoading) {
+          return;
+        }
+        archiveIndexLoading = true;
+        fetch("/api/chat/archive/index", {
+          method: "GET",
+          headers: { "Accept": "application/json" }
+        })
+          .then(function (resp) {
+            if (!resp.ok) {
+              return null;
+            }
+            return resp.json();
+          })
+          .then(function (payload) {
+            var archives = (payload && payload.archives) ? payload.archives : [];
+            renderArchiveIndexes(archives);
+          })
+          .catch(function () {
+            setArchivePanelVisible(false);
+          })
+          .finally(function () {
+            archiveIndexLoading = false;
+          });
       }
 
       function setToolStatus(text, isError) {
@@ -470,6 +616,7 @@
             if (result.payload.compressed) {
               window.setTimeout(pollChatUpdates, 200);
               window.setTimeout(pollChatUpdates, 1200);
+              window.setTimeout(loadArchiveIndexes, 300);
             }
           })
           .catch(function (err) {
@@ -603,6 +750,9 @@
               }
               if (item.kind === "event") {
                 appendEventMessage(item.content, item.created_at_us, item.event_type || "");
+                if (item.event_type === "context_compression") {
+                  window.setTimeout(loadArchiveIndexes, 100);
+                }
               }
             }
           })
@@ -646,6 +796,7 @@
 
       window.setInterval(pollChatUpdates, pollIntervalMs);
       window.setTimeout(pollChatUpdates, 1500);
+      window.setTimeout(loadArchiveIndexes, 250);
     })();
   </script>
 </body>

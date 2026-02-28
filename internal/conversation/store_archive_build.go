@@ -29,10 +29,31 @@ func buildArchiveSections(trimmed []Message) []archiveSectionItem {
 			content.WriteString(fmt.Sprintf("%d. [%s] %s\n", i+1, strings.TrimSpace(msg.Role), normalizeArchiveText(msg.Content, 240)))
 		}
 		out = append(out, archiveSectionItem{
-			ID:      sectionID,
-			Title:   title,
-			Digest:  digest,
-			Content: strings.TrimSpace(content.String()),
+			ID:       sectionID,
+			Title:    title,
+			Digest:   digest,
+			Content:  strings.TrimSpace(content.String()),
+			Messages: buildArchiveReplayMessages(chunk),
+		})
+	}
+	return out
+}
+
+func buildArchiveReplayMessages(chunk []Message) []ArchiveReplayMessage {
+	if len(chunk) == 0 {
+		return nil
+	}
+	out := make([]ArchiveReplayMessage, 0, len(chunk))
+	for _, msg := range chunk {
+		role := strings.TrimSpace(msg.Role)
+		content := strings.TrimSpace(msg.Content)
+		if role == "" && content == "" {
+			continue
+		}
+		out = append(out, ArchiveReplayMessage{
+			Role:      role,
+			Content:   content,
+			CreatedAt: msg.CreatedAt,
 		})
 	}
 	return out

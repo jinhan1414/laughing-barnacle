@@ -28,6 +28,7 @@ type TokenUsage struct {
 	PromptTokens     int `json:"prompt_tokens,omitempty"`
 	CompletionTokens int `json:"completion_tokens,omitempty"`
 	TotalTokens      int `json:"total_tokens,omitempty"`
+	CachedTokens     int `json:"cached_tokens,omitempty"`
 }
 
 // Message is one conversation record kept in memory.
@@ -62,10 +63,18 @@ type ArchiveIndex struct {
 }
 
 type ArchiveSection struct {
-	ID      string `json:"id"`
-	Title   string `json:"title"`
-	Digest  string `json:"digest"`
-	Content string `json:"content"`
+	ID               string                 `json:"id"`
+	Title            string                 `json:"title"`
+	Digest           string                 `json:"digest"`
+	Content          string                 `json:"content"`
+	Messages         []ArchiveReplayMessage `json:"messages,omitempty"`
+	LegacyIncomplete bool                   `json:"legacy_incomplete,omitempty"`
+}
+
+type ArchiveReplayMessage struct {
+	Role      string    `json:"role"`
+	Content   string    `json:"content"`
+	CreatedAt time.Time `json:"created_at,omitempty"`
 }
 
 var (
@@ -94,10 +103,11 @@ type archiveRecord struct {
 }
 
 type archiveSectionItem struct {
-	ID      string `json:"id"`
-	Title   string `json:"title"`
-	Digest  string `json:"digest"`
-	Content string `json:"content"`
+	ID       string                 `json:"id"`
+	Title    string                 `json:"title"`
+	Digest   string                 `json:"digest"`
+	Content  string                 `json:"content"`
+	Messages []ArchiveReplayMessage `json:"messages,omitempty"`
 }
 
 type archiveRef struct {

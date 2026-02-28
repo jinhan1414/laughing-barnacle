@@ -138,6 +138,8 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/memory/audit", s.handleAPIMemoryAudit)
 	mux.HandleFunc("/api/memory/metrics", s.handleAPIMemoryMetrics)
 	mux.HandleFunc("/api/chat/updates", s.handleAPIChatUpdates)
+	mux.HandleFunc("/api/chat/archive/index", s.handleAPIChatArchiveIndex)
+	mux.HandleFunc("/api/chat/archive/section", s.handleAPIChatArchiveSection)
 	mux.HandleFunc("/api/chat/tools/run", s.handleAPIChatToolRun)
 	mux.HandleFunc("/healthz", s.handleHealthz)
 }
