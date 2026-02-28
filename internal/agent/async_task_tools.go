@@ -101,6 +101,11 @@ func (a *Agent) callAsyncTaskSubmit(ctx context.Context, raw string) (string, er
 	if taskType == "" || request == "" {
 		return "", fmt.Errorf("task_type and request are required")
 	}
+	agentID := readStringArgument(args, "agent_id")
+	agentInput := readStringArgument(args, "agent_input")
+	if strings.EqualFold(strings.TrimSpace(taskType), asyncTaskTypeA2A) {
+		request, agentInput = normalizeA2ARequestAndInput(agentID, request, agentInput)
+	}
 	notifyOnFinish := true
 	if v, ok := args["notify_on_finish"].(bool); ok {
 		notifyOnFinish = v
@@ -108,8 +113,8 @@ func (a *Agent) callAsyncTaskSubmit(ctx context.Context, raw string) (string, er
 	result, err := a.asyncTasks.Submit(ctx, AsyncTaskSubmitInput{
 		TaskType:       taskType,
 		Request:        request,
-		AgentID:        readStringArgument(args, "agent_id"),
-		AgentInput:     readStringArgument(args, "agent_input"),
+		AgentID:        agentID,
+		AgentInput:     agentInput,
 		DedupeKey:      readStringArgument(args, "dedupe_key"),
 		NotifyOnFinish: notifyOnFinish,
 		Metadata:       readObjectArgument(args, "metadata"),
