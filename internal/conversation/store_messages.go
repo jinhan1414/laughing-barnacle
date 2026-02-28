@@ -101,7 +101,10 @@ func (s *Store) Reset() error {
 	s.summary = ""
 	s.messages = nil
 	s.events = nil
-	return s.persistLocked()
+	if err := s.persistLocked(); err != nil {
+		return err
+	}
+	return s.deleteAsyncTaskStateLocked()
 }
 
 func (s *Store) Close() error {

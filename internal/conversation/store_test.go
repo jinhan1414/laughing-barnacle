@@ -131,6 +131,9 @@ func TestStoreReset_ClearsAndPersistsAllState(t *testing.T) {
 	store.Append("assistant", "a1")
 	store.SetSummaryAndTrim("summary", 10)
 	store.AppendEvent("context_compression", "compressed")
+	if err := store.SaveAsyncTaskState([]byte(`[{"ID":"async_20260228_120000_1","TaskType":"generic","Status":"submitted"}]`)); err != nil {
+		t.Fatalf("SaveAsyncTaskState error: %v", err)
+	}
 
 	if err := store.Reset(); err != nil {
 		t.Fatalf("Reset error: %v", err)
@@ -139,6 +142,13 @@ func TestStoreReset_ClearsAndPersistsAllState(t *testing.T) {
 	summary, messages, events := store.SnapshotWithEvents()
 	if summary != "" || len(messages) != 0 || len(events) != 0 {
 		t.Fatalf("expected empty store after reset")
+	}
+	raw, err := store.LoadAsyncTaskState()
+	if err != nil {
+		t.Fatalf("LoadAsyncTaskState error: %v", err)
+	}
+	if len(raw) != 0 {
+		t.Fatalf("expected async task state cleared after reset, got %q", string(raw))
 	}
 	_ = store.Close()
 
@@ -150,6 +160,13 @@ func TestStoreReset_ClearsAndPersistsAllState(t *testing.T) {
 	summary, messages, events = reloaded.SnapshotWithEvents()
 	if summary != "" || len(messages) != 0 || len(events) != 0 {
 		t.Fatalf("expected persisted empty state after reset")
+	}
+	raw, err = reloaded.LoadAsyncTaskState()
+	if err != nil {
+		t.Fatalf("reloaded LoadAsyncTaskState error: %v", err)
+	}
+	if len(raw) != 0 {
+		t.Fatalf("expected persisted async task state cleared after reset, got %q", string(raw))
 	}
 }
 

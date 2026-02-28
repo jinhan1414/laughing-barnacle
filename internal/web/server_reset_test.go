@@ -1,12 +1,14 @@
 package web
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"laughing-barnacle/internal/agent"
 	"laughing-barnacle/internal/conversation"
 	"laughing-barnacle/internal/llmlog"
 	"laughing-barnacle/internal/mcp"
@@ -57,8 +59,33 @@ func TestHandleChatReset_ClearsConversationAndLogs(t *testing.T) {
 	if err := mcpStore.SetLastChatGreetingState("2026-02-26", time.Date(2026, 2, 26, 8, 0, 0, 0, time.UTC), "早上好"); err != nil {
 		t.Fatalf("SetLastChatGreetingState error: %v", err)
 	}
+	seedTasks := []agent.AsyncTask{
+		{
+			ID:        "async_20260228_120000_1",
+			TaskType:  "generic",
+			Status:    "working",
+			Request:   "后台任务测试",
+			CreatedAt: time.Date(2026, 2, 28, 12, 0, 0, 0, time.UTC),
+			UpdatedAt: time.Date(2026, 2, 28, 12, 0, 0, 0, time.UTC),
+		},
+	}
+	rawTasks, err := json.Marshal(seedTasks)
+	if err != nil {
+		t.Fatalf("marshal async tasks error: %v", err)
+	}
+	if err := convStore.SaveAsyncTaskState(rawTasks); err != nil {
+		t.Fatalf("SaveAsyncTaskState error: %v", err)
+	}
+	agentSvc := agent.New(agent.Config{}, convStore, nil, nil)
+	if err := agentSvc.BindAsyncTaskStateStore(agent.NewConversationAsyncTaskStateStore(convStore)); err != nil {
+		t.Fatalf("BindAsyncTaskStateStore error: %v", err)
+	}
+	if got := len(agentSvc.ListAsyncTasks()); got != 1 {
+		t.Fatalf("expected seeded async task in memory, got %d", got)
+	}
 
 	s := &Server{
+		agent:       agentSvc,
 		convStore:   convStore,
 		logStore:    logStore,
 		mcpStore:    mcpStore,
@@ -98,6 +125,16 @@ func TestHandleChatReset_ClearsConversationAndLogs(t *testing.T) {
 	}
 	if got := mcpStore.GetLastChatGreetingContent(); got != "" {
 		t.Fatalf("expected chat greeting content cleared, got %q", got)
+	}
+	if got := len(agentSvc.ListAsyncTasks()); got != 0 {
+		t.Fatalf("expected empty async tasks after reset, got %d", got)
+	}
+	rawTasks, err = convStore.LoadAsyncTaskState()
+	if err != nil {
+		t.Fatalf("LoadAsyncTaskState error: %v", err)
+	}
+	if len(rawTasks) != 0 {
+		t.Fatalf("expected persisted async task state cleared, got %q", string(rawTasks))
 	}
 }
 

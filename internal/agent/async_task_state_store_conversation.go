@@ -41,7 +41,11 @@ func (s *conversationAsyncTaskStateStore) Save(tasks []AsyncTask) error {
 	if s == nil || s.store == nil {
 		return nil
 	}
-	raw, err := json.Marshal(normalizePersistedTasks(tasks))
+	normalized := normalizePersistedTasks(tasks)
+	if len(normalized) == 0 {
+		return s.store.SaveAsyncTaskState(nil)
+	}
+	raw, err := json.Marshal(normalized)
 	if err != nil {
 		return fmt.Errorf("encode async task state: %w", err)
 	}
