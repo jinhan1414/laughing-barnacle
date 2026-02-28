@@ -17,5 +17,5 @@
 
 #### Scenario: Runtime prompt prohibits shell-based maintenance writes
 - **WHEN** 系统注入维护写入约束
-- **THEN** 文案明确维护写入只能走 `maintenance__write`
+- **THEN** 文案明确维护写入默认走 `maintenance__write`，并将 `bash` 定位为本地 shell 命令工具
 - **AND** 不出现任何 shell 命令作为本地 API 写入路径的说明

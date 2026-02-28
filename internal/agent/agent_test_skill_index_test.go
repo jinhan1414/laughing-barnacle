@@ -261,11 +261,8 @@ func TestHandleUserMessage_IncludesToolRuntimeConstraintsPrompt(t *testing.T) {
 	if !strings.Contains(found, "context__read") || !strings.Contains(found, "maintenance__write") {
 		t.Fatalf("expected native tool routing constraints, got %q", found)
 	}
-	if !strings.Contains(found, "id,name,description,action=skill:<skill_id>,cron_expr,enabled") {
-		t.Fatalf("expected required schedule save fields constraint, got %q", found)
-	}
-	if !strings.Contains(found, "skills(save/toggle/delete/install)") {
-		t.Fatalf("expected maintenance tool whitelist constraint, got %q", found)
+	if !strings.Contains(found, "由工具 schema 与服务端统一执行") {
+		t.Fatalf("expected schema delegated validation guidance, got %q", found)
 	}
 	if !strings.Contains(found, "执行一致性硬约束（最高优先级）") {
 		t.Fatalf("expected execution consistency hard constraints, got %q", found)
@@ -276,23 +273,23 @@ func TestHandleUserMessage_IncludesToolRuntimeConstraintsPrompt(t *testing.T) {
 	if !strings.Contains(found, "tool_name 与 call_id（或 task_id）") {
 		t.Fatalf("expected execution evidence fields guidance, got %q", found)
 	}
-	if !strings.Contains(found, "agent_input 禁止出现“调用 <agent_id>") {
-		t.Fatalf("expected no-dispatch guidance for a2a agent_input, got %q", found)
+	if !strings.Contains(found, "agent_input 直接写业务目标与验收点") {
+		t.Fatalf("expected direct-goal guidance for a2a agent_input, got %q", found)
 	}
 	if preferredShellName() == "cmd" {
-		if !strings.Contains(found, "禁止写反斜杠转义引号") {
-			t.Fatalf("expected windows quote escape constraint for cmd shell, got %q", found)
+		if !strings.Contains(found, "写 URL 时使用正常双引号，例如 curl -sS") {
+			t.Fatalf("expected windows quote guidance for cmd shell, got %q", found)
 		}
-		if !strings.Contains(found, "禁止通过 bash 执行任何本地 API 读写") {
-			t.Fatalf("expected bash local api prohibition for cmd shell, got %q", found)
+		if !strings.Contains(found, "涉及本地 API 读取时优先调用 context__read") {
+			t.Fatalf("expected native api routing priority for cmd shell, got %q", found)
 		}
 	}
 	if preferredShellName() == "powershell" || preferredShellName() == "pwsh" {
 		if !strings.Contains(found, "Windows PowerShell") {
 			t.Fatalf("expected powershell runtime prompt, got %q", found)
 		}
-		if !strings.Contains(found, "禁止通过 bash 执行任何本地 API 读写") {
-			t.Fatalf("expected bash local api prohibition for powershell shell, got %q", found)
+		if !strings.Contains(found, "涉及本地 API 读取时优先调用 context__read") {
+			t.Fatalf("expected native api routing priority for powershell shell, got %q", found)
 		}
 	}
 }

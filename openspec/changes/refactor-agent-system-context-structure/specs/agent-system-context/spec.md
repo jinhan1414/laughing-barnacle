@@ -46,3 +46,11 @@
 - **WHEN** 系统注入执行策略与工具约束
 - **THEN** 文案将本地 API 的读取与维护写入默认指向原生内置工具
 - **AND** `bash` 仅作为 shell 任务或非 API 命令执行工具保留
+
+### Requirement: Schema Responsibilities Stay in Tool Contracts
+系统 MUST 将 API 参数结构、必填字段与格式校验职责下沉到工具 schema 与服务端校验，并让 system 提示词聚焦工具编排路径。
+
+#### Scenario: Runtime prompt references routing, not full payload schema
+- **WHEN** 系统注入 `Tool & Environment Constraints`
+- **THEN** 文案优先描述“何时调用哪个工具”
+- **AND** 不在提示词中展开高密度 payload 字段清单
