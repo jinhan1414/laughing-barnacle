@@ -27,10 +27,12 @@
 - Decision: 轮询策略参数化并采用退避
   - 将固定 `2s*45` 替换为策略对象：`initial_interval/max_interval/max_tracking_duration/max_consecutive_errors`。
   - 对连续可重试错误采用退避，超过阈值转 `tracker_state=paused`，不直接 `failed`。
+  - 当 `max_tracking_duration` 到达时自动续期，并记录 `tracking_renewed` 审计事件。
   - 理由：减少无效轮询，避免暂时网络故障造成误判。
 
 - Decision: `async_task__get` 触发非终态对账
   - 对 `task_type=a2a` 且 `status` 非终态任务，在 `get` 请求时执行一次远端状态探测并原子更新。
+  - 引入 `min_reconcile_interval` 防抖；当距离上次对账未达阈值时，返回本地最新状态并标记 `reconcile_skipped_by_debounce=true`。
   - 理由：用户/模型主动查询可获得最新状态，缩短“暂停后状态滞后”窗口。
 
 ## Risks / Trade-offs
@@ -38,8 +40,8 @@
   - Mitigation：以状态转移表和单测覆盖关键路径（远端终态、暂停、恢复、重启）。
 - 风险：持久化读写带来额外 I/O。
   - Mitigation：仅在状态变化或日志关键事件时落盘，避免每次轮询全量写入。
-- 风险：暂停任务长期堆积。
-  - Mitigation：暴露明确 `tracker_state/tracker_reason`，并提供 cancel/手动触发 get 的恢复路径。
+- 风险：自动续期导致极长任务长期占用资源。
+  - Mitigation：记录续期次数与最后续期时间，超过阈值时转 `paused` 并显式告警。
 
 ## Migration Plan
 1. 增加异步任务持久化 schema（向后兼容读取旧任务）。
@@ -48,5 +50,4 @@
 4. 增量补齐日志与设置页可观测字段，便于线上验证。
 
 ## Open Questions
-- `max_tracking_duration` 到达后是否允许自动续期，或仅转暂停等待用户动作。
-- `async_task__get` 对账频率是否需要最小间隔防抖（避免高频刷远端）。
+- 无。

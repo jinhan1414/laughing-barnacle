@@ -12,6 +12,8 @@
 - [ ] 2.4 重构 A2A 跟踪状态机：远端 in-progress 时禁止因本地轮询预算耗尽而置为 failed
 - [ ] 2.5 为跟踪暂停/恢复/远端终态增加显式日志与错误码
 - [ ] 2.6 在 `async_task__get` 中增加非终态 A2A 任务的按需远端对账更新
+- [ ] 2.7 实现 `max_tracking_duration` 到期自动续期并记录续期审计字段
+- [ ] 2.8 为 `async_task__get` 增加 `min_reconcile_interval` 防抖逻辑与可观测标记
 
 ## 3. Verification
 - [ ] 3.1 单测：长任务超过单轮跟踪窗口后仍保持 working，且记录 tracking_paused 证据
@@ -19,4 +21,6 @@
 - [ ] 3.3 单测：服务重启后可恢复未终态 A2A 任务并继续跟踪
 - [ ] 3.4 单测：`async_task__get` 可触发非终态任务对账并推进状态
 - [ ] 3.5 单测：跟踪策略配置边界校验生效（非法配置显式报错）
-- [ ] 3.6 回归：`go test ./... -timeout 60s`
+- [ ] 3.6 单测：达到 `max_tracking_duration` 时自动续期，任务保持非终态且记录续期证据
+- [ ] 3.7 单测：`min_reconcile_interval` 防抖生效（窗口内不请求远端，窗口外恢复对账）
+- [ ] 3.8 回归：`go test ./... -timeout 60s`

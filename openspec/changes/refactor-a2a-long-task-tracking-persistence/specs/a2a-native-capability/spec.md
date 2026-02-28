@@ -38,13 +38,23 @@
 - **THEN** 系统返回非终态结果并刷新 `updated_at`/跟踪证据
 - **AND** 不返回伪造终态
 
+#### Scenario: async_task__get applies reconciliation debounce
+- **WHEN** 连续触发 `async_task__get` 且距离上次对账未达到 `min_reconcile_interval`
+- **THEN** 系统不发起远端对账请求并返回本地最新状态
+- **AND** 返回结果包含可观测标记（如 `reconcile_skipped_by_debounce=true`）
+
 ### Requirement: Configurable Tracking Policy and Explicit Observability
 系统 MUST 提供可配置的 A2A 跟踪策略与可观测证据，禁止使用不可调整的硬编码轮询窗口。
 
 #### Scenario: Apply configured polling and retry policy
 - **WHEN** 系统加载 A2A 跟踪配置
-- **THEN** 跟踪逻辑按配置应用 `initial_interval/max_interval/max_tracking_duration/max_consecutive_errors`
+- **THEN** 跟踪逻辑按配置应用 `initial_interval/max_interval/max_tracking_duration/max_consecutive_errors/min_reconcile_interval`
 - **AND** 配置非法时服务启动或加载阶段返回显式错误
+
+#### Scenario: Auto-renew tracking window when max duration is reached
+- **WHEN** 任务仍处于非终态且达到 `max_tracking_duration`
+- **THEN** 系统自动续期跟踪窗口并继续维持任务非终态
+- **AND** 记录续期证据（至少含续期时间与续期次数）
 
 #### Scenario: Expose tracker transition evidence
 - **WHEN** 跟踪状态发生变化（如 `active -> paused`、`paused -> recovering`、`recovering -> active`）
