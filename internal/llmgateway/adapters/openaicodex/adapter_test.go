@@ -93,11 +93,13 @@ func TestAdapter_ChatGPTAuthUsesCodexEndpointAndAccountHeader(t *testing.T) {
 	authFile := writeChatGPTAuthFile(t, "chatgpt-access", "acct-123")
 	var capturedPath string
 	var capturedAccountID string
+	var capturedSessionID string
 	var requestBody map[string]any
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedPath = r.URL.Path
 		capturedAccountID = r.Header.Get("ChatGPT-Account-Id")
+		capturedSessionID = r.Header.Get("session_id")
 		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
 			t.Fatalf("decode request: %v", err)
 		}
@@ -127,15 +129,18 @@ func TestAdapter_ChatGPTAuthUsesCodexEndpointAndAccountHeader(t *testing.T) {
 	if capturedAccountID != "acct-123" {
 		t.Fatalf("expected ChatGPT-Account-Id header, got %q", capturedAccountID)
 	}
+	if capturedSessionID != defaultPromptCacheSessionIDMain {
+		t.Fatalf("expected session_id header %q, got %q", defaultPromptCacheSessionIDMain, capturedSessionID)
+	}
 	if requestBody["instructions"] != "You are a test assistant." {
 		t.Fatalf("expected instructions from system messages, got %v", requestBody["instructions"])
 	}
-	if _, ok := requestBody["prompt_cache_key"]; ok {
-		t.Fatalf("expected first chat_reply request without prompt_cache_key, got %v", requestBody["prompt_cache_key"])
+	if got, ok := requestBody["prompt_cache_key"].(string); !ok || got != defaultPromptCacheSessionIDMain {
+		t.Fatalf("expected prompt_cache_key=%q for chat_reply, got %v", defaultPromptCacheSessionIDMain, requestBody["prompt_cache_key"])
 	}
 }
 
-func TestAdapter_ChatReplyReusesPromptCacheKeyFromPreviousResponse(t *testing.T) {
+func TestAdapter_ChatReplyUsesStablePromptCacheKey(t *testing.T) {
 	authFile := writeChatGPTAuthFile(t, "chatgpt-access", "acct-123")
 	var requestBodies []map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -144,11 +149,7 @@ func TestAdapter_ChatReplyReusesPromptCacheKeyFromPreviousResponse(t *testing.T)
 			t.Fatalf("decode request: %v", err)
 		}
 		requestBodies = append(requestBodies, requestBody)
-		if len(requestBodies) == 1 {
-			_, _ = w.Write([]byte(`{"output_text":"first","prompt_cache_key":"server-key-1"}`))
-			return
-		}
-		_, _ = w.Write([]byte(`{"output_text":"second"}`))
+		_, _ = w.Write([]byte(`{"output_text":"ok","prompt_cache_key":"server-random-key"}`))
 	}))
 	defer server.Close()
 
@@ -173,11 +174,11 @@ func TestAdapter_ChatReplyReusesPromptCacheKeyFromPreviousResponse(t *testing.T)
 	if len(requestBodies) != 2 {
 		t.Fatalf("expected 2 requests, got %d", len(requestBodies))
 	}
-	if _, ok := requestBodies[0]["prompt_cache_key"]; ok {
-		t.Fatalf("expected first request without prompt_cache_key, got %v", requestBodies[0]["prompt_cache_key"])
-	}
-	if got, ok := requestBodies[1]["prompt_cache_key"].(string); !ok || got != "server-key-1" {
-		t.Fatalf("expected second request prompt_cache_key=server-key-1, got %v", requestBodies[1]["prompt_cache_key"])
+	for idx, body := range requestBodies {
+		got, ok := body["prompt_cache_key"].(string)
+		if !ok || got != defaultPromptCacheSessionIDMain {
+			t.Fatalf("request %d expected prompt_cache_key=%q, got %v", idx+1, defaultPromptCacheSessionIDMain, body["prompt_cache_key"])
+		}
 	}
 }
 

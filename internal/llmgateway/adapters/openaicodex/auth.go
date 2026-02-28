@@ -10,23 +10,31 @@ import (
 )
 
 const (
-	defaultAuthDirName  = ".codex"
-	defaultAuthFileName = "auth.json"
+	defaultAuthDirName      = ".codex"
+	defaultAuthFileName     = "auth.json"
+	authModeChatGPT         = "chatgpt"
+	authProviderOpenAICodex = "openai-codex"
 )
 
-func (a *Adapter) resolveAuthToken() (string, error) {
+type authContext struct {
+	Token     string
+	AccountID string
+	AuthMode  string
+}
+
+func (a *Adapter) resolveAuthContext() (authContext, error) {
 	explicitPath := strings.TrimSpace(a.authFilePath)
 	if explicitPath != "" {
-		return readTokenFromFile(explicitPath, true)
+		return readAuthContextFromFile(explicitPath)
 	}
 	if token := strings.TrimSpace(a.apiToken); token != "" {
-		return token, nil
+		return authContext{Token: token}, nil
 	}
 	defaultPath, err := defaultAuthFilePath()
 	if err != nil {
-		return "", authPathError("", err)
+		return authContext{}, authPathError("", err)
 	}
-	return readTokenFromFile(defaultPath, false)
+	return readAuthContextFromFile(defaultPath)
 }
 
 func defaultAuthFilePath() (string, error) {
@@ -40,63 +48,84 @@ func defaultAuthFilePath() (string, error) {
 	return filepath.Join(home, defaultAuthDirName, defaultAuthFileName), nil
 }
 
-func readTokenFromFile(path string, explicit bool) (string, error) {
+func readAuthContextFromFile(path string) (authContext, error) {
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return "", authPathError(path, err)
+		return authContext{}, authPathError(path, err)
 	}
-	token, err := parseToken(content)
+	cred, err := parseAuthContext(content)
 	if err != nil {
-		return "", authPathError(path, err)
+		return authContext{}, authPathError(path, err)
 	}
-	if token != "" {
-		return token, nil
+	if strings.TrimSpace(cred.Token) == "" {
+		return authContext{}, authPathError(path, fmt.Errorf("token not found"))
 	}
-	if explicit {
-		return "", authPathError(path, fmt.Errorf("token not found"))
-	}
-	return "", authPathError(path, fmt.Errorf("token not found in default auth file"))
+	return cred, nil
 }
 
-func parseToken(raw []byte) (string, error) {
+func parseAuthContext(raw []byte) (authContext, error) {
 	trimmed := strings.TrimSpace(string(raw))
 	if trimmed == "" {
-		return "", fmt.Errorf("file is empty")
+		return authContext{}, fmt.Errorf("file is empty")
 	}
-	if strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[") || strings.HasPrefix(trimmed, "\"") {
-		var decoded any
-		if err := json.Unmarshal([]byte(trimmed), &decoded); err != nil {
-			return "", fmt.Errorf("decode auth json: %w", err)
-		}
-		return findToken(decoded), nil
+	if !strings.HasPrefix(trimmed, "{") {
+		return authContext{Token: trimmed}, nil
 	}
-	return trimmed, nil
+	var decoded map[string]any
+	if err := json.Unmarshal([]byte(trimmed), &decoded); err != nil {
+		return authContext{}, fmt.Errorf("decode auth json: %w", err)
+	}
+	chatgpt := parseChatGPTAuth(decoded)
+	if strings.TrimSpace(chatgpt.Token) != "" {
+		return chatgpt, nil
+	}
+	token := parseAPIKeyAuth(decoded)
+	if token != "" {
+		return authContext{Token: token}, nil
+	}
+	return authContext{}, fmt.Errorf("no usable token fields found")
 }
 
-func findToken(value any) string {
-	switch v := value.(type) {
-	case string:
-		return strings.TrimSpace(v)
-	case map[string]any:
-		for _, key := range []string{"api_key", "access_token", "token", "OPENAI_API_KEY", "openai_api_key"} {
-			if token := findToken(v[key]); token != "" {
-				return token
-			}
+func parseChatGPTAuth(decoded map[string]any) authContext {
+	authMode := strings.ToLower(strings.TrimSpace(stringValue(decoded["auth_mode"])))
+	if authMode != authModeChatGPT {
+		return authContext{}
+	}
+	tokens, ok := decoded["tokens"].(map[string]any)
+	if !ok {
+		return authContext{}
+	}
+	return authContext{
+		Token:     strings.TrimSpace(stringValue(tokens["access_token"])),
+		AccountID: strings.TrimSpace(stringValue(tokens["account_id"])),
+		AuthMode:  authModeChatGPT,
+	}
+}
+
+func parseAPIKeyAuth(decoded map[string]any) string {
+	candidates := []any{
+		decoded["OPENAI_API_KEY"],
+		decoded["openai_api_key"],
+		decoded["api_key"],
+		decoded["token"],
+		decoded["access_token"],
+	}
+	for _, candidate := range candidates {
+		if token := strings.TrimSpace(stringValue(candidate)); token != "" {
+			return token
 		}
-		for _, item := range v {
-			switch item.(type) {
-			case map[string]any, []any:
-				if token := findToken(item); token != "" {
-					return token
-				}
-			}
+	}
+	if tokens, ok := decoded["tokens"].(map[string]any); ok {
+		if token := strings.TrimSpace(stringValue(tokens["access_token"])); token != "" {
+			return token
 		}
-	case []any:
-		for _, item := range v {
-			if token := findToken(item); token != "" {
-				return token
-			}
-		}
+	}
+	return ""
+}
+
+func stringValue(value any) string {
+	if str, ok := value.(string); ok {
+		return str
 	}
 	return ""
 }
@@ -108,7 +137,7 @@ func authPathError(path string, err error) error {
 	}
 	return &llmgateway.Error{
 		Code:     llmgateway.ErrorCodeAuthConfigInvalid,
-		Provider: providerName,
+		Provider: authProviderOpenAICodex,
 		Message:  message,
 		Cause:    err,
 	}
