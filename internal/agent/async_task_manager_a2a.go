@@ -7,11 +7,6 @@ import (
 	"time"
 )
 
-const (
-	asyncTaskA2APollInterval   = 2 * time.Second
-	asyncTaskA2AMaxPollWindows = 45
-)
-
 func (m *AsyncTaskManager) runA2ATask(ctx context.Context, task AsyncTask) {
 	provider := m.readA2AProvider()
 	if provider == nil {
@@ -58,42 +53,38 @@ func (m *AsyncTaskManager) pollA2ATask(ctx context.Context, taskID, agentID, rem
 		m.finishTask(taskID, asyncTaskStatusFailed, "", "a2a provider not configured")
 		return
 	}
-
-	for i := 0; i < asyncTaskA2AMaxPollWindows; i++ {
-		if err := m.waitPollWindow(ctx); err != nil {
+	policy := m.readTrackingPolicy()
+	windowStartedAt := m.nowFn().Truncate(time.Second)
+	pollInterval := policy.InitialInterval
+	for {
+		if err := m.waitPollWindow(ctx, pollInterval); err != nil {
 			m.handleCanceledA2ATask(taskID, agentID, remoteTaskID, err)
 			return
 		}
 		result, err := provider.GetTask(ctx, A2ATaskQuery{AgentID: agentID, TaskID: remoteTaskID})
 		if err != nil {
-			m.finishTask(taskID, asyncTaskStatusFailed, "", "a2a get failed: "+err.Error())
+			nextInterval, stopped := m.handlePollingError(taskID, err, pollInterval, policy)
+			if stopped {
+				return
+			}
+			pollInterval = nextInterval
+			continue
+		}
+		pollInterval = policy.InitialInterval
+		if m.handlePollingTerminal(taskID, result) {
 			return
 		}
-		if terminal := normalizeA2ATerminalStatus(result.Status); terminal != "" {
-			m.finishTask(taskID, terminal, renderA2ATaskResult(result), "")
+		stopped := false
+		windowStartedAt, stopped = m.updateInProgressTracking(taskID, result.Status, windowStartedAt, policy)
+		if stopped {
 			return
 		}
-		if blockedErr := normalizeA2ABlockedStatus(result.Status); blockedErr != "" {
-			m.finishTask(taskID, asyncTaskStatusFailed, renderA2ATaskResult(result), blockedErr)
-			return
-		}
-		if !isA2AInProgressStatus(result.Status) {
-			m.finishTask(
-				taskID,
-				asyncTaskStatusFailed,
-				renderA2ATaskResult(result),
-				"a2a get returned unsupported status: "+strings.TrimSpace(result.Status),
-			)
-			return
-		}
-		m.updatePollingLog(taskID, "a2a status: "+strings.TrimSpace(result.Status))
 	}
-	m.finishTask(taskID, asyncTaskStatusFailed, "", "a2a tracking timeout")
 }
 
 func (m *AsyncTaskManager) handleCanceledA2ATask(taskID, agentID, remoteTaskID string, runErr error) {
 	if !m.isCancelRequested(taskID) {
-		m.finishTask(taskID, asyncTaskStatusFailed, "", "a2a tracking interrupted: "+runErr.Error())
+		m.pauseTracking(taskID, "a2a tracking interrupted: "+runErr.Error(), asyncTaskTrackerReasonInterrupted)
 		return
 	}
 	provider := m.readA2AProvider()
@@ -103,8 +94,11 @@ func (m *AsyncTaskManager) handleCanceledA2ATask(taskID, agentID, remoteTaskID s
 	m.finishTask(taskID, asyncTaskStatusCanceled, "", "")
 }
 
-func (m *AsyncTaskManager) waitPollWindow(ctx context.Context) error {
-	timer := time.NewTimer(asyncTaskA2APollInterval)
+func (m *AsyncTaskManager) waitPollWindow(ctx context.Context, waitFor time.Duration) error {
+	if waitFor <= 0 {
+		waitFor = defaultA2AInitialInterval
+	}
+	timer := time.NewTimer(waitFor)
 	defer timer.Stop()
 	select {
 	case <-ctx.Done():
@@ -131,8 +125,13 @@ func (m *AsyncTaskManager) updateRemoteTask(taskID, agentID, remoteTaskID, messa
 		state.task.AgentID = strings.TrimSpace(agentID)
 	}
 	state.task.RemoteTaskID = strings.TrimSpace(remoteTaskID)
+	state.task.TrackerState = asyncTaskTrackerStateActive
+	state.task.TrackerReason = asyncTaskTrackerReasonNone
+	state.task.ConsecutiveErrors = 0
+	state.task.NextPollAt = m.nowFn().Truncate(time.Second).Add(m.a2aPolicy.InitialInterval)
 	state.task.UpdatedAt = m.nowFn().Truncate(time.Second)
 	m.appendLogLocked(state, "info", message)
+	m.persistSnapshotLocked()
 	snapshot := cloneAsyncTask(state.task)
 	m.mu.Unlock()
 	m.emitStatusChange(snapshot)
@@ -145,8 +144,16 @@ func (m *AsyncTaskManager) updatePollingLog(taskID, message string) {
 		m.mu.Unlock()
 		return
 	}
-	state.task.UpdatedAt = m.nowFn().Truncate(time.Second)
+	policy := m.a2aPolicy
+	now := m.nowFn().Truncate(time.Second)
+	state.task.Status = asyncTaskStatusWorking
+	state.task.TrackerState = asyncTaskTrackerStateActive
+	state.task.TrackerReason = asyncTaskTrackerReasonNone
+	state.task.ConsecutiveErrors = 0
+	state.task.NextPollAt = now.Add(policy.InitialInterval)
+	state.task.UpdatedAt = now
 	m.appendLogLocked(state, "info", trimRunes(message, 200))
+	m.persistSnapshotLocked()
 	m.mu.Unlock()
 }
 
@@ -162,11 +169,35 @@ func renderAsyncTaskOutput(task AsyncTask, logs []AsyncTaskLog) string {
 	b.WriteString("async_task_id: " + safeOrEmpty(task.ID) + "\n")
 	b.WriteString("status: " + safeOrEmpty(task.Status) + "\n")
 	b.WriteString("task_type: " + safeOrEmpty(task.TaskType) + "\n")
+	if text := strings.TrimSpace(task.TrackerState); text != "" {
+		b.WriteString("tracker_state: " + text + "\n")
+	}
+	if text := strings.TrimSpace(task.TrackerReason); text != "" {
+		b.WriteString("tracker_reason: " + text + "\n")
+	}
 	if text := strings.TrimSpace(task.AgentID); text != "" {
 		b.WriteString("agent_id: " + text + "\n")
 	}
 	if text := strings.TrimSpace(task.RemoteTaskID); text != "" {
 		b.WriteString("remote_task_id: " + text + "\n")
+	}
+	if !task.NextPollAt.IsZero() {
+		b.WriteString("next_poll_at: " + task.NextPollAt.Local().Format("2006-01-02 15:04:05") + "\n")
+	}
+	if !task.LastRenewedAt.IsZero() {
+		b.WriteString("last_renewed_at: " + task.LastRenewedAt.Local().Format("2006-01-02 15:04:05") + "\n")
+	}
+	if !task.LastReconciledAt.IsZero() {
+		b.WriteString("last_reconciled_at: " + task.LastReconciledAt.Local().Format("2006-01-02 15:04:05") + "\n")
+	}
+	if task.TrackingRenewals > 0 {
+		b.WriteString(fmt.Sprintf("tracking_renewals: %d\n", task.TrackingRenewals))
+	}
+	if task.ConsecutiveErrors > 0 {
+		b.WriteString(fmt.Sprintf("consecutive_errors: %d\n", task.ConsecutiveErrors))
+	}
+	if task.ReconcileSkippedByDebounce {
+		b.WriteString("reconcile_skipped_by_debounce: true\n")
 	}
 	if text := strings.TrimSpace(task.Result); text != "" {
 		b.WriteString("result: " + trimRunes(text, 220) + "\n")

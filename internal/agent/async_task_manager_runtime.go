@@ -18,8 +18,14 @@ func (m *AsyncTaskManager) markTaskWorking(taskID string) (AsyncTask, context.Co
 		return AsyncTask{}, nil, fmt.Errorf("task %q not found", taskID)
 	}
 	state.task.Status = asyncTaskStatusWorking
+	if state.task.TaskType == asyncTaskTypeA2A {
+		state.task.TrackerState = asyncTaskTrackerStateActive
+		state.task.TrackerReason = asyncTaskTrackerReasonNone
+	}
 	state.task.UpdatedAt = m.nowFn().Truncate(time.Second)
+	state.workerRunning = true
 	m.appendLogLocked(state, "info", "task started")
+	m.persistSnapshotLocked()
 	snapshot := cloneAsyncTask(state.task)
 	go m.emitStatusChange(snapshot)
 	return snapshot, state.ctx, nil
@@ -35,12 +41,16 @@ func (m *AsyncTaskManager) finishTask(taskID, status, result, errText string) {
 	state.task.Status = status
 	state.task.Result = strings.TrimSpace(result)
 	state.task.Error = strings.TrimSpace(errText)
+	state.task.TrackerState = asyncTaskTrackerStateIdle
+	state.task.TrackerReason = asyncTaskTrackerReasonNone
+	state.task.NextPollAt = time.Time{}
 	state.task.UpdatedAt = m.nowFn().Truncate(time.Second)
 	if state.task.Error != "" {
 		m.appendLogLocked(state, "error", state.task.Error)
 	} else {
 		m.appendLogLocked(state, "info", "task finished: "+status)
 	}
+	m.persistSnapshotLocked()
 	snapshot := cloneAsyncTask(state.task)
 	m.mu.Unlock()
 

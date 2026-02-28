@@ -226,17 +226,24 @@ type scheduledTaskView struct {
 }
 
 type asyncTaskView struct {
-	ID           string
-	TaskType     string
-	Status       string
-	Request      string
-	AgentID      string
-	RemoteTaskID string
-	Result       string
-	Error        string
-	CreatedAt    string
-	UpdatedAt    string
-	Logs         []asyncTaskLogView
+	ID                string
+	TaskType          string
+	Status            string
+	TrackerState      string
+	TrackerReason     string
+	Request           string
+	AgentID           string
+	RemoteTaskID      string
+	Result            string
+	Error             string
+	CreatedAt         string
+	UpdatedAt         string
+	NextPollAt        string
+	LastRenewedAt     string
+	LastReconciledAt  string
+	TrackingRenewals  int
+	ConsecutiveErrors int
+	Logs              []asyncTaskLogView
 }
 
 type asyncTaskLogView struct {

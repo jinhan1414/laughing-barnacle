@@ -122,6 +122,9 @@ func run() error {
 		CompressionSystemPrompt:    cfg.CompressionSystemPrompt,
 		EnforceHumanRoutine:        true,
 	}, convStore, llmClient, mcpToolProvider)
+	if err := agentSvc.BindAsyncTaskStateStore(agent.NewConversationAsyncTaskStateStore(convStore)); err != nil {
+		return err
+	}
 	agentSvc.SetSkillProvider(skillStore)
 	agentSvc.SetMemoryProvider(memoryStore)
 	agentSvc.SetA2AProvider(a2aProvider)

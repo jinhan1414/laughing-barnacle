@@ -92,6 +92,7 @@ const (
 	bucketArchives = "archives"
 
 	metaConversationState = "conversation_state"
+	metaAsyncTaskState    = "async_task_state"
 )
 
 type archiveRecord struct {

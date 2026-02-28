@@ -83,15 +83,15 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 		data.A2AAgents = make([]a2aAgentView, 0, len(allAgents))
 		for _, item := range allAgents {
 			view := a2aAgentView{
-				ID:           item.ID,
-				Name:         item.Name,
-				Description:  item.Description,
-				Endpoint:     item.Endpoint,
-				AgentCardURL: item.AgentCardURL,
+				ID:              item.ID,
+				Name:            item.Name,
+				Description:     item.Description,
+				Endpoint:        item.Endpoint,
+				AgentCardURL:    item.AgentCardURL,
 				ProtocolVersion: item.ProtocolVersion,
-				Skills:       append([]mcp.A2ASkill(nil), item.Skills...),
-				HasAuthToken: strings.TrimSpace(item.AuthToken) != "",
-				Enabled:      item.Enabled,
+				Skills:          append([]mcp.A2ASkill(nil), item.Skills...),
+				HasAuthToken:    strings.TrimSpace(item.AuthToken) != "",
+				Enabled:         item.Enabled,
 			}
 			if !item.UpdatedAt.IsZero() {
 				view.UpdatedAt = item.UpdatedAt.Format("2006-01-02 15:04:05")
@@ -103,20 +103,33 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 		data.AsyncTasks = make([]asyncTaskView, 0, len(allTasks))
 		for _, task := range allTasks {
 			view := asyncTaskView{
-				ID:           task.ID,
-				TaskType:     task.TaskType,
-				Status:       task.Status,
-				Request:      task.Request,
-				AgentID:      task.AgentID,
-				RemoteTaskID: task.RemoteTaskID,
-				Result:       task.Result,
-				Error:        task.Error,
+				ID:                task.ID,
+				TaskType:          task.TaskType,
+				Status:            task.Status,
+				TrackerState:      task.TrackerState,
+				TrackerReason:     task.TrackerReason,
+				Request:           task.Request,
+				AgentID:           task.AgentID,
+				RemoteTaskID:      task.RemoteTaskID,
+				Result:            task.Result,
+				Error:             task.Error,
+				TrackingRenewals:  task.TrackingRenewals,
+				ConsecutiveErrors: task.ConsecutiveErrors,
 			}
 			if !task.CreatedAt.IsZero() {
 				view.CreatedAt = task.CreatedAt.Format("2006-01-02 15:04:05")
 			}
 			if !task.UpdatedAt.IsZero() {
 				view.UpdatedAt = task.UpdatedAt.Format("2006-01-02 15:04:05")
+			}
+			if !task.NextPollAt.IsZero() {
+				view.NextPollAt = task.NextPollAt.Format("2006-01-02 15:04:05")
+			}
+			if !task.LastRenewedAt.IsZero() {
+				view.LastRenewedAt = task.LastRenewedAt.Format("2006-01-02 15:04:05")
+			}
+			if !task.LastReconciledAt.IsZero() {
+				view.LastReconciledAt = task.LastReconciledAt.Format("2006-01-02 15:04:05")
 			}
 			view.Logs = make([]asyncTaskLogView, 0, len(task.Logs))
 			for _, log := range task.Logs {

@@ -254,6 +254,12 @@
                     request: {{.Request}}<br>
                     agent_id: {{if .AgentID}}{{.AgentID}}{{else}}-{{end}}<br>
                     remote_task_id: {{if .RemoteTaskID}}{{.RemoteTaskID}}{{else}}-{{end}}<br>
+                    tracker_state: {{if .TrackerState}}{{.TrackerState}}{{else}}-{{end}}<br>
+                    tracker_reason: {{if .TrackerReason}}{{.TrackerReason}}{{else}}-{{end}}<br>
+                    next_poll_at: {{if .NextPollAt}}{{.NextPollAt}}{{else}}-{{end}}<br>
+                    last_reconciled_at: {{if .LastReconciledAt}}{{.LastReconciledAt}}{{else}}-{{end}}<br>
+                    last_renewed_at: {{if .LastRenewedAt}}{{.LastRenewedAt}}{{else}}-{{end}}<br>
+                    tracking_renewals: {{.TrackingRenewals}} | consecutive_errors: {{.ConsecutiveErrors}}<br>
                     created: {{if .CreatedAt}}{{.CreatedAt}}{{else}}-{{end}}<br>
                     updated: {{if .UpdatedAt}}{{.UpdatedAt}}{{else}}-{{end}}
                   </div>

@@ -24,6 +24,7 @@ type Config struct {
 	SystemPrompt               string
 	CompressionSystemPrompt    string
 	EnforceHumanRoutine        bool
+	A2ATrackingPolicy          A2ATrackingPolicy
 }
 
 type ToolProvider interface {
@@ -116,8 +117,23 @@ func New(cfg Config, store *conversation.Store, llmClient llm.Client, tools Tool
 		nowFn: time.Now,
 	}
 	agentSvc.asyncTasks = newAsyncTaskManager(llmClient, cfg.Model, agentSvc.nowFn)
+	_ = agentSvc.asyncTasks.SetA2ATrackingPolicy(cfg.A2ATrackingPolicy)
 	agentSvc.asyncTasks.SetHooks(agentSvc.onAsyncTaskStatusChanged, agentSvc.onAsyncTaskCompleted)
 	return agentSvc
+}
+
+func (a *Agent) BindAsyncTaskStateStore(store AsyncTaskStateStore) error {
+	if a == nil || a.asyncTasks == nil {
+		return fmt.Errorf("async task manager not configured")
+	}
+	return a.asyncTasks.BindStateStore(store)
+}
+
+func (a *Agent) SetA2ATrackingPolicy(policy A2ATrackingPolicy) error {
+	if a == nil || a.asyncTasks == nil {
+		return fmt.Errorf("async task manager not configured")
+	}
+	return a.asyncTasks.SetA2ATrackingPolicy(policy)
 }
 
 func (a *Agent) SetSkillProvider(provider SkillProvider) {

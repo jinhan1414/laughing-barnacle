@@ -15,39 +15,74 @@ type asyncTaskState struct {
 	ctx             context.Context
 	cancel          context.CancelFunc
 	cancelRequested bool
+	workerRunning   bool
 }
 
 type AsyncTaskManager struct {
 	mu sync.RWMutex
 
-	nowFn  func() time.Time
-	llm    llm.Client
-	model  string
-	a2a    A2AProvider
-	seq    int64
-	order  []string
-	tasks  map[string]*asyncTaskState
-	onStat func(AsyncTask)
-	onDone func(context.Context, AsyncTask)
+	nowFn      func() time.Time
+	llm        llm.Client
+	model      string
+	a2a        A2AProvider
+	a2aPolicy  A2ATrackingPolicy
+	stateStore AsyncTaskStateStore
+	seq        int64
+	order      []string
+	tasks      map[string]*asyncTaskState
+	onStat     func(AsyncTask)
+	onDone     func(context.Context, AsyncTask)
 }
 
 func newAsyncTaskManager(llmClient llm.Client, model string, nowFn func() time.Time) *AsyncTaskManager {
 	if nowFn == nil {
 		nowFn = time.Now
 	}
+	policy, _ := normalizeA2ATrackingPolicy(A2ATrackingPolicy{})
 	return &AsyncTaskManager{
-		nowFn: nowFn,
-		llm:   llmClient,
-		model: strings.TrimSpace(model),
-		tasks: make(map[string]*asyncTaskState),
-		order: make([]string, 0, 16),
+		nowFn:     nowFn,
+		llm:       llmClient,
+		model:     strings.TrimSpace(model),
+		a2aPolicy: policy,
+		tasks:     make(map[string]*asyncTaskState),
+		order:     make([]string, 0, 16),
 	}
 }
 
 func (m *AsyncTaskManager) SetA2AProvider(provider A2AProvider) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	m.a2a = provider
+	taskIDs := m.collectResumableA2ATaskIDsLocked()
+	m.mu.Unlock()
+	m.resumeA2ATasks(taskIDs)
+}
+
+func (m *AsyncTaskManager) SetA2ATrackingPolicy(policy A2ATrackingPolicy) error {
+	normalized, err := normalizeA2ATrackingPolicy(policy)
+	if err != nil {
+		return err
+	}
+	m.mu.Lock()
+	m.a2aPolicy = normalized
+	taskIDs := m.collectResumableA2ATaskIDsLocked()
+	m.persistSnapshotLocked()
+	m.mu.Unlock()
+	m.resumeA2ATasks(taskIDs)
+	return nil
+}
+
+func (m *AsyncTaskManager) BindStateStore(store AsyncTaskStateStore) error {
+	if store == nil {
+		return fmt.Errorf("async task state store is required")
+	}
+	m.mu.Lock()
+	m.stateStore = store
+	m.mu.Unlock()
+	if err := m.loadSnapshotFromStore(); err != nil {
+		return err
+	}
+	m.resumeA2ATasks(m.collectResumableA2ATaskIDs())
+	return nil
 }
 
 func (m *AsyncTaskManager) SetHooks(onStatus func(AsyncTask), onDone func(context.Context, AsyncTask)) {
@@ -102,6 +137,7 @@ func (m *AsyncTaskManager) createOrReuseTask(input AsyncTaskSubmitInput, taskTyp
 			ID:             taskID,
 			TaskType:       taskType,
 			Status:         asyncTaskStatusSubmitted,
+			TrackerState:   asyncTaskTrackerStateIdle,
 			Request:        input.Request,
 			AgentID:        input.AgentID,
 			AgentInput:     input.AgentInput,
@@ -111,13 +147,15 @@ func (m *AsyncTaskManager) createOrReuseTask(input AsyncTaskSubmitInput, taskTyp
 			CreatedAt:      now,
 			UpdatedAt:      now,
 		},
-		ctx:    taskCtx,
-		cancel: cancel,
+		ctx:           taskCtx,
+		cancel:        cancel,
+		workerRunning: true,
 	}
 	m.appendLogLocked(state, "info", "task accepted")
 	m.tasks[taskID] = state
 	m.order = append(m.order, taskID)
 	m.trimTaskEntriesLocked()
+	m.persistSnapshotLocked()
 	go m.emitStatusChange(cloneAsyncTask(state.task))
 	return taskID, true
 }
@@ -139,6 +177,10 @@ func (m *AsyncTaskManager) Get(input AsyncTaskGetInput) (AsyncTask, error) {
 	}
 	task := cloneAsyncTask(state.task)
 	m.mu.RUnlock()
+	task, err = m.reconcileOnGet(task)
+	if err != nil {
+		return AsyncTask{}, err
+	}
 	if !input.IncludeLogs {
 		task.Logs = nil
 		return task, nil
@@ -181,6 +223,7 @@ func (m *AsyncTaskManager) markCancelRequested(taskID, reason string) (AsyncTask
 	state.task.UpdatedAt = m.nowFn().Truncate(time.Second)
 	snapshot := cloneAsyncTask(state.task)
 	cancel := state.cancel
+	m.persistSnapshotLocked()
 	m.mu.Unlock()
 	if cancel != nil {
 		cancel()
@@ -235,6 +278,7 @@ func (m *AsyncTaskManager) nextTaskIDLocked(now time.Time) string {
 }
 
 func (m *AsyncTaskManager) runTask(taskID string) {
+	defer m.setWorkerRunning(taskID, false)
 	task, ctx, err := m.markTaskWorking(taskID)
 	if err != nil {
 		return

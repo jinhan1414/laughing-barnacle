@@ -56,21 +56,29 @@ type AsyncTaskLog struct {
 }
 
 type AsyncTask struct {
-	ID             string
-	TaskType       string
-	Status         string
-	Request        string
-	AgentID        string
-	AgentInput     string
-	RemoteTaskID   string
-	DedupeKey      string
-	NotifyOnFinish bool
-	Result         string
-	Error          string
-	Metadata       map[string]any
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-	Logs           []AsyncTaskLog
+	ID                         string
+	TaskType                   string
+	Status                     string
+	TrackerState               string
+	TrackerReason              string
+	Request                    string
+	AgentID                    string
+	AgentInput                 string
+	RemoteTaskID               string
+	DedupeKey                  string
+	NotifyOnFinish             bool
+	Result                     string
+	Error                      string
+	Metadata                   map[string]any
+	CreatedAt                  time.Time
+	UpdatedAt                  time.Time
+	NextPollAt                 time.Time
+	LastRenewedAt              time.Time
+	LastReconciledAt           time.Time
+	ConsecutiveErrors          int
+	TrackingRenewals           int
+	ReconcileSkippedByDebounce bool
+	Logs                       []AsyncTaskLog
 }
 
 func normalizeAsyncTaskType(raw string) (string, error) {
