@@ -28,32 +28,20 @@ func asyncTaskSubmitToolDefinition() llm.ToolDefinition {
 		Type: "function",
 		Function: llm.ToolFunctionDefinition{
 			Name:        builtinAsyncTaskSubmitToolName,
-			Description: "Submit one async task. task_type supports generic or a2a.",
+			Description: "Submit one async task. task_type supports generic or a2a. When task_type=a2a, agent_id and agent_input are required.",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"task_type":         map[string]any{"type": "string", "enum": []string{asyncTaskTypeGeneric, asyncTaskTypeA2A}},
-					"request":           map[string]any{"type": "string"},
-					"agent_id":          map[string]any{"type": "string"},
-					"agent_input":       map[string]any{"type": "string"},
+					"request":           map[string]any{"type": "string", "description": "Task request text. For a2a tasks, keep this aligned with agent_input."},
+					"agent_id":          map[string]any{"type": "string", "description": "Required when task_type=a2a."},
+					"agent_input":       map[string]any{"type": "string", "description": "Required when task_type=a2a."},
 					"dedupe_key":        map[string]any{"type": "string"},
 					"notify_on_finish":  map[string]any{"type": "boolean"},
 					"metadata":          map[string]any{"type": "object"},
 					"session_id_unused": map[string]any{"type": "string"},
 				},
-				"required": []string{"task_type", "request"},
-				"allOf": []map[string]any{
-					{
-						"if": map[string]any{
-							"properties": map[string]any{
-								"task_type": map[string]any{"const": asyncTaskTypeA2A},
-							},
-						},
-						"then": map[string]any{
-							"required": []string{"agent_id", "agent_input"},
-						},
-					},
-				},
+				"required":             []string{"task_type", "request"},
 				"additionalProperties": false,
 			},
 		},
