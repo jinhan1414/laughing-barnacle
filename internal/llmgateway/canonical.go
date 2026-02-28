@@ -59,6 +59,7 @@ type CanonicalTokenUsage struct {
 	PromptTokens     int
 	CompletionTokens int
 	TotalTokens      int
+	CachedTokens     int
 }
 
 func toCanonicalRequest(req llm.ChatRequest, provider, model string) CanonicalChatRequest {
@@ -157,5 +158,6 @@ func fromCanonicalUsage(usage CanonicalTokenUsage) llm.TokenUsage {
 		PromptTokens:     usage.PromptTokens,
 		CompletionTokens: usage.CompletionTokens,
 		TotalTokens:      usage.TotalTokens,
+		CachedTokens:     usage.CachedTokens,
 	}
 }

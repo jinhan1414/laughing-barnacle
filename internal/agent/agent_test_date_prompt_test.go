@@ -41,7 +41,7 @@ func TestHandleUserMessage_AlwaysInjectsCurrentDateContextPrompt(t *testing.T) {
 
 	found := false
 	for _, msg := range fakeLLM.calls[0].Messages {
-		if msg.Role != "user" || !strings.Contains(msg.Content, runtimeDateContextMarker) {
+		if msg.Role != "system" || !strings.Contains(msg.Content, runtimeDateContextMarker) {
 			continue
 		}
 		found = true
@@ -94,7 +94,7 @@ func TestHandleUserMessage_InjectsOnlyOneRuntimeDateUserContext(t *testing.T) {
 
 	count := 0
 	for _, msg := range fakeLLM.calls[0].Messages {
-		if msg.Role != "user" || !strings.Contains(msg.Content, runtimeDateContextMarker) {
+		if msg.Role != "system" || !strings.Contains(msg.Content, runtimeDateContextMarker) {
 			continue
 		}
 		count++

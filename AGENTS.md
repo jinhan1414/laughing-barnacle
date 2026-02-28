@@ -37,6 +37,7 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 - 用户长期规则：废弃代码需要及时删除，保持仓库整洁，避免保留无效实现或不可达分支。
 - 用户长期规则：单个代码文件行数不得超过 300 行；重构与新增代码默认按该约束拆分实现。
 - 用户长期规则：关于定时任务等执行链路优化，固定采用“方案1（仅靠模型能力）”；不引入其他替代执行方式，保持能力随模型增强而增强。
+- 用户长期规则：涉及 OpenAI Codex 上下文缓存时，必须优先保证请求前缀稳定（system/instructions/input/tools 相对顺序稳定）；运行时动态上下文（如 `[[RUNTIME_DATE_CONTEXT]]`）默认注入 system 段且位置固定，避免作为 user 消息随会话轮次漂移导致 `cached_tokens=0`。
 - 用户长期规则：数字分身产品面向普通用户，默认应支持并优先处理日常化、口语化的自然指令，不要求用户具备专业技术背景。
 - 用户长期规则：A2A 后续开发固定为“维护走请求式链路、执行走内置工具”：
   - A2A 接入维护（新增/修改/启停/删除）必须优先通过 JSON 接口 `/api/a2a/agents/save|toggle|delete`，并通过 `/api/a2a/agents*` 回读校验；设置页表单仅作为兼容入口。

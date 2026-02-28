@@ -91,11 +91,12 @@ func normalizeTokenUsage(in *TokenUsage) *TokenUsage {
 		PromptTokens:     max(0, in.PromptTokens),
 		CompletionTokens: max(0, in.CompletionTokens),
 		TotalTokens:      max(0, in.TotalTokens),
+		CachedTokens:     max(0, in.CachedTokens),
 	}
 	if usage.TotalTokens == 0 {
 		usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 	}
-	if usage.PromptTokens == 0 && usage.CompletionTokens == 0 && usage.TotalTokens == 0 {
+	if usage.PromptTokens == 0 && usage.CompletionTokens == 0 && usage.TotalTokens == 0 && usage.CachedTokens == 0 {
 		return nil
 	}
 	return &usage

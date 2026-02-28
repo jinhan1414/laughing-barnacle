@@ -120,5 +120,6 @@ func toCanonicalUsage(usage llm.TokenUsage) llmgateway.CanonicalTokenUsage {
 		PromptTokens:     usage.PromptTokens,
 		CompletionTokens: usage.CompletionTokens,
 		TotalTokens:      usage.TotalTokens,
+		CachedTokens:     usage.CachedTokens,
 	}
 }

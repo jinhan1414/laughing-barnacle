@@ -65,13 +65,14 @@ func toAPITokenUsage(usage *conversation.TokenUsage) *apiTokenUsage {
 	if usage == nil {
 		return nil
 	}
-	if usage.PromptTokens == 0 && usage.CompletionTokens == 0 && usage.TotalTokens == 0 {
+	if usage.PromptTokens == 0 && usage.CompletionTokens == 0 && usage.TotalTokens == 0 && usage.CachedTokens == 0 {
 		return nil
 	}
 	return &apiTokenUsage{
 		PromptTokens:     usage.PromptTokens,
 		CompletionTokens: usage.CompletionTokens,
 		TotalTokens:      usage.TotalTokens,
+		CachedTokens:     usage.CachedTokens,
 	}
 }
 

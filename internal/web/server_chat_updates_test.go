@@ -19,6 +19,7 @@ func TestHandleAPIChatUpdates_ReturnsIncrementalAssistantAndEvents(t *testing.T)
 		PromptTokens:     50,
 		CompletionTokens: 10,
 		TotalTokens:      60,
+		CachedTokens:     40,
 	})
 	time.Sleep(2 * time.Millisecond)
 	convStore.AppendEvent("context_compression", "c1")
@@ -45,6 +46,9 @@ func TestHandleAPIChatUpdates_ReturnsIncrementalAssistantAndEvents(t *testing.T)
 	}
 	if payload.Updates[0].Usage == nil || payload.Updates[0].Usage.TotalTokens != 60 {
 		t.Fatalf("unexpected usage in first update: %+v", payload.Updates[0].Usage)
+	}
+	if payload.Updates[0].Usage.CachedTokens != 40 {
+		t.Fatalf("unexpected cached usage in first update: %+v", payload.Updates[0].Usage)
 	}
 	if payload.Updates[1].Kind != "event" || payload.Updates[1].Content != "c1" {
 		t.Fatalf("unexpected second update: %+v", payload.Updates[1])

@@ -139,6 +139,13 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 			Content: runtimePrompt,
 		})
 	}
+	currentDateContextPrompt := strings.TrimSpace(buildCurrentDateUserContextPrompt(a.nowFn()))
+	if currentDateContextPrompt != "" {
+		requestMessages = append(requestMessages, llm.Message{
+			Role:    "system",
+			Content: currentDateContextPrompt,
+		})
+	}
 	summary = pruneSummaryOverlap(summary, systemPrompt, skillIndexPrompt, memoryIndexPrompt, a2aIndexPrompt, asyncTaskIndexPrompt, responseStylePrompt, runtimePrompt)
 	if strings.TrimSpace(summary) != "" {
 		requestMessages = append(requestMessages, llm.Message{
@@ -150,10 +157,6 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 	recentMessages := trimMessagesForRequest(messages, a.cfg.MaxRecentMessages, maxRecentContextRunes, maxContextMessageRunes)
 	requestMessages = appendHistoryMessagesWithToolCalls(requestMessages, recentMessages)
 	requestMessages = removeRuntimeDateContextUserMessages(requestMessages)
-	requestMessages = append(requestMessages, llm.Message{
-		Role:    "user",
-		Content: buildCurrentDateUserContextPrompt(a.nowFn()),
-	})
 
 	toolDefs := make([]llm.ToolDefinition, 0, len(builtinToolDefs)+4)
 	toolDefs = append(toolDefs, builtinToolDefs...)

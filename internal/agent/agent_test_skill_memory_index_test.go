@@ -195,7 +195,7 @@ func TestHandleUserMessage_IncludesCurrentTimeContextPrompt(t *testing.T) {
 
 	found := false
 	for _, msg := range fakeLLM.calls[0].Messages {
-		if msg.Role != "user" || !strings.Contains(msg.Content, runtimeDateContextMarker) {
+		if msg.Role != "system" || !strings.Contains(msg.Content, runtimeDateContextMarker) {
 			continue
 		}
 		found = true

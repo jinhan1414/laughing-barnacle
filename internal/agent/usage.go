@@ -17,6 +17,7 @@ func mergeTokenUsage(total conversation.TokenUsage, hasUsage bool, usage llm.Tok
 	prompt := usage.PromptTokens
 	completion := usage.CompletionTokens
 	all := usage.TotalTokens
+	cached := usage.CachedTokens
 	if prompt < 0 {
 		prompt = 0
 	}
@@ -26,15 +27,19 @@ func mergeTokenUsage(total conversation.TokenUsage, hasUsage bool, usage llm.Tok
 	if all < 0 {
 		all = 0
 	}
+	if cached < 0 {
+		cached = 0
+	}
 	if all == 0 {
 		all = prompt + completion
 	}
-	if prompt == 0 && completion == 0 && all == 0 {
+	if prompt == 0 && completion == 0 && all == 0 && cached == 0 {
 		return total, hasUsage
 	}
 	total.PromptTokens += prompt
 	total.CompletionTokens += completion
 	total.TotalTokens += all
+	total.CachedTokens += cached
 	return total, true
 }
 
