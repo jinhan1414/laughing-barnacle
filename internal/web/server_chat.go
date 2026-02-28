@@ -94,6 +94,7 @@ func buildChatTimeline(messages []conversation.Message, events []conversation.Ev
 	}
 
 	all := make([]timelineWithSeq, 0, len(messages)+len(events))
+	asyncTaskEventIndex := make(map[string]int)
 	seq := 0
 	for _, msg := range messages {
 		role := strings.TrimSpace(msg.Role)
@@ -124,16 +125,31 @@ func buildChatTimeline(messages []conversation.Message, events []conversation.Ev
 		if eventType != "context_compression" && eventType != "async_task_status" {
 			continue
 		}
-		all = append(all, timelineWithSeq{
+		eventTaskID := ""
+		if eventType == "async_task_status" {
+			eventTaskID = extractAsyncTaskStatusTaskID(evt.Content)
+		}
+		next := timelineWithSeq{
 			item: chatTimelineItem{
-				Kind:      "event",
-				EventType: eventType,
-				Content:   evt.Content,
-				CreatedAt: evt.CreatedAt,
+				Kind:        "event",
+				EventType:   eventType,
+				EventTaskID: eventTaskID,
+				Content:     evt.Content,
+				CreatedAt:   evt.CreatedAt,
 			},
 			seq: seq,
-		})
+		}
 		seq++
+		if eventTaskID != "" {
+			if idx, ok := asyncTaskEventIndex[eventTaskID]; ok {
+				all[idx] = next
+				continue
+			}
+		}
+		all = append(all, next)
+		if eventTaskID != "" {
+			asyncTaskEventIndex[eventTaskID] = len(all) - 1
+		}
 	}
 
 	sort.SliceStable(all, func(i, j int) bool {
@@ -202,6 +218,17 @@ func sameLocalDay(left, right time.Time) bool {
 	return left.Year() == right.Year() &&
 		left.Month() == right.Month() &&
 		left.Day() == right.Day()
+}
+
+func extractAsyncTaskStatusTaskID(content string) string {
+	for _, part := range strings.Split(content, "|") {
+		text := strings.TrimSpace(part)
+		if !strings.HasPrefix(text, "task_id=") {
+			continue
+		}
+		return strings.TrimSpace(strings.TrimPrefix(text, "task_id="))
+	}
+	return ""
 }
 
 func (s *Server) handleChatSend(w http.ResponseWriter, r *http.Request) {

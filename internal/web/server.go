@@ -54,6 +54,7 @@ type chatPageData struct {
 type chatTimelineItem struct {
 	Kind           string
 	EventType      string
+	EventTaskID    string
 	Content        string
 	ToolCalls      []conversation.ToolCall
 	Usage          *conversation.TokenUsage
@@ -113,16 +114,16 @@ type settingsPageData struct {
 }
 
 type a2aAgentView struct {
-	ID           string
-	Name         string
-	Description  string
-	Endpoint     string
-	AgentCardURL string
+	ID              string
+	Name            string
+	Description     string
+	Endpoint        string
+	AgentCardURL    string
 	ProtocolVersion string
-	Skills       []mcp.A2ASkill
-	HasAuthToken bool
-	Enabled      bool
-	UpdatedAt    string
+	Skills          []mcp.A2ASkill
+	HasAuthToken    bool
+	Enabled         bool
+	UpdatedAt       string
 }
 
 type skillView struct {
@@ -257,16 +258,16 @@ type apiMCPService struct {
 }
 
 type apiA2AAgent struct {
-	ID           string    `json:"id"`
-	Name         string    `json:"name"`
-	Description  string    `json:"description,omitempty"`
-	Endpoint     string    `json:"endpoint"`
-	AgentCardURL string    `json:"agent_card_url,omitempty"`
-	ProtocolVersion string  `json:"protocol_version,omitempty"`
-	Skills       []mcp.A2ASkill `json:"skills,omitempty"`
-	Enabled      bool      `json:"enabled"`
-	HasAuthToken bool      `json:"has_auth_token"`
-	UpdatedAt    time.Time `json:"updated_at,omitempty"`
+	ID              string         `json:"id"`
+	Name            string         `json:"name"`
+	Description     string         `json:"description,omitempty"`
+	Endpoint        string         `json:"endpoint"`
+	AgentCardURL    string         `json:"agent_card_url,omitempty"`
+	ProtocolVersion string         `json:"protocol_version,omitempty"`
+	Skills          []mcp.A2ASkill `json:"skills,omitempty"`
+	Enabled         bool           `json:"enabled"`
+	HasAuthToken    bool           `json:"has_auth_token"`
+	UpdatedAt       time.Time      `json:"updated_at,omitempty"`
 }
 
 type apiSkill struct {

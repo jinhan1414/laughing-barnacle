@@ -68,7 +68,7 @@
             </div>
           </article>
           {{else if eq .Kind "event"}}
-          <article class="mb-2.5 flex justify-center" data-chat-message="1" data-created-at="{{.CreatedAt.Unix}}" data-created-at-us="{{.CreatedAt.UnixMicro}}" data-event-type="{{.EventType}}">
+          <article class="mb-2.5 flex justify-center" data-chat-message="1" data-created-at="{{.CreatedAt.Unix}}" data-created-at-us="{{.CreatedAt.UnixMicro}}" data-event-type="{{.EventType}}" data-event-task-id="{{.EventTaskID}}">
             <details class="w-full max-w-[86%] rounded-xl border border-dashed border-slate-300 bg-slate-100/95 px-3 py-2 text-[12px] leading-5 text-slate-600">
               <summary class="cursor-pointer list-none font-medium text-slate-500">{{if eq .EventType "context_compression"}}已压缩上下文，点击展开摘要{{else if eq .EventType "async_task_status"}}后台任务状态更新{{else}}系统事件{{end}}</summary>
               <div class="mt-1 js-chat-content whitespace-pre-wrap break-words transition-[max-height] duration-200">{{.Content}}</div>
@@ -365,6 +365,44 @@
         return "系统事件";
       }
 
+      function parseAsyncTaskIDFromEventContent(content) {
+        var text = String(content || "").trim();
+        if (!text) {
+          return "";
+        }
+        var parts = text.split("|");
+        for (var i = 0; i < parts.length; i++) {
+          var part = String(parts[i] || "").trim();
+          if (part.indexOf("task_id=") !== 0) {
+            continue;
+          }
+          return part.slice("task_id=".length).trim();
+        }
+        return "";
+      }
+
+      function findAsyncTaskEventArticle(taskID) {
+        if (!taskID) {
+          return null;
+        }
+        var nodes = container.querySelectorAll("[data-chat-message='1'][data-event-type='async_task_status']");
+        for (var i = 0; i < nodes.length; i++) {
+          var node = nodes[i];
+          var knownTaskID = String(node.getAttribute("data-event-task-id") || "").trim();
+          if (!knownTaskID) {
+            var bodyNode = node.querySelector(".js-chat-content");
+            knownTaskID = parseAsyncTaskIDFromEventContent(bodyNode ? bodyNode.textContent : "");
+            if (knownTaskID) {
+              node.setAttribute("data-event-task-id", knownTaskID);
+            }
+          }
+          if (knownTaskID === taskID) {
+            return node;
+          }
+        }
+        return null;
+      }
+
       function appendEventMessage(content, createdAtUs, eventType) {
         var text = (content || "").trim();
         if (!text) {
@@ -372,6 +410,25 @@
         }
         createdAtUs = normalizeCreatedAtUs(createdAtUs);
         var createdAtMs = usToMs(createdAtUs);
+        var taskID = "";
+        if (eventType === "async_task_status") {
+          taskID = parseAsyncTaskIDFromEventContent(text);
+          if (taskID) {
+            var existing = findAsyncTaskEventArticle(taskID);
+            if (existing) {
+              var existingBody = existing.querySelector(".js-chat-content");
+              if (existingBody) {
+                existingBody.textContent = text;
+              }
+              existing.setAttribute("data-created-at", String(Math.floor(createdAtMs / 1000)));
+              existing.setAttribute("data-created-at-us", String(createdAtUs));
+              existing.setAttribute("data-event-task-id", taskID);
+              updateMessageCursor(createdAtUs, createdAtMs);
+              container.scrollTop = container.scrollHeight;
+              return;
+            }
+          }
+        }
 
         if (shouldInsertTimestamp(createdAtMs)) {
           appendTimestamp(createdAtMs);
@@ -383,6 +440,9 @@
         article.setAttribute("data-created-at", String(Math.floor(createdAtMs / 1000)));
         article.setAttribute("data-created-at-us", String(createdAtUs));
         article.setAttribute("data-event-type", eventType || "");
+        if (taskID) {
+          article.setAttribute("data-event-task-id", taskID);
+        }
 
         var details = document.createElement("details");
         details.className = "w-full max-w-[86%] rounded-xl border border-dashed border-slate-300 bg-slate-100/95 px-3 py-2 text-[12px] leading-5 text-slate-600";

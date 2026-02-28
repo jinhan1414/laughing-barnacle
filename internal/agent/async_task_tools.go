@@ -41,7 +41,19 @@ func asyncTaskSubmitToolDefinition() llm.ToolDefinition {
 					"metadata":          map[string]any{"type": "object"},
 					"session_id_unused": map[string]any{"type": "string"},
 				},
-				"required":             []string{"task_type", "request"},
+				"required": []string{"task_type", "request"},
+				"allOf": []map[string]any{
+					{
+						"if": map[string]any{
+							"properties": map[string]any{
+								"task_type": map[string]any{"const": asyncTaskTypeA2A},
+							},
+						},
+						"then": map[string]any{
+							"required": []string{"agent_id", "agent_input"},
+						},
+					},
+				},
 				"additionalProperties": false,
 			},
 		},
