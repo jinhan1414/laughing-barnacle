@@ -1,0 +1,13 @@
+{
+  "name": "manual-with-skills",
+  "endpoint": "http://127.0.0.1:9091/a2a/rpc",
+  "protocol_version": "0.3.0",
+  "skills": [
+    {
+      "id": "codex_exec",
+      "name": "Codex Exec",
+      "description": "Execute Codex CLI prompts"
+    }
+  ],
+  "enabled": true
+}

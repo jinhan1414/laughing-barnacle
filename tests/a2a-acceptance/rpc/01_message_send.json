@@ -1,0 +1,21 @@
+{
+  "jsonrpc": "2.0",
+  "id": "send-1",
+  "method": "message/send",
+  "params": {
+    "message": {
+      "kind": "message",
+      "messageId": "msg-1",
+      "role": "user",
+      "parts": [
+        {
+          "kind": "text",
+          "text": "请输出一句验收测试成功"
+        }
+      ]
+    },
+    "configuration": {
+      "blocking": false
+    }
+  }
+}

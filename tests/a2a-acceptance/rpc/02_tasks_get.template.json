@@ -1,0 +1,8 @@
+{
+  "jsonrpc": "2.0",
+  "id": "get-1",
+  "method": "tasks/get",
+  "params": {
+    "id": "__TASK_ID__"
+  }
+}

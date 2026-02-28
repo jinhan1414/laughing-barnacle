@@ -1,0 +1,6 @@
+{
+  "name": "codex-local",
+  "description": "official sdk acceptance",
+  "agent_card_url": "http://127.0.0.1:9091/.well-known/agent-card.json",
+  "enabled": true
+}

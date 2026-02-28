@@ -1,0 +1,5 @@
+{
+  "name": "bad-unreachable",
+  "agent_card_url": "http://127.0.0.1:1/.well-known/agent-card.json",
+  "enabled": true
+}

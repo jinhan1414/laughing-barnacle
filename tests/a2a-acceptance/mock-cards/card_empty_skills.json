@@ -1,0 +1,7 @@
+{
+  "name": "mock-empty-skills",
+  "description": "empty skills",
+  "url": "http://127.0.0.1:19093/a2a/rpc",
+  "protocolVersion": "0.3.0",
+  "skills": []
+}
