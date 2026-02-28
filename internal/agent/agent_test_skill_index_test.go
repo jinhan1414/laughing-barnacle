@@ -268,6 +268,9 @@ func TestHandleUserMessage_IncludesToolRuntimeConstraintsPrompt(t *testing.T) {
 	if !strings.Contains(found, "tool_name 与 call_id（或 task_id）") {
 		t.Fatalf("expected execution evidence fields guidance, got %q", found)
 	}
+	if !strings.Contains(found, "agent_input 禁止出现“调用 <agent_id>") {
+		t.Fatalf("expected no-dispatch guidance for a2a agent_input, got %q", found)
+	}
 	if preferredShellName() == "cmd" {
 		if !strings.Contains(found, "禁止写反斜杠转义引号") {
 			t.Fatalf("expected windows quote escape constraint for cmd shell, got %q", found)

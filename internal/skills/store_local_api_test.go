@@ -107,6 +107,12 @@ func TestBuiltinA2ATaskOrchestrator_UsesInjectedIndexFirst(t *testing.T) {
 	if !strings.Contains(prompt, "仅在用户明确要求刷新列表或执行前需要一致性校验时") {
 		t.Fatalf("expected on-demand list refresh constraint, got %q", prompt)
 	}
+	if !strings.Contains(prompt, "agent_input 直接描述目标任务与验收标准") {
+		t.Fatalf("expected direct agent_input objective constraint, got %q", prompt)
+	}
+	if !strings.Contains(prompt, "禁止出现“调用 <agent_id>”") {
+		t.Fatalf("expected no-dispatch wording for agent_input, got %q", prompt)
+	}
 	if strings.Contains(prompt, "步骤 1：先读索引：curl -sS http://127.0.0.1:9080/api/a2a/agents") {
 		t.Fatalf("expected no mandatory list-read first step, got %q", prompt)
 	}

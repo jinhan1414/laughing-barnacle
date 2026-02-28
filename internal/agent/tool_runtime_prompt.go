@@ -9,6 +9,7 @@ const executionConsistencyPrompt = "" +
 	"无法立即执行时，必须明确“我还未执行”，并说明阻塞原因（缺参数/权限/路径不可达）。\n" +
 	"最终结论必须附执行证据：tool_name 与 call_id（或 task_id），以及 status/exit_code。\n" +
 	"调用 async_task__submit 时，request 必须是稳定任务摘要（不含“再次/继续/重新”等轮次词）；完整执行要求放在 agent_input。\n" +
+	"task_type=a2a 时，agent_input 禁止出现“调用 <agent_id>/让 <agent_id> 执行”这类调度语句，必须直接写业务目标与验收点。\n" +
 	"禁止承诺式空转回复（如“稍后给你结果”），除非同轮已发起工具调用。"
 
 func (a *Agent) buildToolRuntimePrompt() string {
