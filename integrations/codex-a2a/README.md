@@ -8,7 +8,7 @@
 - `requirements.txt`：Python 依赖
 - `run.ps1`：启动脚本
 - `register_local_agent.ps1`：向主服务登记本地 A2A Agent
-- `state/output/`：Codex 执行输出目录（自动创建）
+- `state/output/`：Codex 事件流输出目录（自动创建，保存 `*.events.jsonl`）
 
 ## 依赖
 
@@ -45,6 +45,19 @@ Agent Card 包含：
 - `message/send`：提交任务并异步执行本地 `codex exec`
 - `tasks/get`：查询任务状态与产物
 - `tasks/cancel`：终止运行中任务并标记 `canceled`
+
+执行语义：
+
+- 默认注入最小执行前缀（仅约束“持续执行到可交付结果、失败显式暴露”，不约束业务输出结构）
+- 默认使用高权限执行参数：`codex exec --dangerously-bypass-approvals-and-sandbox --json`
+- 完成判定基于事件流终态证据（`turn.completed` + 最终 `agent_message`）
+- 仅进程退出码为 0 不足以判定完成；缺失终态证据会显式失败
+
+工作目录：
+
+- 默认工作目录为启动参数 `--workdir`
+- 可在 A2A 请求 `metadata` 中传 `working_dir` 覆盖本次任务目录
+- 若提供的 `metadata.working_dir` 不存在、不可访问或不是目录，任务会显式失败（不静默回退）
 
 失败路径保持显式暴露，不提供 mock 成功返回。
 

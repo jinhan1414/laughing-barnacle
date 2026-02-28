@@ -23,6 +23,15 @@ from a2a.types import (
 )
 from a2a.utils import new_agent_text_message
 
+from codex_exec_runtime import (
+    build_codex_exec_command,
+    build_effective_prompt,
+    build_event_summary_evidence,
+    build_terminal_evidence_error,
+    parse_codex_event_stream,
+    resolve_task_workdir,
+)
+
 
 DEFAULT_PROTOCOL_VERSION = "0.3.0"
 DEFAULT_AGENT_VERSION = "1.0.0"
@@ -32,7 +41,7 @@ MAX_ERROR_TEXT_LEN = 2000
 
 class CodexAgentExecutor(AgentExecutor):
     def __init__(self, workdir: Path, codex_bin: str, output_dir: Path):
-        self.workdir = str(workdir)
+        self.workdir = workdir
         self.codex_bin = codex_bin
         self.output_dir = output_dir
         self._processes: dict[str, asyncio.subprocess.Process] = {}
@@ -41,14 +50,25 @@ class CodexAgentExecutor(AgentExecutor):
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         task_id, context_id = require_context_ids(context)
         updater = TaskUpdater(event_queue=event_queue, task_id=task_id, context_id=context_id)
-        prompt = context.get_user_input().strip()
-        if not prompt:
+        user_prompt = context.get_user_input().strip()
+        if not user_prompt:
             await updater.failed(self._status_message(task_id, context_id, "empty message text"))
+            return
+        try:
+            task_workdir = resolve_task_workdir(self.workdir, context.metadata)
+        except ValueError as exc:
+            await updater.failed(self._status_message(task_id, context_id, str(exc)))
             return
 
         await updater.submit(self._status_message(task_id, context_id, "submitted"))
         await updater.start_work(self._status_message(task_id, context_id, "working"))
-        await self._run_codex_task(updater, task_id, context_id, prompt)
+        await self._run_codex_task(
+            updater=updater,
+            task_id=task_id,
+            context_id=context_id,
+            prompt=build_effective_prompt(user_prompt),
+            task_workdir=task_workdir,
+        )
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
         task_id, context_id = require_context_ids(context)
@@ -58,9 +78,16 @@ class CodexAgentExecutor(AgentExecutor):
             await terminate_process(proc)
         await updater.cancel(self._status_message(task_id, context_id, "canceled"))
 
-    async def _run_codex_task(self, updater: TaskUpdater, task_id: str, context_id: str, prompt: str) -> None:
-        output_file = self.output_dir / f"{task_id}.txt"
-        cmd = [self.codex_bin, "exec", "-C", self.workdir, "-o", str(output_file), prompt]
+    async def _run_codex_task(
+        self,
+        updater: TaskUpdater,
+        task_id: str,
+        context_id: str,
+        prompt: str,
+        task_workdir: Path,
+    ) -> None:
+        events_file = self.output_dir / f"{task_id}.events.jsonl"
+        cmd = build_codex_exec_command(self.codex_bin, task_workdir, prompt)
         try:
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -80,14 +107,21 @@ class CodexAgentExecutor(AgentExecutor):
         finally:
             await self._clear_process(task_id)
 
+        stdout_text = (stdout or b"").decode("utf-8", errors="replace").strip()
+        await write_output_text(events_file, stdout_text)
         if proc.returncode != 0:
             err_text = build_process_error(stderr, stdout, proc.returncode)
             await updater.failed(self._status_message(task_id, context_id, err_text))
             return
 
-        output_text = await read_output_text(output_file)
-        artifact_text = output_text or "(empty output)"
-        await updater.add_artifact([Part(root=TextPart(text=artifact_text))], name="codex-output")
+        summary = parse_codex_event_stream(stdout_text)
+        terminal_error = build_terminal_evidence_error(summary)
+        if terminal_error != "":
+            await updater.failed(self._status_message(task_id, context_id, terminal_error))
+            return
+        await updater.add_artifact([Part(root=TextPart(text=summary.final_message))], name="codex-output")
+        evidence = build_event_summary_evidence(summary, task_workdir, events_file)
+        await updater.add_artifact([Part(root=TextPart(text=evidence))], name="codex-evidence")
         await updater.complete(self._status_message(task_id, context_id, "completed"))
 
     async def _set_process(self, task_id: str, proc: asyncio.subprocess.Process) -> None:
@@ -126,10 +160,8 @@ def build_process_error(stderr: bytes | None, stdout: bytes | None, return_code:
     return f"codex exit code {return_code}"
 
 
-async def read_output_text(path: Path) -> str:
-    if not path.exists():
-        return ""
-    return (await asyncio.to_thread(path.read_text, encoding="utf-8", errors="ignore")).strip()
+async def write_output_text(path: Path, text: str) -> None:
+    await asyncio.to_thread(path.write_text, text, encoding="utf-8")
 
 
 async def terminate_process(proc: asyncio.subprocess.Process) -> None:

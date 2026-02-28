@@ -15,11 +15,9 @@ func (m *AsyncTaskManager) runA2ATask(ctx context.Context, task AsyncTask) {
 	}
 
 	sendResult, err := provider.Send(ctx, A2ASendRequest{
-		AgentID: task.AgentID,
-		Message: task.AgentInput,
-		Metadata: map[string]any{
-			"async_task_id": task.ID,
-		},
+		AgentID:  task.AgentID,
+		Message:  task.AgentInput,
+		Metadata: buildA2ASendMetadata(task.Metadata, task.ID),
 	})
 	if err != nil {
 		m.finishTask(task.ID, asyncTaskStatusFailed, "", "a2a send failed: "+err.Error())
@@ -106,6 +104,15 @@ func (m *AsyncTaskManager) waitPollWindow(ctx context.Context, waitFor time.Dura
 	case <-timer.C:
 		return nil
 	}
+}
+
+func buildA2ASendMetadata(base map[string]any, taskID string) map[string]any {
+	out := cloneAnyMap(base)
+	if out == nil {
+		out = make(map[string]any, 1)
+	}
+	out["async_task_id"] = strings.TrimSpace(taskID)
+	return out
 }
 
 func (m *AsyncTaskManager) readA2AProvider() A2AProvider {
