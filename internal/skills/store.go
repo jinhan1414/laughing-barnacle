@@ -75,6 +75,8 @@ var builtinSkills = []Skill{
 				"步骤 2：如索引不足，再读单个详情：curl -sS \"http://127.0.0.1:8080/api/a2a/agents/read?id=<agent_id>\"。\n" +
 				"步骤 3：统一通过后台任务网关执行：async_task__submit(task_type=a2a, request, agent_id, agent_input)。\n" +
 				"步骤 4：按需回读进度：async_task__get(task_id)；需要中断时使用 async_task__cancel(task_id)。\n" +
+				"约束：async_task__submit.request 仅写稳定任务摘要，禁止“再次/重新/继续/再”等轮次词，以及“调用 codex-local”这类过程措辞。\n" +
+				"约束：完整执行目标与边界写在 agent_input；request 与 agent_input 语义一致但更短（建议 <= 60 字）。\n" +
 				"约束：仅在用户明确要求刷新列表或执行前需要一致性校验时，才读取列表：curl -sS http://127.0.0.1:8080/api/a2a/agents。\n" +
 				"约束：禁止一次性读取全部 Agent 详情；单轮默认只读 1 个详情，不足再补读。\n" +
 				"约束：禁止调用 a2a__send/a2a__get/a2a__cancel。\n" +
@@ -91,6 +93,7 @@ var builtinSkills = []Skill{
 			"目标：由模型自主决定是否将任务转后台，并通过内置 async_task 工具闭环执行。\n" +
 				"执行入口固定：async_task__submit；查询入口：async_task__get；取消入口：async_task__cancel。\n" +
 				"submit 参数硬约束：task_type 与 request 必填；当 task_type=a2a 时，agent_id 与 agent_input 必填。\n" +
+				"submit 文案约束：request 仅写稳定任务摘要，禁止“再次/重新/继续/马上”等轮次词；详细要求写入 agent_input 或后续工具参数。\n" +
 				"默认 notify_on_finish=true，任务终态后系统会主动通知用户。\n" +
 				"仅在需要排障时才读取日志窗口：async_task__get(include_logs=true, log_cursor, log_limit<=200)。\n" +
 				"禁止通过 Skill 直接发 HTTP 执行后台任务。\n" +

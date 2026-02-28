@@ -33,7 +33,7 @@ func asyncTaskSubmitToolDefinition() llm.ToolDefinition {
 				"type": "object",
 				"properties": map[string]any{
 					"task_type":         map[string]any{"type": "string", "enum": []string{asyncTaskTypeGeneric, asyncTaskTypeA2A}},
-					"request":           map[string]any{"type": "string", "description": "Task request text. For a2a tasks, keep this aligned with agent_input."},
+					"request":           map[string]any{"type": "string", "description": "Task request summary for task list brief. Keep it stable and concise; for a2a tasks align with agent_input and avoid turn words like 再次/继续/重新."},
 					"agent_id":          map[string]any{"type": "string", "description": "Required when task_type=a2a."},
 					"agent_input":       map[string]any{"type": "string", "description": "Required when task_type=a2a."},
 					"dedupe_key":        map[string]any{"type": "string"},
