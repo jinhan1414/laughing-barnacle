@@ -13,9 +13,12 @@ type A2ATaskQuery struct {
 }
 
 type A2ATaskResult struct {
-	AgentID   string
-	TaskID    string
-	Status    string
-	Message   string
-	Artifacts []string
+	AgentID     string
+	TaskID      string
+	Status      string
+	RawStatus   string
+	SDKProvider string
+	SDKMethod   string
+	Message     string
+	Artifacts   []string
 }

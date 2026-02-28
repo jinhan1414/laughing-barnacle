@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -43,7 +44,7 @@ func (p *ToolProvider) CallTool(ctx context.Context, call llm.ToolCall) (string,
 
 	out := renderToolResult(result)
 	if result.IsError {
-		return "", fmt.Errorf(strings.TrimSpace(out))
+		return "", errors.New(strings.TrimSpace(out))
 	}
 	return out, nil
 }

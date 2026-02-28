@@ -123,6 +123,19 @@ func normalizeA2ATerminalStatus(status string) string {
 		return asyncTaskStatusFailed
 	case "canceled", "cancelled":
 		return asyncTaskStatusCanceled
+	case "rejected":
+		return asyncTaskStatusFailed
+	default:
+		return ""
+	}
+}
+
+func normalizeA2ABlockedStatus(status string) string {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "input-required":
+		return "a2a task requires additional input"
+	case "auth-required":
+		return "a2a task requires authentication"
 	default:
 		return ""
 	}

@@ -45,6 +45,8 @@ func (s *Store) UpsertA2AAgent(agent A2AAgent) error {
 	agent.Description = normalizeSkillDescription(agent.Description, agent.Name, agent.Endpoint)
 	agent.Endpoint = strings.TrimSpace(agent.Endpoint)
 	agent.AgentCardURL = strings.TrimSpace(agent.AgentCardURL)
+	agent.ProtocolVersion = strings.TrimSpace(agent.ProtocolVersion)
+	agent.Skills = normalizeA2ASkills(agent.Skills)
 	agent.AuthToken = strings.TrimSpace(agent.AuthToken)
 
 	s.mu.Lock()
@@ -73,6 +75,9 @@ func (s *Store) UpsertA2AAgent(agent A2AAgent) error {
 		}
 		if agent.AuthToken == "" {
 			agent.AuthToken = s.cfg.A2A.Agents[i].AuthToken
+		}
+		if len(agent.Skills) == 0 {
+			agent.Skills = cloneA2ASkills(s.cfg.A2A.Agents[i].Skills)
 		}
 		s.cfg.A2A.Agents[i] = agent
 		updated = true
@@ -127,11 +132,54 @@ func cloneA2AAgents(in []A2AAgent) []A2AAgent {
 	if len(in) == 0 {
 		return nil
 	}
-	out := make([]A2AAgent, len(in))
-	copy(out, in)
+	out := make([]A2AAgent, 0, len(in))
+	for _, item := range in {
+		out = append(out, cloneA2AAgent(item))
+	}
 	return out
 }
 
 func cloneA2AAgent(in A2AAgent) A2AAgent {
-	return in
+	out := in
+	out.Skills = cloneA2ASkills(in.Skills)
+	return out
+}
+
+func normalizeA2ASkills(in []A2ASkill) []A2ASkill {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]A2ASkill, 0, len(in))
+	for _, item := range in {
+		id := strings.TrimSpace(item.ID)
+		name := strings.TrimSpace(item.Name)
+		desc := strings.TrimSpace(item.Description)
+		if id == "" && name == "" && desc == "" {
+			continue
+		}
+		if id == "" {
+			id = name
+		}
+		if name == "" {
+			name = id
+		}
+		out = append(out, A2ASkill{
+			ID:          id,
+			Name:        name,
+			Description: desc,
+		})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func cloneA2ASkills(in []A2ASkill) []A2ASkill {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]A2ASkill, len(in))
+	copy(out, in)
+	return out
 }

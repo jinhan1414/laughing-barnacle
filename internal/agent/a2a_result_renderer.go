@@ -7,6 +7,9 @@ func renderA2ATaskResult(result A2ATaskResult) string {
 	b.WriteString("agent_id: " + safeOrEmpty(strings.TrimSpace(result.AgentID)) + "\n")
 	b.WriteString("task_id: " + safeOrEmpty(strings.TrimSpace(result.TaskID)) + "\n")
 	b.WriteString("status: " + safeOrEmpty(strings.TrimSpace(result.Status)) + "\n")
+	b.WriteString("raw_status: " + safeOrEmpty(strings.TrimSpace(result.RawStatus)) + "\n")
+	b.WriteString("sdk_provider: " + safeOrEmpty(strings.TrimSpace(result.SDKProvider)) + "\n")
+	b.WriteString("sdk_method: " + safeOrEmpty(strings.TrimSpace(result.SDKMethod)) + "\n")
 	if text := strings.TrimSpace(result.Message); text != "" {
 		b.WriteString("message: " + text + "\n")
 	}

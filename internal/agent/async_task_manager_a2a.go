@@ -36,8 +36,17 @@ func (m *AsyncTaskManager) runA2ATask(ctx context.Context, task AsyncTask) {
 		m.finishTask(task.ID, terminal, renderA2ATaskResult(sendResult), "")
 		return
 	}
+	if blockedErr := normalizeA2ABlockedStatus(sendResult.Status); blockedErr != "" {
+		m.finishTask(task.ID, asyncTaskStatusFailed, renderA2ATaskResult(sendResult), blockedErr)
+		return
+	}
 	if !isA2AInProgressStatus(sendResult.Status) {
-		m.finishTask(task.ID, asyncTaskStatusFailed, "", "a2a send returned unsupported status: "+strings.TrimSpace(sendResult.Status))
+		m.finishTask(
+			task.ID,
+			asyncTaskStatusFailed,
+			renderA2ATaskResult(sendResult),
+			"a2a send returned unsupported status: "+strings.TrimSpace(sendResult.Status),
+		)
 		return
 	}
 	m.pollA2ATask(ctx, task.ID, sendResult.AgentID, sendResult.TaskID)
@@ -62,6 +71,19 @@ func (m *AsyncTaskManager) pollA2ATask(ctx context.Context, taskID, agentID, rem
 		}
 		if terminal := normalizeA2ATerminalStatus(result.Status); terminal != "" {
 			m.finishTask(taskID, terminal, renderA2ATaskResult(result), "")
+			return
+		}
+		if blockedErr := normalizeA2ABlockedStatus(result.Status); blockedErr != "" {
+			m.finishTask(taskID, asyncTaskStatusFailed, renderA2ATaskResult(result), blockedErr)
+			return
+		}
+		if !isA2AInProgressStatus(result.Status) {
+			m.finishTask(
+				taskID,
+				asyncTaskStatusFailed,
+				renderA2ATaskResult(result),
+				"a2a get returned unsupported status: "+strings.TrimSpace(result.Status),
+			)
 			return
 		}
 		m.updatePollingLog(taskID, "a2a status: "+strings.TrimSpace(result.Status))

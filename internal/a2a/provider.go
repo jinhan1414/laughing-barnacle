@@ -6,13 +6,16 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/a2aproject/a2a-go/a2aclient/agentcard"
 )
 
 const defaultRequestTimeout = 20 * time.Second
 
 type Provider struct {
-	store *mcp.Store
-	http  *http.Client
+	store        *mcp.Store
+	http         *http.Client
+	cardResolver *agentcard.Resolver
 }
 
 func NewProvider(store *mcp.Store, timeout time.Duration) *Provider {
@@ -23,12 +26,14 @@ func NewProvider(store *mcp.Store, timeout time.Duration) *Provider {
 		Proxy:             http.ProxyFromEnvironment,
 		DisableKeepAlives: true,
 	}
+	httpClient := &http.Client{
+		Timeout:   timeout,
+		Transport: transport,
+	}
 	return &Provider{
-		store: store,
-		http: &http.Client{
-			Timeout:   timeout,
-			Transport: transport,
-		},
+		store:        store,
+		http:         httpClient,
+		cardResolver: agentcard.NewResolver(httpClient),
 	}
 }
 

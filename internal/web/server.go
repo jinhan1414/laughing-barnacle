@@ -118,6 +118,8 @@ type a2aAgentView struct {
 	Description  string
 	Endpoint     string
 	AgentCardURL string
+	ProtocolVersion string
+	Skills       []mcp.A2ASkill
 	HasAuthToken bool
 	Enabled      bool
 	UpdatedAt    string
@@ -260,6 +262,8 @@ type apiA2AAgent struct {
 	Description  string    `json:"description,omitempty"`
 	Endpoint     string    `json:"endpoint"`
 	AgentCardURL string    `json:"agent_card_url,omitempty"`
+	ProtocolVersion string  `json:"protocol_version,omitempty"`
+	Skills       []mcp.A2ASkill `json:"skills,omitempty"`
 	Enabled      bool      `json:"enabled"`
 	HasAuthToken bool      `json:"has_auth_token"`
 	UpdatedAt    time.Time `json:"updated_at,omitempty"`
@@ -308,6 +312,7 @@ type apiTokenUsage struct {
 	PromptTokens     int `json:"prompt_tokens,omitempty"`
 	CompletionTokens int `json:"completion_tokens,omitempty"`
 	TotalTokens      int `json:"total_tokens,omitempty"`
+	CachedTokens     int `json:"cached_tokens,omitempty"`
 }
 
 type apiChatToolRunRequest struct {

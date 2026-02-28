@@ -3,7 +3,7 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $projectRoot = Split-Path -Parent $root
 $scriptPath = Join-Path $PSScriptRoot "codex_a2a_agent.py"
-$stateFile = Join-Path $PSScriptRoot "state\tasks.json"
+$outputDir = Join-Path $PSScriptRoot "state\output"
 
 function Resolve-CodexBin {
   $candidates = @("codex.cmd", "codex.exe", "codex")
@@ -14,6 +14,14 @@ function Resolve-CodexBin {
     }
   }
   throw "codex cli not found. Please ensure codex.cmd or codex.exe is available."
+}
+
+function Assert-PythonDeps {
+  try {
+    python -c "import a2a, uvicorn" | Out-Null
+  } catch {
+    throw "Python dependencies missing. Run: python -m pip install -r `"$PSScriptRoot\requirements.txt`""
+  }
 }
 
 function Get-ListeningProcessIdsByPort {
@@ -44,15 +52,13 @@ function Stop-StaleCodexA2AProcesses {
   }
 }
 
-if (-not (Test-Path $stateFile)) {
-  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $stateFile) | Out-Null
-  "{}" | Set-Content -Path $stateFile -Encoding UTF8
-}
+New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
 
 Stop-StaleCodexA2AProcesses -Port 9091 -ScriptPath $scriptPath
 $remaining = Get-ListeningProcessIdsByPort -Port 9091
 if ($remaining -and $remaining.Count -gt 0) {
   throw "port 9091 is still occupied by PID(s): $($remaining -join ', ')"
 }
+Assert-PythonDeps
 $codexBin = Resolve-CodexBin
-python $scriptPath --workdir $projectRoot --host 127.0.0.1 --port 9091 --state-file $stateFile --codex-bin $codexBin
+python $scriptPath --workdir $projectRoot --host 127.0.0.1 --port 9091 --output-dir $outputDir --codex-bin $codexBin

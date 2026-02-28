@@ -5,7 +5,7 @@ $a2aBase = "http://127.0.0.1:9091"
 
 $payload = @{
   name = "codex-local"
-  description = "Local Codex CLI A2A wrapper"
+  description = "Local Codex CLI A2A agent powered by official a2a-python SDK"
   endpoint = "$a2aBase/a2a/rpc"
   agent_card_url = "$a2aBase/.well-known/agent-card.json"
   enabled = $true

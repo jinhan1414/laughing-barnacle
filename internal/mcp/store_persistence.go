@@ -45,6 +45,8 @@ func (s *Store) load() error {
 		agent.Description = normalizeSkillDescription(agent.Description, agent.Name, agent.Endpoint)
 		agent.Endpoint = strings.TrimSpace(agent.Endpoint)
 		agent.AgentCardURL = strings.TrimSpace(agent.AgentCardURL)
+		agent.ProtocolVersion = strings.TrimSpace(agent.ProtocolVersion)
+		agent.Skills = normalizeA2ASkills(agent.Skills)
 		agent.AuthToken = strings.TrimSpace(agent.AuthToken)
 		if err := validateA2AAgent(agent); err != nil {
 			return fmt.Errorf("invalid a2a agent %q: %w", agent.ID, err)

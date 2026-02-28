@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"laughing-barnacle/internal/mcp"
 	"laughing-barnacle/internal/memory"
 )
 
@@ -87,6 +88,8 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 				Description:  item.Description,
 				Endpoint:     item.Endpoint,
 				AgentCardURL: item.AgentCardURL,
+				ProtocolVersion: item.ProtocolVersion,
+				Skills:       append([]mcp.A2ASkill(nil), item.Skills...),
 				HasAuthToken: strings.TrimSpace(item.AuthToken) != "",
 				Enabled:      item.Enabled,
 			}

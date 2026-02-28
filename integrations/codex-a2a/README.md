@@ -1,14 +1,25 @@
-# Codex A2A 本地包装
+# codex-a2a（官方 SDK 版）
 
-这个目录用于把本机 `codex` CLI 包装成一个最小 A2A Agent，供数字分身联调。
+该目录提供一个基于官方 `a2a-python` SDK（`a2a-sdk`）的本地 A2A 参考服务，用于数字分身联调。
 
-## 目录说明
+## 目录
 
-- `codex_a2a_agent.py`：A2A 包装服务（JSON-RPC）
-- `run.ps1`：本地启动脚本
-- `register_local_agent.ps1`：通过 JSON API 向当前项目服务登记 A2A agent
-- `state/tasks.json`：任务状态持久化文件（自动创建）
-- `state/output/`：每个任务的 Codex 输出文件（自动创建）
+- `codex_a2a_agent.py`：A2A 服务（官方 SDK 实现）
+- `requirements.txt`：Python 依赖
+- `run.ps1`：启动脚本
+- `register_local_agent.ps1`：向主服务登记本地 A2A Agent
+- `state/output/`：Codex 执行输出目录（自动创建）
+
+## 依赖
+
+```powershell
+python -m pip install -r requirements.txt
+```
+
+依赖重点：
+
+- `a2a-sdk[http-server]==0.3.24`
+- `uvicorn`
 
 ## 启动
 
@@ -17,19 +28,27 @@ cd integrations/codex-a2a
 .\run.ps1
 ```
 
-默认监听：`http://127.0.0.1:9091`
+默认监听 `http://127.0.0.1:9091`，暴露：
 
-启动脚本会自动解析 `codex.cmd/codex.exe` 并显式传给服务（`--codex-bin`），避免服务进程 PATH 与交互终端不一致导致的 `codex cli not found in PATH`。
-同时会先清理旧的 `codex_a2a_agent.py` 监听进程；服务端口使用独占绑定，避免多实例并发监听同一端口导致随机 `EOF/Empty reply`。
-`codex` 子进程输出统一按 UTF-8 解码（`errors=replace`），避免 Windows 默认编码导致 `UnicodeDecodeError` 使任务线程异常。
+- Agent Card：`/.well-known/agent-card.json`
+- JSON-RPC：`/a2a/rpc`
 
-## 当前处理方案（明确约定）
+Agent Card 包含：
 
-- A2A 任务返回 `status: working/submitted` 时，主服务当轮直接返回“任务仍在执行中（含 task_id）”，不再同轮继续 `a2a__get` 轮询。
-- A2A 工具报错（如 `EOF`）时，主服务当轮直接返回错误摘要，不再追加 LLM 二次收尾。
-- 该方案用于防止同轮工具回合持续占用请求上下文而触发 `context deadline exceeded`。
+- `protocolVersion: 0.3.0`
+- 至少 1 个可执行 skill（`codex_exec`）
 
-## 手动登记到数字分身
+## 任务生命周期（send/get/cancel）
+
+服务由官方 `DefaultRequestHandler` + `InMemoryTaskStore` 托管任务状态机，执行器为 `CodexAgentExecutor`：
+
+- `message/send`：提交任务并异步执行本地 `codex exec`
+- `tasks/get`：查询任务状态与产物
+- `tasks/cancel`：终止运行中任务并标记 `canceled`
+
+失败路径保持显式暴露，不提供 mock 成功返回。
+
+## 注册到数字分身
 
 确保主服务已启动（默认 `http://127.0.0.1:8080`）后执行：
 
@@ -38,9 +57,4 @@ cd integrations/codex-a2a
 .\register_local_agent.ps1
 ```
 
-## 快速验证
-
-```powershell
-curl -s http://127.0.0.1:9091/.well-known/agent-card.json
-curl -s http://127.0.0.1:8080/api/a2a/agents
-```
+`/api/a2a/agents/save` 会读取 Agent Card 并校验 `skills`。

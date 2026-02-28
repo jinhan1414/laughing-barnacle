@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"laughing-barnacle/internal/mcp"
 	"net/http"
 	"strings"
 )
@@ -20,6 +21,8 @@ func (s *Server) handleAPIA2AAgents(w http.ResponseWriter, r *http.Request) {
 			Description:  item.Description,
 			Endpoint:     item.Endpoint,
 			AgentCardURL: item.AgentCardURL,
+			ProtocolVersion: item.ProtocolVersion,
+			Skills:       append([]mcp.A2ASkill(nil), item.Skills...),
 			Enabled:      item.Enabled,
 			UpdatedAt:    item.UpdatedAt,
 			HasAuthToken: strings.TrimSpace(item.AuthToken) != "",
@@ -52,6 +55,8 @@ func (s *Server) handleAPIA2AAgentRead(w http.ResponseWriter, r *http.Request) {
 			Description:  item.Description,
 			Endpoint:     item.Endpoint,
 			AgentCardURL: item.AgentCardURL,
+			ProtocolVersion: item.ProtocolVersion,
+			Skills:       append([]mcp.A2ASkill(nil), item.Skills...),
 			Enabled:      item.Enabled,
 			UpdatedAt:    item.UpdatedAt,
 			HasAuthToken: strings.TrimSpace(item.AuthToken) != "",

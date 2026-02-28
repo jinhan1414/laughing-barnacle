@@ -43,9 +43,17 @@ type A2AAgent struct {
 	Description  string    `json:"description,omitempty"`
 	Endpoint     string    `json:"endpoint"`
 	AgentCardURL string    `json:"agent_card_url,omitempty"`
+	ProtocolVersion string  `json:"protocol_version,omitempty"`
+	Skills       []A2ASkill `json:"skills,omitempty"`
 	AuthToken    string    `json:"auth_token,omitempty"`
 	Enabled      bool      `json:"enabled"`
 	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+type A2ASkill struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
 }
 
 type ServiceToolState struct {

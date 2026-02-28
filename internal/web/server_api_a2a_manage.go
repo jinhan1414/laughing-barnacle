@@ -13,6 +13,8 @@ type apiA2ASaveRequest struct {
 	Description  string `json:"description"`
 	Endpoint     string `json:"endpoint"`
 	AgentCardURL string `json:"agent_card_url"`
+	ProtocolVersion string `json:"protocol_version"`
+	Skills       []mcp.A2ASkill `json:"skills"`
 	AuthToken    string `json:"auth_token"`
 	Enabled      bool   `json:"enabled"`
 }
@@ -38,6 +40,15 @@ func (s *Server) handleAPIA2AAgentSave(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"error": "invalid json body: " + err.Error()})
 		return
 	}
+	if strings.TrimSpace(req.AgentCardURL) != "" {
+		discovered, err := discoverA2AAgentFromCard(r.Context(), req.AgentCardURL, req.AuthToken)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			writeJSON(w, map[string]any{"error": err.Error()})
+			return
+		}
+		applyDiscoveredA2AAgentFields(&req, discovered)
+	}
 
 	item := mcp.A2AAgent{
 		ID:           strings.TrimSpace(req.ID),
@@ -45,6 +56,8 @@ func (s *Server) handleAPIA2AAgentSave(w http.ResponseWriter, r *http.Request) {
 		Description:  strings.TrimSpace(req.Description),
 		Endpoint:     strings.TrimSpace(req.Endpoint),
 		AgentCardURL: strings.TrimSpace(req.AgentCardURL),
+		ProtocolVersion: strings.TrimSpace(req.ProtocolVersion),
+		Skills:       append([]mcp.A2ASkill(nil), req.Skills...),
 		AuthToken:    strings.TrimSpace(req.AuthToken),
 		Enabled:      req.Enabled,
 	}
