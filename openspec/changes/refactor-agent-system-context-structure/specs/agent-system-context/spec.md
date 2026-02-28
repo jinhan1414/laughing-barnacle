@@ -38,3 +38,11 @@
 - **WHEN** 用户请求命中某类索引且需要详情
 - **THEN** 系统先引导模型只读取 1 个最相关详情
 - **AND** 仅在信息不足时再继续读取更多详情
+
+### Requirement: Native Tool Preference for Local API Interaction
+系统 MUST 在本地 API 交互场景优先引导使用原生内置工具，而非让模型先拼接 shell 命令。
+
+#### Scenario: Prefer native read/write tools in strategy prompt
+- **WHEN** 系统注入执行策略与工具约束
+- **THEN** 文案将本地 API 的读取与维护写入默认指向原生内置工具
+- **AND** `linux__bash` 仅作为 shell 任务或非 API 命令执行工具保留

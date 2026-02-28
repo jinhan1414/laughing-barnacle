@@ -11,3 +11,16 @@
 - **WHEN** 当前可用 shell 为 bash/sh
 - **THEN** 运行时提示明确当前 shell 为 Linux
 - **AND** 不混入 Windows 特定语法约束
+
+### Requirement: linux__bash Scope Is Shell Execution
+系统 MUST 将 `linux__bash` 定位为 shell 命令执行工具，不作为本地 API 维护读写的默认入口。
+
+#### Scenario: Keep linux__bash for non-API shell tasks
+- **WHEN** 模型需要执行文件系统、进程、时间等本地 shell 操作
+- **THEN** 系统允许调用 `linux__bash`
+- **AND** 不要求切换到 API 原生工具
+
+#### Scenario: Local API interaction defaults to dedicated tools
+- **WHEN** 模型需要读取索引详情或执行维护写入
+- **THEN** 系统默认引导调用对应原生工具
+- **AND** 不把 `linux__bash + curl` 作为默认首选链路
