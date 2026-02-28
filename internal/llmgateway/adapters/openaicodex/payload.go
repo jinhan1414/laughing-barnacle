@@ -1,18 +1,12 @@
 package openaicodex
 
 import (
-	"encoding/json"
 	"fmt"
 	"laughing-barnacle/internal/llmgateway"
 	"strings"
 )
 
 const defaultCodexInstructions = "You are a helpful assistant."
-
-type normalizedInputMessage struct {
-	Role    string
-	Content string
-}
 
 func buildPayload(
 	req llmgateway.CanonicalChatRequest,
@@ -24,7 +18,7 @@ func buildPayload(
 	transport := resolveTransport(req.Options.Transport, fallbackTransport)
 	payload := map[string]any{
 		"model": req.Model,
-		"input": toResponsesInputFromNormalized(normalizedInput),
+		"input": normalizedInput,
 	}
 	if instructions != "" {
 		payload["instructions"] = instructions
@@ -66,12 +60,12 @@ func splitInstructions(messages []llmgateway.CanonicalMessage) (string, []llmgat
 func normalizeInstructionsAndInput(
 	messages []llmgateway.CanonicalMessage,
 	chatGPTAuth bool,
-) (string, []normalizedInputMessage) {
+) (string, []map[string]any) {
 	instructions, inputMessages := splitInstructions(messages)
 	if chatGPTAuth && instructions == "" {
 		instructions = defaultCodexInstructions
 	}
-	return instructions, normalizeInputMessages(inputMessages)
+	return instructions, toResponsesInput(inputMessages)
 }
 
 func resolveStore(store *bool) bool {
@@ -82,39 +76,52 @@ func resolveStore(store *bool) bool {
 }
 
 func toResponsesInput(messages []llmgateway.CanonicalMessage) []map[string]any {
-	return toResponsesInputFromNormalized(normalizeInputMessages(messages))
-}
-
-func toResponsesInputFromNormalized(messages []normalizedInputMessage) []map[string]any {
 	input := make([]map[string]any, 0, len(messages))
-	for _, msg := range messages {
-		input = append(input, map[string]any{
-			"role": msg.Role,
-			"content": []map[string]any{
-				{"type": contentTypeForRole(msg.Role), "text": msg.Content},
-			},
-		})
-	}
-	return input
-}
-
-func normalizeInputMessages(messages []llmgateway.CanonicalMessage) []normalizedInputMessage {
-	out := make([]normalizedInputMessage, 0, len(messages))
-	for _, msg := range messages {
-		role := normalizeCodexInputRole(msg.Role)
-		content := strings.TrimSpace(msg.Content)
-		if content == "" {
-			content = extractToolCallSummary(msg.ToolCalls)
-		}
-		if content == "" {
+	for msgIdx, msg := range messages {
+		if strings.TrimSpace(msg.ToolCallID) != "" {
+			output := strings.TrimSpace(msg.Content)
+			if output != "" {
+				input = append(input, map[string]any{
+					"type":    "function_call_output",
+					"call_id": strings.TrimSpace(msg.ToolCallID),
+					"output":  output,
+				})
+			}
 			continue
 		}
-		out = append(out, normalizedInputMessage{
-			Role:    role,
-			Content: content,
-		})
+
+		content := strings.TrimSpace(msg.Content)
+		role := normalizeCodexInputRole(msg.Role)
+		if content != "" {
+			input = append(input, map[string]any{
+				"role": role,
+				"content": []map[string]any{
+					{"type": contentTypeForRole(role), "text": content},
+				},
+			})
+		}
+		for callIdx, call := range msg.ToolCalls {
+			name := strings.TrimSpace(call.Function.Name)
+			if name == "" {
+				continue
+			}
+			callID := strings.TrimSpace(call.ID)
+			if callID == "" {
+				callID = fmt.Sprintf("tool_call_%d_%d_%s", msgIdx, callIdx, name)
+			}
+			arguments := strings.TrimSpace(call.Function.Arguments)
+			if arguments == "" {
+				arguments = "{}"
+			}
+			input = append(input, map[string]any{
+				"type":      "function_call",
+				"call_id":   callID,
+				"name":      name,
+				"arguments": arguments,
+			})
+		}
 	}
-	return out
+	return input
 }
 
 func normalizeCodexInputRole(role string) string {
@@ -132,17 +139,6 @@ func contentTypeForRole(role string) string {
 		return "output_text"
 	}
 	return "input_text"
-}
-
-func extractToolCallSummary(calls []llmgateway.CanonicalToolCall) string {
-	if len(calls) == 0 {
-		return ""
-	}
-	encoded, err := json.Marshal(calls)
-	if err != nil {
-		return ""
-	}
-	return "tool_calls=" + string(encoded)
 }
 
 func toResponsesTools(tools []llmgateway.CanonicalToolDefinition) []map[string]any {
@@ -166,133 +162,4 @@ func resolveTransport(runtimeTransport *string, fallback string) string {
 		return strings.TrimSpace(fallback)
 	}
 	return "auto"
-}
-
-func parseResponse(raw []byte) (llmgateway.CanonicalChatResponse, error) {
-	var payload codexResponsePayload
-	if err := json.Unmarshal(raw, &payload); err != nil {
-		return llmgateway.CanonicalChatResponse{}, fmt.Errorf("decode response: %w", err)
-	}
-
-	content := strings.TrimSpace(payload.OutputText)
-	if content == "" {
-		content = collectOutputText(payload.Output)
-	}
-	toolCalls := collectToolCalls(payload.Output)
-	if content == "" && len(toolCalls) == 0 {
-		return llmgateway.CanonicalChatResponse{}, fmt.Errorf("empty content and tool_calls in response")
-	}
-
-	return llmgateway.CanonicalChatResponse{
-		Content:     content,
-		ToolCalls:   toolCalls,
-		Usage:       normalizeUsage(payload.Usage),
-		RawResponse: string(raw),
-	}, nil
-}
-
-func collectOutputText(items []codexOutputItem) string {
-	parts := make([]string, 0, len(items))
-	for _, item := range items {
-		if item.Type != "message" {
-			continue
-		}
-		for _, part := range item.Content {
-			if strings.TrimSpace(part.Text) != "" {
-				parts = append(parts, strings.TrimSpace(part.Text))
-			}
-		}
-	}
-	return strings.Join(parts, "\n")
-}
-
-func collectToolCalls(items []codexOutputItem) []llmgateway.CanonicalToolCall {
-	out := make([]llmgateway.CanonicalToolCall, 0)
-	for _, item := range items {
-		if item.Type != "function_call" {
-			continue
-		}
-		callID := strings.TrimSpace(item.CallID)
-		if callID == "" {
-			callID = strings.TrimSpace(item.ID)
-		}
-		out = append(out, llmgateway.CanonicalToolCall{
-			ID:   callID,
-			Type: "function",
-			Function: llmgateway.CanonicalToolFunctionCall{
-				Name:      item.Name,
-				Arguments: strings.TrimSpace(item.Arguments),
-			},
-		})
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
-}
-
-func normalizeUsage(usage codexUsage) llmgateway.CanonicalTokenUsage {
-	prompt := usage.InputTokens
-	if prompt == 0 {
-		prompt = usage.PromptTokens
-	}
-	completion := usage.OutputTokens
-	if completion == 0 {
-		completion = usage.CompletionTokens
-	}
-	total := usage.TotalTokens
-	if total == 0 {
-		total = prompt + completion
-	}
-	cached := usage.InputTokensDetails.CachedTokens
-	if cached == 0 {
-		cached = usage.PromptTokensDetails.CachedTokens
-	}
-	return llmgateway.CanonicalTokenUsage{
-		PromptTokens:     maxInt(prompt, 0),
-		CompletionTokens: maxInt(completion, 0),
-		TotalTokens:      maxInt(total, 0),
-		CachedTokens:     maxInt(cached, 0),
-	}
-}
-
-func maxInt(value, lower int) int {
-	if value < lower {
-		return lower
-	}
-	return value
-}
-
-type codexResponsePayload struct {
-	OutputText string            `json:"output_text"`
-	Output     []codexOutputItem `json:"output"`
-	Usage      codexUsage        `json:"usage"`
-}
-
-type codexOutputItem struct {
-	Type      string              `json:"type"`
-	ID        string              `json:"id"`
-	CallID    string              `json:"call_id"`
-	Name      string              `json:"name"`
-	Arguments string              `json:"arguments"`
-	Content   []codexContentChunk `json:"content"`
-}
-
-type codexContentChunk struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
-}
-
-type codexUsage struct {
-	InputTokens         int              `json:"input_tokens"`
-	OutputTokens        int              `json:"output_tokens"`
-	PromptTokens        int              `json:"prompt_tokens"`
-	CompletionTokens    int              `json:"completion_tokens"`
-	TotalTokens         int              `json:"total_tokens"`
-	InputTokensDetails  codexTokenDetail `json:"input_tokens_details"`
-	PromptTokensDetails codexTokenDetail `json:"prompt_tokens_details"`
-}
-
-type codexTokenDetail struct {
-	CachedTokens int `json:"cached_tokens"`
 }

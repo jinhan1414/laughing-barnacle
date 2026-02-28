@@ -97,6 +97,73 @@ func TestToResponsesInput_NormalizesUnknownRoleToUser(t *testing.T) {
 	}
 }
 
+func TestToResponsesInput_EncodesToolRoundAsStructuredItems(t *testing.T) {
+	input := toResponsesInput([]llmgateway.CanonicalMessage{
+		{
+			Role: "assistant",
+			ToolCalls: []llmgateway.CanonicalToolCall{
+				{
+					ID:   "call_123",
+					Type: "function",
+					Function: llmgateway.CanonicalToolFunctionCall{
+						Name:      "linux__bash",
+						Arguments: "{\"command\":\"Get-Date\"}",
+					},
+				},
+			},
+		},
+		{
+			Role:       "tool",
+			ToolCallID: "call_123",
+			Content:    "exit_code: 0",
+		},
+	})
+	if len(input) != 2 {
+		t.Fatalf("expected 2 structured items, got %d", len(input))
+	}
+	if got := input[0]["type"]; got != "function_call" {
+		t.Fatalf("expected first item type=function_call, got %v", got)
+	}
+	if got := input[0]["call_id"]; got != "call_123" {
+		t.Fatalf("expected function_call call_id=call_123, got %v", got)
+	}
+	if got := input[1]["type"]; got != "function_call_output" {
+		t.Fatalf("expected second item type=function_call_output, got %v", got)
+	}
+	if got := input[1]["output"]; got != "exit_code: 0" {
+		t.Fatalf("expected function_call_output output preserved, got %v", got)
+	}
+}
+
+func TestParseResponse_ParsesToolCallsFromTextSummary(t *testing.T) {
+	raw := []byte(`{
+		"output":[
+			{
+				"type":"message",
+				"content":[
+					{
+						"type":"output_text",
+						"text":"tool_calls=[{\"ID\":\"call_abc\",\"Type\":\"function\",\"Function\":{\"Name\":\"linux__bash\",\"Arguments\":\"{\\\"command\\\":\\\"Get-Date\\\"}\"}}]"
+					}
+				]
+			}
+		]
+	}`)
+	resp, err := parseResponse(raw)
+	if err != nil {
+		t.Fatalf("parseResponse error: %v", err)
+	}
+	if len(resp.ToolCalls) != 1 {
+		t.Fatalf("expected 1 parsed tool call, got %d", len(resp.ToolCalls))
+	}
+	if resp.ToolCalls[0].Function.Name != "linux__bash" {
+		t.Fatalf("unexpected tool name: %+v", resp.ToolCalls[0])
+	}
+	if resp.Content != "" {
+		t.Fatalf("tool summary should not be returned as assistant content, got %q", resp.Content)
+	}
+}
+
 func TestParseResponse_UsageIncludesCachedTokensFromInputDetails(t *testing.T) {
 	raw := []byte(`{
 		"output_text":"ok",
