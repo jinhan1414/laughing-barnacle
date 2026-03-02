@@ -10,17 +10,13 @@ import (
 
 func TestKnowledgeBaseSkillBuilder_IsIndexedAndReadable(t *testing.T) {
 	root := t.TempDir()
-	skillDir := filepath.Join(root, "skills", "knowledge-base-skill-builder")
-	if err := os.MkdirAll(filepath.Join(skillDir, "references"), 0o755); err != nil {
-		t.Fatalf("MkdirAll error: %v", err)
-	}
 
 	_, currentFile, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("runtime.Caller failed")
 	}
 
-	sourceRoot := filepath.Join(filepath.Dir(currentFile), "..", "..", "data", "skills", "knowledge-base-skill-builder")
+	builtinDir := filepath.Join(filepath.Dir(currentFile), "..", "..", "builtin-skills")
 	files := []string{
 		"SKILL.md",
 		filepath.Join("references", "authority-and-scope.md"),
@@ -29,21 +25,8 @@ func TestKnowledgeBaseSkillBuilder_IsIndexedAndReadable(t *testing.T) {
 		filepath.Join("references", "knowledge-base-boundaries.md"),
 		filepath.Join("references", "repo-implementation.md"),
 	}
-	for _, rel := range files {
-		data, err := os.ReadFile(filepath.Join(sourceRoot, rel))
-		if err != nil {
-			t.Fatalf("ReadFile %s error: %v", rel, err)
-		}
-		target := filepath.Join(skillDir, rel)
-		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-			t.Fatalf("MkdirAll %s error: %v", rel, err)
-		}
-		if err := os.WriteFile(target, data, 0o600); err != nil {
-			t.Fatalf("WriteFile %s error: %v", rel, err)
-		}
-	}
 
-	store, err := NewStore(filepath.Join(root, "skills"), filepath.Join(root, "skills_state.json"))
+	store, err := NewStoreWithBuiltinDir(filepath.Join(root, "skills"), filepath.Join(root, "skills_state.json"), builtinDir)
 	if err != nil {
 		t.Fatalf("NewStore error: %v", err)
 	}
@@ -88,9 +71,10 @@ func TestKnowledgeBaseSkillBuilder_IsIndexedAndReadable(t *testing.T) {
 		}
 	}
 
-	for _, rel := range files[1:] {
-		if _, err := os.Stat(filepath.Join(sourceRoot, rel)); err != nil {
-			t.Fatalf("expected reference file %s: %v", rel, err)
+	runtimeRoot := filepath.Join(root, "skills", "knowledge-base-skill-builder")
+	for _, rel := range files {
+		if _, err := os.Stat(filepath.Join(runtimeRoot, rel)); err != nil {
+			t.Fatalf("expected synced skill file %s: %v", rel, err)
 		}
 	}
 }

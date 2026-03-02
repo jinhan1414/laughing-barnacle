@@ -1,7 +1,8 @@
 # 本仓库中的落地方式
 
 本仓库当前 Skill 结构：
-- 目录：`data/skills/<skill_id>/`
+- 仓库内置 Skill 真源目录：`builtin-skills/<skill_id>/`
+- 运行时 Skill 目录：`data/skills/<skill_id>/`
 - 主文件：`SKILL.md`
 - 可选资源：`references/*.md`、`scripts/*`
 

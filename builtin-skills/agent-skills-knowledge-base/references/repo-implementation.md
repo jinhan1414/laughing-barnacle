@@ -3,6 +3,8 @@
 本仓库当前如何存储 Skill：
 - `internal/skills/store_persist.go`
   - 启动时扫描 `skills` 目录下每个子目录的 `SKILL.md`。
+- `internal/skills/store_builtin.go`
+  - 启动时从 `builtin-skills/` 读取仓库内置 Skill，并同步到运行时 `SkillsDir`。
 - `internal/skills/store_markdown.go`
   - 当前解析层稳定读取 `SKILL.md` frontmatter 中的 `name`、`description` 和正文。
 - `internal/skills/store_core.go`
@@ -22,7 +24,12 @@
   - 对外提供 `/api/skills/index` 与 `/api/skills/read`。
 
 本仓库当前 Skill 目录口径：
-- 代码实现按本地文件夹模式工作：
+- 代码实现按本地文件夹模式工作。
+- 仓库内置 Skill 的真源目录是：
+  - `builtin-skills/<skill_id>/SKILL.md`
+  - `builtin-skills/<skill_id>/references/*.md`
+  - `builtin-skills/<skill_id>/scripts/*`
+- 运行时实际读取目录仍是：
   - `data/skills/<skill_id>/SKILL.md`
   - `data/skills/<skill_id>/references/*.md`
   - `data/skills/<skill_id>/scripts/*`

@@ -41,7 +41,7 @@ description: "当用户询问 LLM Agent 的 Skill 是什么、Skill 与 prompt/t
 4. 若涉及执行证据，优先引用 `SKILL.md`、资源索引、代码路径、API 返回与测试。
 
 针对本仓库的固定约束：
-- 当前仓库将 Skill 作为本地文件夹能力包，核心入口是 `data/skills/<skill_id>/SKILL.md`。
+- 当前仓库将 Skill 作为本地文件夹能力包；仓库内置 Skill 真源位于 `builtin-skills/<skill_id>/SKILL.md`，运行时目录仍是 `data/skills/<skill_id>/SKILL.md`。
 - 当前主链路是“先注入 Skill 索引，再按需 `context__read(resource=\"skills\", action=\"index|read\")` 读取详情”，而不是首轮把全部 Skill 正文注入上下文。
 - 当前解析层稳定依赖 `name` / `description` 与正文，不应把开放规范中的其他潜在字段默认说成本仓库已支持。
 - 若外部资料与代码冲突，以当前主干代码和测试为准，并明确指出差异。

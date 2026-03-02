@@ -10,24 +10,14 @@ import (
 
 func TestA2AKnowledgeBaseSkill_IsIndexedAndReadable(t *testing.T) {
 	root := t.TempDir()
-	skillDir := filepath.Join(root, "skills", "a2a-knowledge-base")
-	if err := os.MkdirAll(skillDir, 0o755); err != nil {
-		t.Fatalf("MkdirAll error: %v", err)
-	}
 	_, currentFile, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("runtime.Caller failed")
 	}
-	source := filepath.Join(filepath.Dir(currentFile), "..", "..", "data", "skills", "a2a-knowledge-base", "SKILL.md")
-	data, err := os.ReadFile(source)
-	if err != nil {
-		t.Fatalf("ReadFile error: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), data, 0o600); err != nil {
-		t.Fatalf("WriteFile error: %v", err)
-	}
+	builtinDir := filepath.Join(filepath.Dir(currentFile), "..", "..", "builtin-skills")
+	sourceRoot := filepath.Join(builtinDir, "a2a-knowledge-base")
 
-	store, err := NewStore(filepath.Join(root, "skills"), filepath.Join(root, "skills_state.json"))
+	store, err := NewStoreWithBuiltinDir(filepath.Join(root, "skills"), filepath.Join(root, "skills_state.json"), builtinDir)
 	if err != nil {
 		t.Fatalf("NewStore error: %v", err)
 	}
@@ -76,15 +66,20 @@ func TestA2AKnowledgeBaseSkill_IsIndexedAndReadable(t *testing.T) {
 	}
 
 	requiredFiles := []string{
-		filepath.Join(filepath.Dir(source), "references", "authority.md"),
-		filepath.Join(filepath.Dir(source), "references", "concepts.md"),
-		filepath.Join(filepath.Dir(source), "references", "sdk-and-integration.md"),
-		filepath.Join(filepath.Dir(source), "references", "repo-implementation.md"),
-		filepath.Join(filepath.Dir(source), "references", "troubleshooting.md"),
+		filepath.Join(sourceRoot, "SKILL.md"),
+		filepath.Join(sourceRoot, "references", "authority.md"),
+		filepath.Join(sourceRoot, "references", "concepts.md"),
+		filepath.Join(sourceRoot, "references", "sdk-and-integration.md"),
+		filepath.Join(sourceRoot, "references", "repo-implementation.md"),
+		filepath.Join(sourceRoot, "references", "troubleshooting.md"),
 	}
 	for _, path := range requiredFiles {
-		if _, err := os.Stat(path); err != nil {
-			t.Fatalf("expected reference file %s: %v", path, err)
+		rel, err := filepath.Rel(sourceRoot, path)
+		if err != nil {
+			t.Fatalf("Rel error: %v", err)
+		}
+		if _, err := os.Stat(filepath.Join(root, "skills", "a2a-knowledge-base", rel)); err != nil {
+			t.Fatalf("expected synced skill file %s: %v", rel, err)
 		}
 	}
 }
