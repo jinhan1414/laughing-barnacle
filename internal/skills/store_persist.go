@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 )
 
 func (s *Store) load() error {
@@ -67,63 +66,6 @@ func (s *Store) persistLocked() error {
 		return fmt.Errorf("rename skills state: %w", err)
 	}
 	return nil
-}
-
-func (s *Store) ensureBuiltinSkillsLocked() error {
-	if s.state.Skills == nil {
-		s.state.Skills = map[string]skillStateRecord{}
-	}
-
-	changed := false
-	for _, builtin := range builtinSkills {
-		builtin = s.withLocalAPIBaseURLLocked(builtin)
-		id := strings.TrimSpace(builtin.ID)
-		if id == "" {
-			continue
-		}
-
-		skillDir := filepath.Join(s.dir, id)
-		skillPath := filepath.Join(skillDir, "SKILL.md")
-		shouldWriteFile := false
-		if _, err := os.Stat(skillPath); err != nil {
-			if !os.IsNotExist(err) {
-				return fmt.Errorf("stat builtin skill %q: %w", id, err)
-			}
-			if err := os.MkdirAll(skillDir, 0o755); err != nil {
-				return fmt.Errorf("create builtin skill dir %q: %w", id, err)
-			}
-			shouldWriteFile = true
-		}
-
-		record, exists := s.state.Skills[id]
-		if !exists {
-			record.Enabled = true
-			record.Source = builtinSkillSource
-			record.UpdatedAt = time.Now()
-			s.state.Skills[id] = record
-			changed = true
-			shouldWriteFile = true
-		}
-		if strings.EqualFold(strings.TrimSpace(record.Source), builtinSkillSource) {
-			shouldWriteFile = true
-		}
-		if strings.TrimSpace(record.Source) == "" {
-			record.Source = builtinSkillSource
-			s.state.Skills[id] = record
-			changed = true
-		}
-		if shouldWriteFile {
-			if err := os.WriteFile(skillPath, []byte(renderSkillMarkdown(builtin)+"\n"), 0o600); err != nil {
-				return fmt.Errorf("write builtin skill %q: %w", id, err)
-			}
-			changed = true
-		}
-	}
-
-	if !changed {
-		return nil
-	}
-	return s.persistLocked()
 }
 
 func (s *Store) listSkillsLocked() ([]Skill, error) {

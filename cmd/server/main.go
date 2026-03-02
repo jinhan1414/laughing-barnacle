@@ -54,7 +54,7 @@ func run() error {
 		return err
 	}
 	defer memoryStore.Close()
-	skillStore, err := skills.NewStore(cfg.SkillsDir, cfg.SkillsStateFile)
+	skillStore, err := skills.NewStoreWithBuiltinDir(cfg.SkillsDir, cfg.SkillsStateFile, cfg.BuiltinSkillsDir)
 	if err != nil {
 		return err
 	}

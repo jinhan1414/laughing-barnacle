@@ -70,6 +70,19 @@ func TestLoad_LocalAPIBaseURLFollowsAPPAddr(t *testing.T) {
 	}
 }
 
+func TestLoad_DefaultBuiltinSkillsDir(t *testing.T) {
+	t.Setenv("CERBER_API_KEY", "test-key")
+	t.Setenv("APP_BUILTIN_SKILLS_DIR", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load error: %v", err)
+	}
+	if cfg.BuiltinSkillsDir != "./builtin-skills" {
+		t.Fatalf("expected default BuiltinSkillsDir, got %q", cfg.BuiltinSkillsDir)
+	}
+}
+
 func TestLoad_LegacyCerberEnvMappedWithWarning(t *testing.T) {
 	t.Setenv("CERBER_API_KEY", "legacy-key")
 	t.Setenv("LLM_GATEWAY_CERBER_API_KEY", "")

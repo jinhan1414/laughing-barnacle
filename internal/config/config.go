@@ -2,8 +2,6 @@ package config
 
 import (
 	"fmt"
-	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -16,6 +14,7 @@ type Config struct {
 	LocalAPIBaseURL  string
 	SettingsFile     string
 	SkillsDir        string
+	BuiltinSkillsDir string
 	SkillsStateFile  string
 	ConversationFile string
 	MemoryFile       string
@@ -83,6 +82,7 @@ func newConfig(llmEnv llmGatewayEnv) Config {
 		Addr:             envOrDefault("APP_ADDR", ":8080"),
 		SettingsFile:     envOrDefault("APP_SETTINGS_FILE", "./data/settings.json"),
 		SkillsDir:        envOrDefault("APP_SKILLS_DIR", "./data/skills"),
+		BuiltinSkillsDir: envOrDefault("APP_BUILTIN_SKILLS_DIR", "./builtin-skills"),
 		SkillsStateFile:  envOrDefault("APP_SKILLS_STATE_FILE", "./data/skills_state.json"),
 		ConversationFile: envOrDefault("APP_CONVERSATION_FILE", "./data/conversation.json"),
 		MemoryFile:       envOrDefault("APP_MEMORY_FILE", "./data/memory.db"),
@@ -233,67 +233,11 @@ func (c Config) validateStorage() error {
 	if c.SkillsDir == "" {
 		return fmt.Errorf("APP_SKILLS_DIR is required")
 	}
+	if c.BuiltinSkillsDir == "" {
+		return fmt.Errorf("APP_BUILTIN_SKILLS_DIR is required")
+	}
 	if c.SkillsStateFile == "" {
 		return fmt.Errorf("APP_SKILLS_STATE_FILE is required")
 	}
 	return nil
-}
-
-func envOrDefault(key, fallback string) string {
-	v := os.Getenv(key)
-	if v == "" {
-		return fallback
-	}
-	return v
-}
-
-func envInt(key string, fallback int) int {
-	v := os.Getenv(key)
-	if v == "" {
-		return fallback
-	}
-	n, err := strconv.Atoi(v)
-	if err != nil {
-		return fallback
-	}
-	return n
-}
-
-func envFloat(key string, fallback float64) float64 {
-	v := os.Getenv(key)
-	if v == "" {
-		return fallback
-	}
-	n, err := strconv.ParseFloat(v, 64)
-	if err != nil {
-		return fallback
-	}
-	return n
-}
-
-func envDuration(key string, fallback time.Duration) time.Duration {
-	v := os.Getenv(key)
-	if v == "" {
-		return fallback
-	}
-	d, err := time.ParseDuration(v)
-	if err != nil {
-		return fallback
-	}
-	return d
-}
-
-func envBool(key string, fallback bool) bool {
-	v := strings.TrimSpace(os.Getenv(key))
-	if v == "" {
-		return fallback
-	}
-	switch strings.ToLower(v) {
-	case "1", "true", "yes", "on":
-		return true
-	case "0", "false", "no", "off":
-		return false
-	default:
-		return fallback
-	}
 }
