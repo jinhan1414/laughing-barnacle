@@ -15,14 +15,16 @@ import (
 )
 
 type apiMCPServiceSaveRequest struct {
-	ID        string   `json:"id"`
-	Name      string   `json:"name"`
-	Transport string   `json:"transport"`
-	Endpoint  string   `json:"endpoint"`
-	Command   string   `json:"command"`
-	Args      []string `json:"args"`
-	AuthToken string   `json:"auth_token"`
-	Enabled   bool     `json:"enabled"`
+	ID        string            `json:"id"`
+	Name      string            `json:"name"`
+	Transport string            `json:"transport"`
+	Endpoint  string            `json:"endpoint"`
+	Command   string            `json:"command"`
+	Args      []string          `json:"args"`
+	AuthToken string            `json:"auth_token"`
+	Env       map[string]string `json:"env"`
+	Headers   map[string]string `json:"headers"`
+	Enabled   bool              `json:"enabled"`
 }
 
 type apiMCPServiceToggleRequest struct {
@@ -95,6 +97,8 @@ func (s *Server) handleAPIMCPServiceSave(w http.ResponseWriter, r *http.Request)
 		Command:   strings.TrimSpace(req.Command),
 		Args:      req.Args,
 		AuthToken: strings.TrimSpace(req.AuthToken),
+		Env:       req.Env,
+		Headers:   req.Headers,
 		Enabled:   req.Enabled,
 	})
 	if err != nil {

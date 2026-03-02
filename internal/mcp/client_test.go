@@ -19,6 +19,9 @@ func TestHTTPClient_ListAndCallTool(t *testing.T) {
 		if got := r.Header.Get("MCP-Protocol-Version"); got != "2025-06-18" {
 			t.Fatalf("expected MCP-Protocol-Version header, got %q", got)
 		}
+		if got := r.Header.Get("X-Workspace"); got != "prod" {
+			t.Fatalf("expected custom header, got %q", got)
+		}
 
 		var req map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -59,6 +62,7 @@ func TestHTTPClient_ListAndCallTool(t *testing.T) {
 		Name:     "Weather",
 		Endpoint: ts.URL,
 		Enabled:  true,
+		Headers:  map[string]string{"X-Workspace": "prod"},
 	}
 
 	tools, err := client.ListTools(context.Background(), service)
@@ -187,6 +191,54 @@ done
 	}
 	if len(result.Content) != 1 || result.Content[0].Text != "ok" {
 		t.Fatalf("unexpected result: %+v", result)
+	}
+}
+
+func TestHTTPClient_StdioInjectsConfiguredEnv(t *testing.T) {
+	if isWindows() {
+		t.Skip("stdio mock script test is POSIX-only")
+	}
+
+	script := filepath.Join(t.TempDir(), "fake-mcp-env.sh")
+	err := os.WriteFile(script, []byte(`#!/bin/sh
+extract_id() {
+  printf "%s" "$1" | sed -n 's/.*"id":[ ]*\([0-9][0-9]*\).*/\1/p'
+}
+while IFS= read -r line; do
+  case "$line" in
+    *\"method\":\"initialize\"*)
+      id=$(extract_id "$line")
+      if [ -z "$id" ]; then id=1; fi
+      echo "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":\"2025-06-18\"}}"
+      ;;
+    *\"method\":\"tools/call\"*)
+      id=$(extract_id "$line")
+      if [ -z "$id" ]; then id=2; fi
+      echo "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"$TEST_SECRET\"}]}}"
+      ;;
+  esac
+done
+`), 0o755)
+	if err != nil {
+		t.Fatalf("write fake stdio script: %v", err)
+	}
+
+	client := NewHTTPClient(3*time.Second, "")
+	service := Service{
+		ID:        "stdio_env_demo",
+		Name:      "stdio_env_demo",
+		Transport: "stdio",
+		Command:   script,
+		Env:       map[string]string{"TEST_SECRET": "expected-secret"},
+		Enabled:   true,
+	}
+
+	result, err := client.CallTool(context.Background(), service, "echo", map[string]any{"text": "hi"})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	if len(result.Content) != 1 || result.Content[0].Text != "expected-secret" {
+		t.Fatalf("unexpected env-injected result: %+v", result)
 	}
 }
 

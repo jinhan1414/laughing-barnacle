@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 )
@@ -17,6 +18,7 @@ func (c *HTTPClient) callRPCStdio(ctx context.Context, service Service, method s
 	}
 
 	cmd := exec.CommandContext(ctx, command, service.Args...)
+	cmd.Env = mergeConfiguredEnv(os.Environ(), service.Env)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, fmt.Errorf("open stdio stdin: %w", err)

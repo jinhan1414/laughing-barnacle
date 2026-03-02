@@ -53,6 +53,14 @@
                 Stdio Args JSON
                 <input type="text" name="args_json" placeholder='例如：["-y","@modelcontextprotocol/server-filesystem","/workspace"]' class="rounded-xl border-slate-300 text-sm">
               </label>
+              <label class="flex flex-col gap-1 text-xs font-medium text-slate-600 sm:col-span-2">
+                Stdio 环境变量 JSON（留空不变，`{}` 清空）
+                <textarea name="env_json" placeholder='例如：{"TAVILY_API_KEY":"tvly-***"}' class="min-h-16 rounded-xl border-slate-300 text-sm"></textarea>
+              </label>
+              <label class="flex flex-col gap-1 text-xs font-medium text-slate-600 sm:col-span-2">
+                HTTP 请求头 JSON（仅 streamable_http / sse，留空不变，`{}` 清空）
+                <textarea name="headers_json" placeholder='例如：{"X-Workspace":"prod","X-Api-Key":"***"}' class="min-h-16 rounded-xl border-slate-300 text-sm"></textarea>
+              </label>
               <label class="flex flex-col gap-1 text-xs font-medium text-slate-600">
                 连接类型
                 <select name="transport" class="rounded-xl border-slate-300 text-sm">
@@ -88,6 +96,8 @@
                   <div class="mt-2 break-all text-xs leading-6 text-slate-500">
                     {{if eq .Transport "stdio"}}Command: {{if .Command}}{{.Command}}{{else}}(未配置){{end}}<br>Args: {{if .Args}}{{.Args}}{{else}}(空){{end}}<br>{{else}}Endpoint: {{.Endpoint}}<br>{{end}}
                     连接类型: {{.Transport}}<br>
+                    {{if .EnvKeys}}Env Keys: {{.EnvKeys}}<br>{{end}}
+                    {{if .HeaderKeys}}Header Keys: {{.HeaderKeys}}<br>{{end}}
                     可用工具数: {{.ToolCount}}<br>
                     最后更新: {{.UpdatedAt}}
                     {{if .StatusError}}<br>错误详情: {{.StatusError}}{{end}}

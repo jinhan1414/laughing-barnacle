@@ -71,6 +71,31 @@ func TestBuiltinMaintenanceSkills_UseJSONProtocol(t *testing.T) {
 	}
 }
 
+func TestBuiltinMCPConfigMaintainer_UsesTransportScopedConfig(t *testing.T) {
+	root := t.TempDir()
+	store, err := NewStore(filepath.Join(root, "skills"), filepath.Join(root, "skills_state.json"))
+	if err != nil {
+		t.Fatalf("NewStore error: %v", err)
+	}
+
+	prompt, ok := store.ReadEnabledSkillPrompt("mcp-config-maintainer")
+	if !ok {
+		t.Fatalf("expected builtin skill prompt readable")
+	}
+	if !strings.Contains(prompt, "transport:\"streamable_http|sse\"") {
+		t.Fatalf("expected http transport save hint, got %q", prompt)
+	}
+	if !strings.Contains(prompt, "headers,enabled") {
+		t.Fatalf("expected headers field hint, got %q", prompt)
+	}
+	if !strings.Contains(prompt, "transport:\"stdio\"") || !strings.Contains(prompt, "env,enabled") {
+		t.Fatalf("expected stdio env save hint, got %q", prompt)
+	}
+	if !strings.Contains(prompt, "headers 禁止写 Authorization") {
+		t.Fatalf("expected authorization header constraint, got %q", prompt)
+	}
+}
+
 func TestBuiltinA2ATaskOrchestrator_UsesInjectedIndexFirst(t *testing.T) {
 	root := t.TempDir()
 	store, err := NewStore(filepath.Join(root, "skills"), filepath.Join(root, "skills_state.json"))

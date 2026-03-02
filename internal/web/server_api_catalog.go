@@ -18,14 +18,18 @@ func (s *Server) handleAPIMCPServices(w http.ResponseWriter, r *http.Request) {
 	items := make([]apiMCPService, 0, len(services))
 	for _, svc := range services {
 		items = append(items, apiMCPService{
-			ID:        svc.ID,
-			Name:      svc.Name,
-			Transport: strings.TrimSpace(svc.Transport),
-			Endpoint:  strings.TrimSpace(svc.Endpoint),
-			Command:   strings.TrimSpace(svc.Command),
-			Args:      append([]string(nil), svc.Args...),
-			Enabled:   svc.Enabled,
-			UpdatedAt: svc.UpdatedAt,
+			ID:         svc.ID,
+			Name:       svc.Name,
+			Transport:  strings.TrimSpace(svc.Transport),
+			Endpoint:   strings.TrimSpace(svc.Endpoint),
+			Command:    strings.TrimSpace(svc.Command),
+			Args:       append([]string(nil), svc.Args...),
+			HasEnv:     len(svc.Env) > 0,
+			EnvKeys:    sortedMapKeys(svc.Env),
+			HasHeaders: len(svc.Headers) > 0,
+			HeaderKeys: sortedMapKeys(svc.Headers),
+			Enabled:    svc.Enabled,
+			UpdatedAt:  svc.UpdatedAt,
 		})
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")

@@ -36,6 +36,18 @@ func (s *Server) handleSettingsMCPSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	service.Args = args
+	envMap, err := parseJSONStringMap(r.FormValue("env_json"), "stdio 环境变量")
+	if err != nil {
+		s.redirectSettings(w, r, "mcp", "", err.Error())
+		return
+	}
+	service.Env = envMap
+	headerMap, err := parseJSONStringMap(r.FormValue("headers_json"), "HTTP 请求头")
+	if err != nil {
+		s.redirectSettings(w, r, "mcp", "", err.Error())
+		return
+	}
+	service.Headers = headerMap
 	if err := s.saveMCPService(service); err != nil {
 		s.redirectSettings(w, r, "mcp", "", err.Error())
 		return

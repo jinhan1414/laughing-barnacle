@@ -17,6 +17,8 @@ func cloneServices(in []Service) []Service {
 func cloneService(in Service) Service {
 	out := in
 	out.Args = slices.Clone(in.Args)
+	out.Env = cloneStringMap(in.Env)
+	out.Headers = cloneStringMap(in.Headers)
 	out.ToolStates = cloneToolStates(in.ToolStates)
 	return out
 }

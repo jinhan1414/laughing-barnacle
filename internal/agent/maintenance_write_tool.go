@@ -115,12 +115,12 @@ func validateSavePayload(resource string, payload map[string]any) error {
 		}
 		transport := readPayloadString(payload, "transport")
 		switch transport {
-		case "streamable_http":
+		case "streamable_http", "sse":
 			return requirePayloadFields(payload, "endpoint")
 		case "stdio":
 			return requirePayloadFields(payload, "command")
 		default:
-			return fmt.Errorf("mcp save requires transport=streamable_http|stdio")
+			return fmt.Errorf("mcp save requires transport=streamable_http|sse|stdio")
 		}
 	case "skills":
 		return requirePayloadFields(payload, "id", "name", "description", "prompt", "enabled")

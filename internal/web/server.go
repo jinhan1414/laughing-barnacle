@@ -79,6 +79,8 @@ type mcpServiceView struct {
 	Endpoint    string
 	Command     string
 	Args        string
+	EnvKeys     string
+	HeaderKeys  string
 	Transport   string
 	Enabled     bool
 	UpdatedAt   string
@@ -254,14 +256,18 @@ type asyncTaskLogView struct {
 }
 
 type apiMCPService struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Transport string    `json:"transport"`
-	Endpoint  string    `json:"endpoint,omitempty"`
-	Command   string    `json:"command,omitempty"`
-	Args      []string  `json:"args,omitempty"`
-	Enabled   bool      `json:"enabled"`
-	UpdatedAt time.Time `json:"updated_at,omitempty"`
+	ID         string    `json:"id"`
+	Name       string    `json:"name"`
+	Transport  string    `json:"transport"`
+	Endpoint   string    `json:"endpoint,omitempty"`
+	Command    string    `json:"command,omitempty"`
+	Args       []string  `json:"args,omitempty"`
+	HasEnv     bool      `json:"has_env"`
+	EnvKeys    []string  `json:"env_keys,omitempty"`
+	HasHeaders bool      `json:"has_headers"`
+	HeaderKeys []string  `json:"header_keys,omitempty"`
+	Enabled    bool      `json:"enabled"`
+	UpdatedAt  time.Time `json:"updated_at,omitempty"`
 }
 
 type apiA2AAgent struct {

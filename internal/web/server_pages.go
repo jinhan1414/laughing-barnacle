@@ -48,14 +48,16 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 		data.Services = make([]mcpServiceView, 0, len(statuses))
 		for _, status := range statuses {
 			view := mcpServiceView{
-				ID:        status.Service.ID,
-				Name:      status.Service.Name,
-				Endpoint:  status.Service.Endpoint,
-				Command:   status.Service.Command,
-				Args:      strings.Join(status.Service.Args, " "),
-				Transport: displayTransport(status.Service.Transport),
-				Enabled:   status.Service.Enabled,
-				UpdatedAt: status.Service.UpdatedAt.Format("2006-01-02 15:04:05"),
+				ID:         status.Service.ID,
+				Name:       status.Service.Name,
+				Endpoint:   status.Service.Endpoint,
+				Command:    status.Service.Command,
+				Args:       strings.Join(status.Service.Args, " "),
+				EnvKeys:    joinSortedMapKeys(status.Service.Env),
+				HeaderKeys: joinSortedMapKeys(status.Service.Headers),
+				Transport:  displayTransport(status.Service.Transport),
+				Enabled:    status.Service.Enabled,
+				UpdatedAt:  status.Service.UpdatedAt.Format("2006-01-02 15:04:05"),
 			}
 			switch {
 			case !status.Service.Enabled:

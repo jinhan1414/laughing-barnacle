@@ -32,22 +32,24 @@ type Service struct {
 	Args       []string           `json:"args,omitempty"`
 	Transport  string             `json:"transport,omitempty"`
 	AuthToken  string             `json:"auth_token,omitempty"`
+	Env        map[string]string  `json:"env,omitempty"`
+	Headers    map[string]string  `json:"headers,omitempty"`
 	Enabled    bool               `json:"enabled"`
 	ToolStates []ServiceToolState `json:"tool_states,omitempty"`
 	UpdatedAt  time.Time          `json:"updated_at"`
 }
 
 type A2AAgent struct {
-	ID           string    `json:"id"`
-	Name         string    `json:"name"`
-	Description  string    `json:"description,omitempty"`
-	Endpoint     string    `json:"endpoint"`
-	AgentCardURL string    `json:"agent_card_url,omitempty"`
-	ProtocolVersion string  `json:"protocol_version,omitempty"`
-	Skills       []A2ASkill `json:"skills,omitempty"`
-	AuthToken    string    `json:"auth_token,omitempty"`
-	Enabled      bool      `json:"enabled"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID              string     `json:"id"`
+	Name            string     `json:"name"`
+	Description     string     `json:"description,omitempty"`
+	Endpoint        string     `json:"endpoint"`
+	AgentCardURL    string     `json:"agent_card_url,omitempty"`
+	ProtocolVersion string     `json:"protocol_version,omitempty"`
+	Skills          []A2ASkill `json:"skills,omitempty"`
+	AuthToken       string     `json:"auth_token,omitempty"`
+	Enabled         bool       `json:"enabled"`
+	UpdatedAt       time.Time  `json:"updated_at"`
 }
 
 type A2ASkill struct {

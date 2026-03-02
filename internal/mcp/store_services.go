@@ -38,6 +38,8 @@ func (s *Store) GetService(id string) (Service, bool) {
 }
 
 func (s *Store) UpsertService(service Service) error {
+	envProvided := service.Env != nil
+	headersProvided := service.Headers != nil
 	service.ID = strings.TrimSpace(service.ID)
 	service.Name = strings.TrimSpace(service.Name)
 	service.Endpoint = strings.TrimSpace(service.Endpoint)
@@ -45,6 +47,11 @@ func (s *Store) UpsertService(service Service) error {
 	service.Args = normalizeServiceArgs(service.Args)
 	service.Transport = normalizeServiceTransport(service.Transport)
 	service.AuthToken = strings.TrimSpace(service.AuthToken)
+	if err := validateServiceConfigInputs(service.Transport, service.Env, service.Headers); err != nil {
+		return err
+	}
+	service.Env = normalizeServiceEnv(service.Env)
+	service.Headers = normalizeServiceHeaders(service.Headers)
 	service.ToolStates = normalizeServiceToolStates(service.ToolStates)
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -70,6 +77,12 @@ func (s *Store) UpsertService(service Service) error {
 		if s.cfg.MCP.Services[i].ID == service.ID {
 			if service.AuthToken == "" {
 				service.AuthToken = s.cfg.MCP.Services[i].AuthToken
+			}
+			if !envProvided {
+				service.Env = cloneStringMap(s.cfg.MCP.Services[i].Env)
+			}
+			if !headersProvided {
+				service.Headers = cloneStringMap(s.cfg.MCP.Services[i].Headers)
 			}
 			if len(service.ToolStates) == 0 {
 				service.ToolStates = cloneToolStates(s.cfg.MCP.Services[i].ToolStates)

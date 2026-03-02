@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -17,6 +18,9 @@ func validateService(service Service) error {
 	}
 	if !serviceIDPattern.MatchString(service.ID) {
 		return fmt.Errorf("service id must match [a-zA-Z0-9_-]+")
+	}
+	if err := validateServiceConfigInputs(service.Transport, service.Env, service.Headers); err != nil {
+		return err
 	}
 	switch service.Transport {
 	case ServiceTransportStreamableHTTP, ServiceTransportSSE:
@@ -36,6 +40,51 @@ func validateService(service Service) error {
 	for _, state := range service.ToolStates {
 		if strings.TrimSpace(state.Name) == "" {
 			return fmt.Errorf("service tool state name is required")
+		}
+	}
+	return nil
+}
+
+func validateServiceConfigInputs(transport string, env map[string]string, headers map[string]string) error {
+	switch normalizeServiceTransport(transport) {
+	case ServiceTransportStdio:
+		if len(headers) > 0 {
+			return fmt.Errorf("stdio transport does not support headers")
+		}
+		return validateServiceEnvInputs(env)
+	case ServiceTransportStreamableHTTP, ServiceTransportSSE:
+		if len(env) > 0 {
+			return fmt.Errorf("%s transport does not support env", normalizeServiceTransport(transport))
+		}
+		return validateServiceHeaderInputs(headers)
+	default:
+		return nil
+	}
+}
+
+func validateServiceEnvInputs(env map[string]string) error {
+	for key, value := range env {
+		if strings.TrimSpace(key) == "" {
+			return fmt.Errorf("service env key must be non-empty")
+		}
+		if strings.TrimSpace(value) == "" {
+			return fmt.Errorf("service env value for %q must be non-empty", strings.TrimSpace(key))
+		}
+	}
+	return nil
+}
+
+func validateServiceHeaderInputs(headers map[string]string) error {
+	for key, value := range headers {
+		trimmedKey := strings.TrimSpace(key)
+		if trimmedKey == "" {
+			return fmt.Errorf("service header key must be non-empty")
+		}
+		if strings.TrimSpace(value) == "" {
+			return fmt.Errorf("service header value for %q must be non-empty", http.CanonicalHeaderKey(trimmedKey))
+		}
+		if isProtectedHTTPHeader(trimmedKey) {
+			return fmt.Errorf("service headers must not override %s", http.CanonicalHeaderKey(trimmedKey))
 		}
 	}
 	return nil

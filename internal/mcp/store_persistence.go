@@ -33,6 +33,11 @@ func (s *Store) load() error {
 		svc.Transport = normalizeServiceTransport(svc.Transport)
 		svc.Command = strings.TrimSpace(svc.Command)
 		svc.Args = normalizeServiceArgs(svc.Args)
+		if err := validateServiceConfigInputs(svc.Transport, svc.Env, svc.Headers); err != nil {
+			return fmt.Errorf("invalid mcp service %q: %w", svc.ID, err)
+		}
+		svc.Env = normalizeServiceEnv(svc.Env)
+		svc.Headers = normalizeServiceHeaders(svc.Headers)
 		svc.ToolStates = normalizeServiceToolStates(svc.ToolStates)
 		if err := validateService(svc); err != nil {
 			return fmt.Errorf("invalid mcp service %q: %w", svc.ID, err)

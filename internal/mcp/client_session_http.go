@@ -97,6 +97,7 @@ func (c *HTTPClient) postRPCStreamable(
 	if sessionID != "" {
 		req.Header.Set("Mcp-Session-Id", sessionID)
 	}
+	applyConfiguredHeaders(req.Header, service.Headers)
 
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -146,6 +147,7 @@ func (c *HTTPClient) postRPCSSE(
 	if sessionID != "" {
 		streamReq.Header.Set("Mcp-Session-Id", sessionID)
 	}
+	applyConfiguredHeaders(streamReq.Header, service.Headers)
 
 	streamResp, err := c.http.Do(streamReq)
 	if err != nil {
@@ -195,6 +197,7 @@ func (c *HTTPClient) postRPCSSE(
 	if sessionID != "" {
 		postReq.Header.Set("Mcp-Session-Id", sessionID)
 	}
+	applyConfiguredHeaders(postReq.Header, service.Headers)
 
 	postResp, err := c.http.Do(postReq)
 	if err != nil {
