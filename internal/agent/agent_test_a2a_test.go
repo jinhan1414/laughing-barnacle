@@ -52,6 +52,9 @@ func TestHandleUserMessage_IncludesA2AIndexProgressiveDisclosure(t *testing.T) {
 	if !strings.Contains(content, "context__read(resource=\"a2a\", action=\"read\", id=\"<agent_id>\")") {
 		t.Fatalf("expected a2a read hint, got %q", content)
 	}
+	if !strings.Contains(content, "大型开发、仓库分析、多步产出类任务") {
+		t.Fatalf("expected large-task delegation hint in a2a index prompt, got %q", content)
+	}
 	if !strings.Contains(content, "本索引是本轮固定上下文主来源") {
 		t.Fatalf("expected fixed-context hint in a2a index prompt, got %q", content)
 	}
@@ -60,6 +63,47 @@ func TestHandleUserMessage_IncludesA2AIndexProgressiveDisclosure(t *testing.T) {
 	}
 	if strings.Contains(content, "agent_card_json") {
 		t.Fatalf("should not inject full agent card content, got %q", content)
+	}
+}
+
+func TestHandleUserMessage_RuntimePromptPrefersA2ADelegationForLargeTasks(t *testing.T) {
+	store := conversation.NewStore()
+	fakeLLM := &mockLLM{responses: map[string][]string{
+		"chat_reply": {"ok"},
+	}}
+
+	agentSvc := New(Config{
+		Model:                      "test-model",
+		MaxRecentMessages:          10,
+		CompressionTriggerMessages: 99,
+		CompressionTriggerChars:    99999,
+		KeepRecentAfterCompression: 1,
+		MaxCompressionLoopsPerTurn: 1,
+		MaxToolCallRounds:          2,
+		SystemPrompt:               "system",
+		CompressionSystemPrompt:    "compressor",
+	}, store, fakeLLM, nil)
+
+	if _, err := agentSvc.HandleUserMessage(context.Background(), "帮我开发一个大型A2A项目"); err != nil {
+		t.Fatalf("HandleUserMessage error: %v", err)
+	}
+	if len(fakeLLM.calls) != 1 {
+		t.Fatalf("expected one llm call, got %d", len(fakeLLM.calls))
+	}
+
+	found := false
+	for _, msg := range fakeLLM.calls[0].Messages {
+		if msg.Role != "system" {
+			continue
+		}
+		if strings.Contains(msg.Content, "大型开发、仓库分析、多步产出类任务") &&
+			strings.Contains(msg.Content, "数字分身负责调度、回读与汇总") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected runtime prompt to include A2A delegation guidance")
 	}
 }
 

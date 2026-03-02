@@ -7,7 +7,9 @@ description: "当用户要求数字分身在一个多步骤目标上无人值守
 
 规则：
 - 当任务需要跨多个步骤持续推进，且某一步可能转后台时，使用本技能。
+- 当任务主体应交给 A2A Agent 执行时，数字分身负责调度和 checkpoint，不负责在当前单轮内继续展开主体开发。
 - 若当前步骤会等待后台结果，先调用 `async_task__submit`，再调用 `autonomous_run__checkpoint`。
+- 若当前工具预算已接近上限，优先在本轮提交后台任务并写 checkpoint，禁止继续扩张本地执行步骤。
 - `autonomous_run__checkpoint` 必须写清：
   - `goal`
   - `status`

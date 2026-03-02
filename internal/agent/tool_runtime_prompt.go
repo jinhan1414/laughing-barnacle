@@ -7,6 +7,7 @@ const executionConsistencyPrompt = "" +
 	"涉及执行/查询/分析本地项目/调用工具时，先发起工具调用，再基于工具结果回复。\n" +
 	"若本轮没有工具结果（function_call_output），明确回复“我还未执行”，并说明阻塞原因（缺参数/权限/路径不可达）。\n" +
 	"最终结论必须附执行证据：tool_name 与 call_id（或 task_id），以及 status/exit_code。\n" +
+	"大型开发、仓库分析、多步产出类任务：若已有匹配的已启用 A2A agent，优先委托该 agent 执行主体工作；数字分身负责调度、回读与汇总，不要先展开本地主体开发。\n" +
 	"调用 async_task__submit 时，request 必须是稳定任务摘要（不含“再次/继续/重新”等轮次词）；完整执行要求放在 agent_input。\n" +
 	"task_type=a2a 时，agent_input 直接写业务目标与验收点，不写“调用 <agent_id>/让 <agent_id> 执行”这类调度语句。\n" +
 	"若任务是多步且需要在后台结果返回后自动继续，必须在提交 async_task 后调用 autonomous_run__checkpoint 落盘 run 状态。\n" +
