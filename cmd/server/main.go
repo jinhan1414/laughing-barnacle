@@ -126,6 +126,9 @@ func run() error {
 	if err := agentSvc.BindAsyncTaskStateStore(agent.NewConversationAsyncTaskStateStore(convStore)); err != nil {
 		return err
 	}
+	if err := agentSvc.BindAutonomousRunStateStore(agent.NewConversationAutonomousRunStateStore(convStore)); err != nil {
+		return err
+	}
 	agentSvc.SetSkillProvider(skillStore)
 	agentSvc.SetMemoryProvider(memoryStore)
 	agentSvc.SetA2AProvider(a2aProvider)

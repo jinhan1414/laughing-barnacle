@@ -116,8 +116,8 @@ func TestHandleUserMessage_UsesBuiltinLinuxAndAsyncTaskTools(t *testing.T) {
 	}
 
 	firstCall := fakeLLM.calls[0]
-	if len(firstCall.Tools) != 6 {
-		t.Fatalf("expected 6 builtin tools, got %d", len(firstCall.Tools))
+	if len(firstCall.Tools) != 7 {
+		t.Fatalf("expected 7 builtin tools, got %d", len(firstCall.Tools))
 	}
 	seen := map[string]bool{}
 	for _, tool := range firstCall.Tools {
@@ -130,6 +130,7 @@ func TestHandleUserMessage_UsesBuiltinLinuxAndAsyncTaskTools(t *testing.T) {
 		builtinAsyncTaskSubmitToolName,
 		builtinAsyncTaskGetToolName,
 		builtinAsyncTaskCancelToolName,
+		builtinAutonomousRunCheckpointToolName,
 	}
 	for _, name := range required {
 		if !seen[name] {

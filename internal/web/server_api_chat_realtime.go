@@ -179,7 +179,7 @@ func parseChatCursor(r *http.Request) (int64, error) {
 
 func allowChatEventType(eventType string) bool {
 	switch strings.TrimSpace(eventType) {
-	case "context_compression", "async_task_status", chatTurnEventType:
+	case "context_compression", "async_task_status", "autonomous_run_status", chatTurnEventType:
 		return true
 	default:
 		return false
@@ -208,6 +208,8 @@ func chatSSEEventName(item apiChatUpdate) string {
 	switch item.EventType {
 	case "async_task_status":
 		return "task.status"
+	case "autonomous_run_status":
+		return "run.status"
 	case chatTurnEventType:
 		return "turn.status"
 	case "context_compression":

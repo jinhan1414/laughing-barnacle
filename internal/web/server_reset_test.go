@@ -76,12 +76,37 @@ func TestHandleChatReset_ClearsConversationAndLogs(t *testing.T) {
 	if err := convStore.SaveAsyncTaskState(rawTasks); err != nil {
 		t.Fatalf("SaveAsyncTaskState error: %v", err)
 	}
+	seedRuns := []agent.AutonomousRun{
+		{
+			ID:          "run_20260302_1",
+			Goal:        "自动运营小红书 7 天",
+			Status:      "waiting_async",
+			CurrentStep: "generate_topics",
+			WaitingType: "async_task",
+			WaitingRef:  "async_20260228_120000_1",
+			CreatedAt:   time.Date(2026, 2, 28, 12, 0, 0, 0, time.UTC),
+			UpdatedAt:   time.Date(2026, 2, 28, 12, 0, 0, 0, time.UTC),
+		},
+	}
+	rawRuns, err := json.Marshal(seedRuns)
+	if err != nil {
+		t.Fatalf("marshal autonomous runs error: %v", err)
+	}
+	if err := convStore.SaveAutonomousRunState(rawRuns); err != nil {
+		t.Fatalf("SaveAutonomousRunState error: %v", err)
+	}
 	agentSvc := agent.New(agent.Config{}, convStore, nil, nil)
 	if err := agentSvc.BindAsyncTaskStateStore(agent.NewConversationAsyncTaskStateStore(convStore)); err != nil {
 		t.Fatalf("BindAsyncTaskStateStore error: %v", err)
 	}
+	if err := agentSvc.BindAutonomousRunStateStore(agent.NewConversationAutonomousRunStateStore(convStore)); err != nil {
+		t.Fatalf("BindAutonomousRunStateStore error: %v", err)
+	}
 	if got := len(agentSvc.ListAsyncTasks()); got != 1 {
 		t.Fatalf("expected seeded async task in memory, got %d", got)
+	}
+	if got := len(agentSvc.ListAutonomousRuns()); got != 1 {
+		t.Fatalf("expected seeded autonomous run in memory, got %d", got)
 	}
 
 	s := &Server{
@@ -129,12 +154,22 @@ func TestHandleChatReset_ClearsConversationAndLogs(t *testing.T) {
 	if got := len(agentSvc.ListAsyncTasks()); got != 0 {
 		t.Fatalf("expected empty async tasks after reset, got %d", got)
 	}
+	if got := len(agentSvc.ListAutonomousRuns()); got != 0 {
+		t.Fatalf("expected empty autonomous runs after reset, got %d", got)
+	}
 	rawTasks, err = convStore.LoadAsyncTaskState()
 	if err != nil {
 		t.Fatalf("LoadAsyncTaskState error: %v", err)
 	}
 	if len(rawTasks) != 0 {
 		t.Fatalf("expected persisted async task state cleared, got %q", string(rawTasks))
+	}
+	rawRuns, err = convStore.LoadAutonomousRunState()
+	if err != nil {
+		t.Fatalf("LoadAutonomousRunState error: %v", err)
+	}
+	if len(rawRuns) != 0 {
+		t.Fatalf("expected persisted autonomous run state cleared, got %q", string(rawRuns))
 	}
 }
 

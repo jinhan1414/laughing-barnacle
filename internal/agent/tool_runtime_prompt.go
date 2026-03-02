@@ -9,6 +9,8 @@ const executionConsistencyPrompt = "" +
 	"最终结论必须附执行证据：tool_name 与 call_id（或 task_id），以及 status/exit_code。\n" +
 	"调用 async_task__submit 时，request 必须是稳定任务摘要（不含“再次/继续/重新”等轮次词）；完整执行要求放在 agent_input。\n" +
 	"task_type=a2a 时，agent_input 直接写业务目标与验收点，不写“调用 <agent_id>/让 <agent_id> 执行”这类调度语句。\n" +
+	"若任务是多步且需要在后台结果返回后自动继续，必须在提交 async_task 后调用 autonomous_run__checkpoint 落盘 run 状态。\n" +
+	"恢复 autonomous run 时，结束前必须再次调用 autonomous_run__checkpoint，禁止只用自然语言描述“我会继续”。\n" +
 	"在获得工具返回结果前，保持简洁说明并等待执行证据，不输出承诺式进度话术。"
 
 func (a *Agent) buildToolRuntimePrompt() string {
@@ -53,7 +55,7 @@ func (a *Agent) buildToolRuntimePrompt() string {
 		)
 	default:
 		return strings.TrimSpace(
-				"# Tool & Environment Constraints (工具与环境硬约束)\n" +
+			"# Tool & Environment Constraints (工具与环境硬约束)\n" +
 				"bash 用于本地 shell 命令；本地 API 读取优先使用 context__read，维护写入优先使用 maintenance__write；" +
 				"skill 文档与 references 优先用 context__read(resource=\"skills\", action=\"index|read\")，skill 脚本仅在确有必要时使用 bash 执行；" +
 				"本地 API 的路由白名单、字段必填与格式校验由工具 schema 与服务端统一执行；" +

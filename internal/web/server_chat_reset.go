@@ -27,6 +27,10 @@ func (s *Server) handleChatReset(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/chat?error="+url.QueryEscape("重置后台任务失败："+err.Error()), http.StatusFound)
 			return
 		}
+		if err := s.agent.ResetAutonomousRuns(); err != nil {
+			http.Redirect(w, r, "/chat?error="+url.QueryEscape("重置自主运行失败："+err.Error()), http.StatusFound)
+			return
+		}
 	}
 	if err := s.logStore.Clear(); err != nil {
 		http.Redirect(w, r, "/chat?error="+url.QueryEscape("清空日志失败："+err.Error()), http.StatusFound)

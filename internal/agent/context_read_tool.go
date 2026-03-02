@@ -13,12 +13,12 @@ func contextReadToolDefinition() llm.ToolDefinition {
 		Type: "function",
 		Function: llm.ToolFunctionDefinition{
 			Name:        builtinContextReadToolName,
-			Description: "Read local context through whitelisted resources. Supported pairs: mcp=list; skills=list/index/read; schedules=list; a2a=list/read; memory=index/read/section; async=list/get.",
+			Description: "Read local context through whitelisted resources. Supported pairs: mcp=list; skills=list/index/read; schedules=list; a2a=list/read; memory=index/read/section; async=list/get; runs=list/get.",
 			Parameters: strictToolParameters(
 				map[string]any{
 					"resource": map[string]any{
 						"type":        "string",
-						"enum":        []string{"mcp", "skills", "schedules", "a2a", "memory", "async"},
+						"enum":        []string{"mcp", "skills", "schedules", "a2a", "memory", "async", "runs"},
 						"description": "Target resource namespace.",
 					},
 					"action": map[string]any{
@@ -86,6 +86,8 @@ func (a *Agent) callContextRead(ctx context.Context, raw string) (string, error)
 		return a.callContextReadMemory(ctx, action, args)
 	case "async":
 		return a.callContextReadAsync(action, args)
+	case "runs":
+		return a.callContextReadRuns(action, args)
 	default:
 		return "", fmt.Errorf("unsupported resource %q", resource)
 	}
@@ -209,5 +211,40 @@ func (a *Agent) callContextReadAsync(action string, args map[string]any) (string
 		})
 	default:
 		return "", fmt.Errorf("unsupported action %q for async", action)
+	}
+}
+
+func (a *Agent) callContextReadRuns(action string, args map[string]any) (string, error) {
+	if a.runs == nil {
+		return "", fmt.Errorf("autonomous run manager not configured")
+	}
+	switch action {
+	case "list":
+		lines := a.runs.ListIndexLines(maxAutonomousRunIndexLines, a.nowFn())
+		return marshalNativeAPIResult(nativeAPIResult{
+			StatusCode: 200,
+			Method:     "LOCAL",
+			Path:       "runs:list",
+			Data: map[string]any{
+				"runs": lines,
+			},
+		})
+	case "get":
+		runID := requireStringArgument(args, "id")
+		if runID == "" {
+			return "", fmt.Errorf("id is required for runs get")
+		}
+		run, err := a.runs.Get(runID)
+		if err != nil {
+			return "", err
+		}
+		return marshalNativeAPIResult(nativeAPIResult{
+			StatusCode: 200,
+			Method:     "LOCAL",
+			Path:       "runs:get",
+			Data:       run,
+		})
+	default:
+		return "", fmt.Errorf("unsupported action %q for runs", action)
 	}
 }

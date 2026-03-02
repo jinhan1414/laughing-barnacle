@@ -41,6 +41,7 @@ func (a *Agent) onAsyncTaskCompleted(ctx context.Context, task AsyncTask) {
 	}
 	text = mergeNotificationSummary(text, buildAsyncTaskResultSummary(task))
 	a.store.AppendAssistant(text, toConversationUsage(resp.Usage))
+	go a.resumeAutonomousRunsForTask(task)
 }
 
 func fallbackAsyncTaskNotification(task AsyncTask) string {

@@ -103,6 +103,7 @@ type Agent struct {
 	memory     MemoryProvider
 	a2a        A2AProvider
 	asyncTasks *AsyncTaskManager
+	runs       *AutonomousRunManager
 	prompts    PromptProvider
 	updater    PromptUpdater
 	store      *conversation.Store
@@ -121,6 +122,8 @@ func New(cfg Config, store *conversation.Store, llmClient llm.Client, tools Tool
 	agentSvc.asyncTasks = newAsyncTaskManager(llmClient, cfg.Model, agentSvc.nowFn)
 	_ = agentSvc.asyncTasks.SetA2ATrackingPolicy(cfg.A2ATrackingPolicy)
 	agentSvc.asyncTasks.SetHooks(agentSvc.onAsyncTaskStatusChanged, agentSvc.onAsyncTaskCompleted)
+	agentSvc.runs = newAutonomousRunManager(agentSvc.nowFn)
+	agentSvc.runs.SetHooks(agentSvc.onAutonomousRunStatusChanged)
 	return agentSvc
 }
 

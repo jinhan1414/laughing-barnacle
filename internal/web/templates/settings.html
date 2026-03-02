@@ -299,6 +299,50 @@
               <div class="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm text-slate-500">暂无后台任务。</div>
             {{end}}
           </div>
+        {{else if eq .ActiveSection "autonomous_runs"}}
+          <h2 class="text-base font-semibold">自主运行</h2>
+          <p class="mt-1 text-sm leading-6 text-slate-500">展示多步自动任务的状态、等待条件与步骤轨迹。聊天页是主感知面，这里用于查看与排障。</p>
+
+          <div class="mt-4 space-y-3">
+            {{if .AutonomousRuns}}
+              {{range .AutonomousRuns}}
+                <article class="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <div class="flex flex-wrap items-center justify-between gap-2">
+                    <div class="text-sm font-semibold text-slate-800">{{.Goal}} <span class="text-xs font-normal text-slate-500">({{.ID}})</span></div>
+                    <span class="rounded-full border px-2 py-0.5 text-xs border-slate-200 bg-white text-slate-600">{{.Status}}</span>
+                  </div>
+                  <div class="mt-2 text-xs leading-6 text-slate-500">
+                    current_step: {{.CurrentStep}}<br>
+                    waiting_type: {{if .WaitingType}}{{.WaitingType}}{{else}}-{{end}}<br>
+                    waiting_ref: {{if .WaitingRef}}{{.WaitingRef}}{{else}}-{{end}}<br>
+                    last_event_type: {{if .LastEventType}}{{.LastEventType}}{{else}}-{{end}}<br>
+                    last_event_summary: {{if .LastEventSummary}}{{.LastEventSummary}}{{else}}-{{end}}<br>
+                    created: {{if .CreatedAt}}{{.CreatedAt}}{{else}}-{{end}}<br>
+                    updated: {{if .UpdatedAt}}{{.UpdatedAt}}{{else}}-{{end}}
+                  </div>
+                  {{if .Error}}
+                    <div class="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-2 py-2 text-xs text-rose-700">error: {{.Error}}</div>
+                  {{end}}
+                  <div class="mt-2 rounded-xl border border-slate-200 bg-white p-2">
+                    <div class="text-xs font-medium text-slate-600">步骤轨迹</div>
+                    <div class="mt-1 space-y-1">
+                      {{if .Steps}}
+                        {{range .Steps}}
+                          <div class="rounded-lg border border-slate-100 bg-slate-50 px-2 py-1 text-[11px] leading-5 text-slate-600">
+                            [{{.Seq}}] {{if .CreatedAt}}{{.CreatedAt}}{{else}}-{{end}} | {{.Status}} | {{.Step}}{{if .Summary}} | {{.Summary}}{{end}}{{if .WaitingRef}} | waiting_ref={{.WaitingRef}}{{end}}
+                          </div>
+                        {{end}}
+                      {{else}}
+                        <div class="text-xs text-slate-500">暂无步骤轨迹</div>
+                      {{end}}
+                    </div>
+                  </div>
+                </article>
+              {{end}}
+            {{else}}
+              <div class="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm text-slate-500">暂无自主运行记录。</div>
+            {{end}}
+          </div>
         {{else if eq .ActiveSection "memory"}}
           <h2 class="text-base font-semibold">MemoryFS 可视化</h2>
           <p class="mt-1 text-sm leading-6 text-slate-500">展示统一记忆命名空间的节点与沉淀分段状态。读取接口：`/api/memory/index`、`/api/memory/read`、`/api/memory/section`。</p>

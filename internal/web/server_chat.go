@@ -96,6 +96,7 @@ func buildChatTimeline(messages []conversation.Message, events []conversation.Ev
 	all := make([]timelineWithSeq, 0, len(messages)+len(events))
 	asyncTaskEventIndex := make(map[string]int)
 	turnEventIndex := make(map[string]int)
+	runEventIndex := make(map[string]int)
 	seq := 0
 	for _, msg := range messages {
 		role := strings.TrimSpace(msg.Role)
@@ -128,11 +129,15 @@ func buildChatTimeline(messages []conversation.Message, events []conversation.Ev
 		}
 		eventTaskID := ""
 		eventTurnID := ""
+		eventRunID := ""
 		if eventType == "async_task_status" {
 			eventTaskID = extractAsyncTaskStatusTaskID(evt.Content)
 		}
 		if eventType == chatTurnEventType {
 			eventTurnID = extractChatTurnStatusTurnID(evt.Content)
+		}
+		if eventType == "autonomous_run_status" {
+			eventRunID = extractAutonomousRunStatusRunID(evt.Content)
 		}
 		next := timelineWithSeq{
 			item: chatTimelineItem{
@@ -140,6 +145,7 @@ func buildChatTimeline(messages []conversation.Message, events []conversation.Ev
 				EventType:   eventType,
 				EventTaskID: eventTaskID,
 				EventTurnID: eventTurnID,
+				EventRunID:  eventRunID,
 				Content:     evt.Content,
 				CreatedAt:   evt.CreatedAt,
 			},
@@ -158,12 +164,21 @@ func buildChatTimeline(messages []conversation.Message, events []conversation.Ev
 				continue
 			}
 		}
+		if eventRunID != "" {
+			if idx, ok := runEventIndex[eventRunID]; ok {
+				all[idx] = next
+				continue
+			}
+		}
 		all = append(all, next)
 		if eventTaskID != "" {
 			asyncTaskEventIndex[eventTaskID] = len(all) - 1
 		}
 		if eventTurnID != "" {
 			turnEventIndex[eventTurnID] = len(all) - 1
+		}
+		if eventRunID != "" {
+			runEventIndex[eventRunID] = len(all) - 1
 		}
 	}
 
@@ -241,6 +256,10 @@ func extractAsyncTaskStatusTaskID(content string) string {
 
 func extractChatTurnStatusTurnID(content string) string {
 	return extractStatusValue(content, "turn_id=")
+}
+
+func extractAutonomousRunStatusRunID(content string) string {
+	return extractStatusValue(content, "run_id=")
 }
 
 func extractStatusValue(content, prefix string) string {

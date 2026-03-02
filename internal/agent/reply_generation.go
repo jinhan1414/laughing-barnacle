@@ -25,10 +25,14 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 	if a.asyncTasks != nil {
 		builtinToolDefs = append(builtinToolDefs, asyncTaskBuiltinToolDefinitions()...)
 	}
+	if a.runs != nil {
+		builtinToolDefs = append(builtinToolDefs, autonomousRunBuiltinToolDefinitions()...)
+	}
 	skillIndexPrompt := ""
 	memoryIndexPrompt := ""
 	a2aIndexPrompt := ""
 	asyncTaskIndexPrompt := ""
+	runIndexPrompt := ""
 	resourceHeaderInjected := false
 	resourceSection := 0
 	if a.skills != nil {
@@ -143,6 +147,35 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 			}
 		}
 	}
+	if a.runs != nil {
+		runIndex := a.runs.ListIndexLines(maxAutonomousRunIndexLines, a.nowFn())
+		if len(runIndex) > 0 {
+			var b strings.Builder
+			if !resourceHeaderInjected {
+				b.WriteString("# Resource Indexes (资源索引 - 渐进式披露)\n")
+				resourceHeaderInjected = true
+			}
+			resourceSection++
+			b.WriteString(fmt.Sprintf("## %d. Autonomous Runs 索引 (共 %d 条)\n", resourceSection, len(runIndex)))
+			b.WriteString("自主运行索引（固定注入，当天+活动中）：用于跟踪多步自动目标。\n")
+			b.WriteString("读取规则：默认只看 run 索引；需要详情时再用 context__read(resource=\"runs\", action=\"get\", id=\"<run_id>\")。\n")
+			b.WriteString("若任务需要在后台结果返回后继续自动执行，必须调用 autonomous_run__checkpoint 记录 run 状态。\n")
+			for i, line := range runIndex {
+				line = trimRunes(strings.TrimSpace(line), maxSingleSkillPromptRunes)
+				if line == "" {
+					continue
+				}
+				b.WriteString(fmt.Sprintf("%d. %s\n", i+1, line))
+			}
+			runIndexPrompt = strings.TrimSpace(b.String())
+			if runIndexPrompt != "" {
+				requestMessages = append(requestMessages, llm.Message{
+					Role:    "system",
+					Content: runIndexPrompt,
+				})
+			}
+		}
+	}
 	runtimePrompt := strings.TrimSpace(a.buildToolRuntimePrompt())
 	if runtimePrompt != "" {
 		requestMessages = append(requestMessages, llm.Message{
@@ -157,7 +190,7 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 			Content: currentDateContextPrompt,
 		})
 	}
-	summary = pruneSummaryOverlap(summary, systemPrompt, skillIndexPrompt, memoryIndexPrompt, a2aIndexPrompt, asyncTaskIndexPrompt, runtimePrompt)
+	summary = pruneSummaryOverlap(summary, systemPrompt, skillIndexPrompt, memoryIndexPrompt, a2aIndexPrompt, asyncTaskIndexPrompt, runIndexPrompt, runtimePrompt)
 	if strings.TrimSpace(summary) != "" {
 		requestMessages = append(requestMessages, llm.Message{
 			Role:    "system",

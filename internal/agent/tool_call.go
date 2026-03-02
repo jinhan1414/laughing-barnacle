@@ -48,6 +48,9 @@ func (a *Agent) callBuiltinTool(ctx context.Context, call llm.ToolCall) (result 
 	case builtinAsyncTaskCancelToolName:
 		out, err := a.callAsyncTaskCancel(ctx, call.Function.Arguments)
 		return out, err, true
+	case builtinAutonomousRunCheckpointToolName:
+		out, err := a.callAutonomousRunCheckpoint(ctx, call.Function.Arguments)
+		return out, err, true
 	default:
 		return "", nil, false
 	}

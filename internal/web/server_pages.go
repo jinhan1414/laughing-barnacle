@@ -21,7 +21,7 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 	if section == "" {
 		section = "mcp"
 	}
-	if section != "mcp" && section != "a2a" && section != "async_tasks" && section != "llm" && section != "security" && section != "skills" && section != "schedules" && section != "memory" {
+	if section != "mcp" && section != "a2a" && section != "async_tasks" && section != "autonomous_runs" && section != "llm" && section != "security" && section != "skills" && section != "schedules" && section != "memory" {
 		section = "mcp"
 	}
 
@@ -31,6 +31,7 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 			{Key: "mcp", Title: "MCP 服务", Description: "管理 Agent 可用的 MCP 工具服务"},
 			{Key: "a2a", Title: "A2A 接入", Description: "管理已接入的 A2A Agent 注册信息"},
 			{Key: "async_tasks", Title: "后台任务", Description: "查看后台任务清单与全量执行日志"},
+			{Key: "autonomous_runs", Title: "自主运行", Description: "查看多步自动任务状态、等待条件与步骤轨迹"},
 			{Key: "memory", Title: "记忆模块", Description: "可视化查看 MemoryFS 命名空间、节点与沉淀分段"},
 			{Key: "schedules", Title: "定时任务", Description: "统一管理系统 Cron 定时任务"},
 			{Key: "llm", Title: "提示词策略", Description: "配置 Agent 系统提示词与压缩提示词"},
@@ -146,6 +147,44 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 				view.Logs = append(view.Logs, item)
 			}
 			data.AsyncTasks = append(data.AsyncTasks, view)
+		}
+	} else if section == "autonomous_runs" {
+		allRuns := s.agent.ListAutonomousRuns()
+		data.AutonomousRuns = make([]autonomousRunView, 0, len(allRuns))
+		for _, run := range allRuns {
+			view := autonomousRunView{
+				ID:               run.ID,
+				Goal:             run.Goal,
+				Status:           run.Status,
+				CurrentStep:      run.CurrentStep,
+				WaitingType:      run.WaitingType,
+				WaitingRef:       run.WaitingRef,
+				LastEventType:    run.LastEventType,
+				LastEventSummary: run.LastEventSummary,
+				Error:            run.Error,
+			}
+			if !run.CreatedAt.IsZero() {
+				view.CreatedAt = run.CreatedAt.Format("2006-01-02 15:04:05")
+			}
+			if !run.UpdatedAt.IsZero() {
+				view.UpdatedAt = run.UpdatedAt.Format("2006-01-02 15:04:05")
+			}
+			view.Steps = make([]autonomousRunStepView, 0, len(run.Steps))
+			for _, step := range run.Steps {
+				item := autonomousRunStepView{
+					Seq:         step.Seq,
+					Step:        step.Step,
+					Status:      step.Status,
+					Summary:     step.Summary,
+					WaitingType: step.WaitingType,
+					WaitingRef:  step.WaitingRef,
+				}
+				if !step.CreatedAt.IsZero() {
+					item.CreatedAt = step.CreatedAt.Format("2006-01-02 15:04:05")
+				}
+				view.Steps = append(view.Steps, item)
+			}
+			data.AutonomousRuns = append(data.AutonomousRuns, view)
 		}
 	} else if section == "skills" {
 		allSkills := s.skillStore.ListSkills()

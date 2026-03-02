@@ -57,6 +57,7 @@ type chatTimelineItem struct {
 	EventType      string
 	EventTaskID    string
 	EventTurnID    string
+	EventRunID     string
 	Content        string
 	ToolCalls      []conversation.ToolCall
 	Usage          *conversation.TokenUsage
@@ -112,6 +113,7 @@ type settingsPageData struct {
 	MemorySegments []memorySegmentView
 	Schedules      []scheduledTaskView
 	AsyncTasks     []asyncTaskView
+	AutonomousRuns []autonomousRunView
 	AgentPrompts   agentPromptsView
 	Success        string
 	Error          string
@@ -255,6 +257,31 @@ type asyncTaskLogView struct {
 	CreatedAt string
 	Level     string
 	Message   string
+}
+
+type autonomousRunView struct {
+	ID               string
+	Goal             string
+	Status           string
+	CurrentStep      string
+	WaitingType      string
+	WaitingRef       string
+	LastEventType    string
+	LastEventSummary string
+	Error            string
+	CreatedAt        string
+	UpdatedAt        string
+	Steps            []autonomousRunStepView
+}
+
+type autonomousRunStepView struct {
+	Seq         int
+	Step        string
+	Status      string
+	Summary     string
+	WaitingType string
+	WaitingRef  string
+	CreatedAt   string
 }
 
 type apiMCPService struct {
