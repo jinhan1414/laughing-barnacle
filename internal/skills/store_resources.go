@@ -114,9 +114,40 @@ func (s *Store) resolveEnabledSkillLocked(skillID string) (Skill, error) {
 }
 
 func normalizeSkillResourcePath(resourcePath string) (string, error) {
+	if strings.TrimSpace(resourcePath) == "" {
+		return "SKILL.md", nil
+	}
+	normalized, err := normalizeSkillRelativePath(resourcePath)
+	if err != nil {
+		return "", err
+	}
+	if normalized == "SKILL.md" {
+		return normalized, nil
+	}
+	if strings.HasPrefix(normalized, "references/") && strings.HasSuffix(strings.ToLower(normalized), ".md") {
+		return normalized, nil
+	}
+	return "", fmt.Errorf("%w: %s", ErrInvalidSkillResourcePath, normalized)
+}
+
+func normalizeSkillWriteResourcePath(resourcePath string) (string, error) {
+	normalized, err := normalizeSkillRelativePath(resourcePath)
+	if err != nil {
+		return "", err
+	}
+	if strings.HasPrefix(normalized, "references/") && strings.HasSuffix(strings.ToLower(normalized), ".md") {
+		return normalized, nil
+	}
+	if strings.HasPrefix(normalized, "scripts/") {
+		return normalized, nil
+	}
+	return "", fmt.Errorf("%w: %s", ErrInvalidSkillResourcePath, normalized)
+}
+
+func normalizeSkillRelativePath(resourcePath string) (string, error) {
 	path := strings.TrimSpace(strings.ReplaceAll(resourcePath, "\\", "/"))
 	if path == "" {
-		return "SKILL.md", nil
+		return "", ErrInvalidSkillResourcePath
 	}
 	if strings.HasPrefix(path, "/") {
 		return "", ErrInvalidSkillResourcePath
@@ -130,14 +161,7 @@ func normalizeSkillResourcePath(resourcePath string) (string, error) {
 			return "", ErrInvalidSkillResourcePath
 		}
 	}
-	normalized := strings.Join(segments, "/")
-	if normalized == "SKILL.md" {
-		return normalized, nil
-	}
-	if strings.HasPrefix(normalized, "references/") && strings.HasSuffix(strings.ToLower(normalized), ".md") {
-		return normalized, nil
-	}
-	return "", fmt.Errorf("%w: %s", ErrInvalidSkillResourcePath, normalized)
+	return strings.Join(segments, "/"), nil
 }
 
 func collectSkillResources(root, subdir, kind string, readable, executable bool) []SkillResource {

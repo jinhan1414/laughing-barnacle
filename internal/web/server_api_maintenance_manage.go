@@ -37,11 +37,12 @@ type apiMCPServiceDeleteRequest struct {
 }
 
 type apiSkillSaveRequest struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Prompt      string `json:"prompt"`
-	Enabled     bool   `json:"enabled"`
+	ID          string                        `json:"id"`
+	Name        string                        `json:"name"`
+	Description string                        `json:"description"`
+	Prompt      string                        `json:"prompt"`
+	Enabled     bool                          `json:"enabled"`
+	Resources   []skills.SkillPackageResource `json:"resources"`
 }
 
 type apiSkillToggleRequest struct {
@@ -152,12 +153,15 @@ func (s *Server) handleAPISkillSave(w http.ResponseWriter, r *http.Request) {
 		writeAPIBadRequest(w, "invalid json body: "+err.Error())
 		return
 	}
-	err := s.saveSkill(skills.Skill{
-		ID:          strings.TrimSpace(req.ID),
-		Name:        strings.TrimSpace(req.Name),
-		Description: strings.TrimSpace(req.Description),
-		Prompt:      strings.TrimSpace(req.Prompt),
-		Enabled:     req.Enabled,
+	err := s.saveSkillPackage(skills.SkillPackage{
+		Skill: skills.Skill{
+			ID:          strings.TrimSpace(req.ID),
+			Name:        strings.TrimSpace(req.Name),
+			Description: strings.TrimSpace(req.Description),
+			Prompt:      strings.TrimSpace(req.Prompt),
+			Enabled:     req.Enabled,
+		},
+		Resources: req.Resources,
 	})
 	if err != nil {
 		writeAPIBadRequest(w, err.Error())

@@ -64,10 +64,14 @@ func (s *Server) installSkill(ctx context.Context, rawURL string) (skills.Skill,
 }
 
 func (s *Server) saveSkill(skill skills.Skill) error {
+	return s.saveSkillPackage(skills.SkillPackage{Skill: skill})
+}
+
+func (s *Server) saveSkillPackage(pkg skills.SkillPackage) error {
 	if s.skillStore == nil {
 		return fmt.Errorf("skill store unavailable")
 	}
-	return s.skillStore.UpsertSkill(skill)
+	return s.skillStore.UpsertSkillPackage(pkg)
 }
 
 func (s *Server) deleteSkill(id string) error {

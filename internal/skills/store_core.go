@@ -49,59 +49,11 @@ func (s *Store) ReadEnabledSkillPrompt(skillID string) (string, bool) {
 }
 
 func (s *Store) UpsertSkill(skill Skill) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.upsertSkillLocked(skill)
+	return s.UpsertSkillPackage(SkillPackage{Skill: skill})
 }
 
 func (s *Store) upsertSkillLocked(skill Skill) error {
-	skills, err := s.listSkillsLocked()
-	if err != nil {
-		return err
-	}
-
-	skill.ID = strings.TrimSpace(skill.ID)
-	skill.Name = strings.TrimSpace(skill.Name)
-	skill.Prompt = strings.TrimSpace(skill.Prompt)
-	skill.Description = normalizeSkillDescription(skill.Description, skill.Name, skill.Prompt)
-
-	if skill.ID == "" {
-		skill.ID = findSkillIDForUpdate(skills, skill)
-	}
-	if skill.ID == "" {
-		skill.ID = generateUniqueSkillID(skills, skill.Name, skill.Prompt)
-	}
-	if skill.Name == "" {
-		skill.Name = skill.ID
-	}
-	if skill.Description == "" {
-		skill.Description = normalizeSkillDescription("", skill.Name, skill.Prompt)
-	}
-	if strings.TrimSpace(skill.Prompt) == "" {
-		return fmt.Errorf("skill prompt is required")
-	}
-	if err := validateSkillID(skill.ID); err != nil {
-		return err
-	}
-
-	now := time.Now()
-	markdown := renderSkillMarkdown(skill)
-	dirPath := filepath.Join(s.dir, skill.ID)
-	if err := os.MkdirAll(dirPath, 0o755); err != nil {
-		return fmt.Errorf("create skill dir: %w", err)
-	}
-	if err := os.WriteFile(filepath.Join(dirPath, "SKILL.md"), []byte(markdown+"\n"), 0o600); err != nil {
-		return fmt.Errorf("write skill file: %w", err)
-	}
-
-	record := s.state.Skills[skill.ID]
-	record.Enabled = skill.Enabled
-	record.UpdatedAt = now
-	if src := strings.TrimSpace(skill.Source); src != "" {
-		record.Source = src
-	}
-	s.state.Skills[skill.ID] = record
-	return s.persistLocked()
+	return s.upsertSkillPackageLocked(SkillPackage{Skill: skill})
 }
 
 func (s *Store) DeleteSkill(id string) error {

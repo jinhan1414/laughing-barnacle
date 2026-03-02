@@ -36,6 +36,16 @@ type Skill struct {
 	UpdatedAt   time.Time
 }
 
+type SkillPackageResource struct {
+	Path    string `json:"path"`
+	Content string `json:"content"`
+}
+
+type SkillPackage struct {
+	Skill     Skill
+	Resources []SkillPackageResource
+}
+
 type CatalogSkill struct {
 	ID       string `json:"id"`
 	Source   string `json:"source"`
