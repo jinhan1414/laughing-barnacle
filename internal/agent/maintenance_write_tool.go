@@ -14,16 +14,26 @@ func maintenanceWriteToolDefinition() llm.ToolDefinition {
 		Function: llm.ToolFunctionDefinition{
 			Name:        builtinMaintenanceWriteToolName,
 			Description: "Write local maintenance configs with structured JSON payload (mcp, skills, schedules, a2a).",
-			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"resource": map[string]any{"type": "string", "enum": []string{"mcp", "skills", "schedules", "a2a"}},
-					"action":   map[string]any{"type": "string", "enum": []string{"save", "toggle", "delete", "run", "install"}},
-					"payload":  map[string]any{"type": "object"},
+			Parameters: strictToolParameters(
+				map[string]any{
+					"resource": map[string]any{
+						"type":        "string",
+						"enum":        []string{"mcp", "skills", "schedules", "a2a"},
+						"description": "Target maintenance namespace.",
+					},
+					"action": map[string]any{
+						"type":        "string",
+						"enum":        []string{"save", "toggle", "delete", "run", "install"},
+						"description": "Mutation type. Resource/action compatibility is validated server-side.",
+					},
+					"payload": map[string]any{
+						"type":        "object",
+						"description": "Structured body. toggle requires {id,enabled}; delete/run require {id}; save/install fields vary by resource.",
+					},
 				},
-				"required":             []string{"resource", "action", "payload"},
-				"additionalProperties": false,
-			},
+				[]string{"resource", "action", "payload"},
+				nil,
+			),
 		},
 	}
 }

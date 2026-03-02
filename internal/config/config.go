@@ -36,11 +36,12 @@ type Config struct {
 	LLMGatewayCerberRetryBaseDelay time.Duration
 	LLMGatewayCerberRetryMaxDelay  time.Duration
 
-	LLMGatewayOpenAICodexBaseURL      string
-	LLMGatewayOpenAICodexAPIToken     string
-	LLMGatewayOpenAICodexAuthFilePath string
-	LLMGatewayOpenAICodexTransport    string
-	LLMGatewayOpenAICodexMaxRetries   int
+	LLMGatewayOpenAICodexBaseURL         string
+	LLMGatewayOpenAICodexAPIToken        string
+	LLMGatewayOpenAICodexAuthFilePath    string
+	LLMGatewayOpenAICodexTransport       string
+	LLMGatewayOpenAICodexReasoningEffort string
+	LLMGatewayOpenAICodexMaxRetries      int
 
 	MCPRequestTimeout           time.Duration
 	MCPProtocolVersion          string
@@ -102,11 +103,12 @@ func newConfig(llmEnv llmGatewayEnv) Config {
 		LLMGatewayCerberRetryBaseDelay: llmEnv.CerberRetryBaseDelay,
 		LLMGatewayCerberRetryMaxDelay:  llmEnv.CerberRetryMaxDelay,
 
-		LLMGatewayOpenAICodexBaseURL:      llmEnv.OpenAICodexBaseURL,
-		LLMGatewayOpenAICodexAPIToken:     llmEnv.OpenAICodexAPIToken,
-		LLMGatewayOpenAICodexAuthFilePath: llmEnv.OpenAICodexAuthFilePath,
-		LLMGatewayOpenAICodexTransport:    llmEnv.OpenAICodexTransport,
-		LLMGatewayOpenAICodexMaxRetries:   llmEnv.OpenAICodexMaxRetries,
+		LLMGatewayOpenAICodexBaseURL:         llmEnv.OpenAICodexBaseURL,
+		LLMGatewayOpenAICodexAPIToken:        llmEnv.OpenAICodexAPIToken,
+		LLMGatewayOpenAICodexAuthFilePath:    llmEnv.OpenAICodexAuthFilePath,
+		LLMGatewayOpenAICodexTransport:       llmEnv.OpenAICodexTransport,
+		LLMGatewayOpenAICodexReasoningEffort: llmEnv.OpenAICodexReasoningEffort,
+		LLMGatewayOpenAICodexMaxRetries:      llmEnv.OpenAICodexMaxRetries,
 
 		MCPRequestTimeout:           envDuration("MCP_HTTP_TIMEOUT", 20*time.Second),
 		MCPProtocolVersion:          envOrDefault("MCP_PROTOCOL_VERSION", "2025-06-18"),
@@ -157,6 +159,11 @@ func (c Config) validateGateway() error {
 	}
 	if c.LLMGatewayOpenAICodexMaxRetries < 0 {
 		return fmt.Errorf("LLM_GATEWAY_OPENAI_CODEX_MAX_RETRIES must be >= 0")
+	}
+	switch strings.ToLower(strings.TrimSpace(c.LLMGatewayOpenAICodexReasoningEffort)) {
+	case "", "minimal", "low", "medium", "high":
+	default:
+		return fmt.Errorf("LLM_GATEWAY_OPENAI_CODEX_REASONING_EFFORT must be one of: minimal, low, medium, high")
 	}
 	if c.RequestTimeout <= 0 {
 		return fmt.Errorf("LLM_GATEWAY_REQUEST_TIMEOUT must be > 0")

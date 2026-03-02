@@ -101,3 +101,16 @@ func TestLoad_UsesGatewayDefaultModelRefByDefault(t *testing.T) {
 		t.Fatalf("expected provider/model default ref, got %q", cfg.AgentModel)
 	}
 }
+
+func TestLoad_DefaultOpenAICodexReasoningEffortIsHigh(t *testing.T) {
+	t.Setenv("CERBER_API_KEY", "test-key")
+	t.Setenv("LLM_GATEWAY_OPENAI_CODEX_REASONING_EFFORT", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load error: %v", err)
+	}
+	if cfg.LLMGatewayOpenAICodexReasoningEffort != "high" {
+		t.Fatalf("expected default reasoning effort high, got %q", cfg.LLMGatewayOpenAICodexReasoningEffort)
+	}
+}

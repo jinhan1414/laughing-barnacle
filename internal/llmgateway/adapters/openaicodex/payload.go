@@ -11,6 +11,7 @@ const defaultCodexInstructions = "You are a helpful assistant."
 func buildPayload(
 	req llmgateway.CanonicalChatRequest,
 	fallbackTransport string,
+	fallbackReasoningEffort string,
 	auth authContext,
 ) map[string]any {
 	chatGPTAuth := isChatGPTAuth(auth)
@@ -28,6 +29,9 @@ func buildPayload(
 	}
 	if !chatGPTAuth {
 		payload["temperature"] = req.Temperature
+	}
+	if effort := normalizeReasoningEffort(fallbackReasoningEffort); effort != "" {
+		payload["reasoning"] = map[string]any{"effort": effort}
 	}
 	if chatGPTAuth {
 		payload["stream"] = true
@@ -162,4 +166,14 @@ func resolveTransport(runtimeTransport *string, fallback string) string {
 		return strings.TrimSpace(fallback)
 	}
 	return "auto"
+}
+
+func normalizeReasoningEffort(raw string) string {
+	normalized := strings.ToLower(strings.TrimSpace(raw))
+	switch normalized {
+	case "minimal", "low", "medium", "high":
+		return normalized
+	default:
+		return ""
+	}
 }

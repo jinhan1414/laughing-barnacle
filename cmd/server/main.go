@@ -89,13 +89,14 @@ func run() error {
 			RetryMaxDelay:  cfg.LLMGatewayCerberRetryMaxDelay,
 		}),
 		openaicodexadapter.New(openaicodexadapter.Config{
-			BaseURL:      cfg.LLMGatewayOpenAICodexBaseURL,
-			APIToken:     cfg.LLMGatewayOpenAICodexAPIToken,
-			AuthFilePath: cfg.LLMGatewayOpenAICodexAuthFilePath,
-			Timeout:      cfg.RequestTimeout,
-			Transport:    cfg.LLMGatewayOpenAICodexTransport,
-			LogStore:     logStore,
-			MaxRetries:   cfg.LLMGatewayOpenAICodexMaxRetries,
+			BaseURL:         cfg.LLMGatewayOpenAICodexBaseURL,
+			APIToken:        cfg.LLMGatewayOpenAICodexAPIToken,
+			AuthFilePath:    cfg.LLMGatewayOpenAICodexAuthFilePath,
+			Timeout:         cfg.RequestTimeout,
+			Transport:       cfg.LLMGatewayOpenAICodexTransport,
+			ReasoningEffort: cfg.LLMGatewayOpenAICodexReasoningEffort,
+			LogStore:        logStore,
+			MaxRetries:      cfg.LLMGatewayOpenAICodexMaxRetries,
 		}),
 	)
 	if err != nil {

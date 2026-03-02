@@ -191,6 +191,7 @@ A2A 执行链路稳定性策略（代码现状）：
 - `LLM_GATEWAY_OPENAI_CODEX_API_KEY`: Codex token（可选）
 - `LLM_GATEWAY_OPENAI_CODEX_AUTH_FILE_PATH`: Codex 认证文件路径（显式路径优先）
 - `LLM_GATEWAY_OPENAI_CODEX_TRANSPORT`: Codex transport（默认 `auto`）
+- `LLM_GATEWAY_OPENAI_CODEX_REASONING_EFFORT`: Codex 思考强度（`minimal` / `low` / `medium` / `high`，默认 `high`）
 - 兼容迁移：旧 `CERBER_*` 仍可映射到 `LLM_GATEWAY_CERBER_*`，启动日志会输出显式迁移告警
 - `CERBER_TEMPERATURE`: 采样温度
 - `MCP_HTTP_TIMEOUT`: MCP HTTP 调用超时

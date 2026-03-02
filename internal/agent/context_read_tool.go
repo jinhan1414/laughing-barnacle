@@ -13,23 +13,51 @@ func contextReadToolDefinition() llm.ToolDefinition {
 		Type: "function",
 		Function: llm.ToolFunctionDefinition{
 			Name:        builtinContextReadToolName,
-			Description: "Read local context index/details through whitelisted resources (skills, a2a, memory, async).",
-			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"resource":     map[string]any{"type": "string", "enum": []string{"mcp", "skills", "schedules", "a2a", "memory", "async"}},
-					"action":       map[string]any{"type": "string", "enum": []string{"list", "read", "index", "section", "get"}},
-					"id":           map[string]any{"type": "string"},
-					"path":         map[string]any{"type": "string"},
-					"section_id":   map[string]any{"type": "string"},
-					"task_id":      map[string]any{"type": "string"},
-					"include_logs": map[string]any{"type": "boolean"},
-					"log_cursor":   map[string]any{"type": "number"},
-					"log_limit":    map[string]any{"type": "number"},
+			Description: "Read local context through whitelisted resources. Supported pairs: mcp=list; skills=list/read; schedules=list; a2a=list/read; memory=index/read/section; async=list/get.",
+			Parameters: strictToolParameters(
+				map[string]any{
+					"resource": map[string]any{
+						"type":        "string",
+						"enum":        []string{"mcp", "skills", "schedules", "a2a", "memory", "async"},
+						"description": "Target resource namespace.",
+					},
+					"action": map[string]any{
+						"type":        "string",
+						"enum":        []string{"list", "read", "index", "section", "get"},
+						"description": "Operation name. Unsupported resource/action pairs fail explicitly.",
+					},
+					"id": map[string]any{
+						"type":        "string",
+						"description": "Required only for skills.read and a2a.read.",
+					},
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Required only for memory.index, memory.read, and memory.section.",
+					},
+					"section_id": map[string]any{
+						"type":        "string",
+						"description": "Required only for memory.section.",
+					},
+					"task_id": map[string]any{
+						"type":        "string",
+						"description": "Required only for async.get.",
+					},
+					"include_logs": map[string]any{
+						"type":        "boolean",
+						"description": "Optional for async.get.",
+					},
+					"log_cursor": map[string]any{
+						"type":        "number",
+						"description": "Optional for async.get log pagination.",
+					},
+					"log_limit": map[string]any{
+						"type":        "number",
+						"description": "Optional for async.get log pagination.",
+					},
 				},
-				"required":             []string{"resource", "action"},
-				"additionalProperties": false,
-			},
+				[]string{"resource", "action"},
+				[]string{"id", "path", "section_id", "task_id", "include_logs", "log_cursor", "log_limit"},
+			),
 		},
 	}
 }

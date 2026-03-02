@@ -24,17 +24,16 @@ func linuxBashToolDefinition() llm.ToolDefinition {
 		Function: llm.ToolFunctionDefinition{
 			Name:        builtinLinuxBashToolName,
 			Description: "Run one shell command (prefer bash/sh; on Windows prefer PowerShell) and return stdout/stderr/exit_code.",
-			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
+			Parameters: strictToolParameters(
+				map[string]any{
 					"command": map[string]any{
 						"type":        "string",
 						"description": "Shell command string to execute.",
 					},
 				},
-				"required":             []string{"command"},
-				"additionalProperties": false,
-			},
+				[]string{"command"},
+				nil,
+			),
 		},
 	}
 }

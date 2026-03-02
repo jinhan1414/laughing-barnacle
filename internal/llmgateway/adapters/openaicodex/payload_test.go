@@ -12,6 +12,7 @@ func TestBuildPayload_ChatGPTAuthAddsDefaultInstructions(t *testing.T) {
 			Messages: []llmgateway.CanonicalMessage{{Role: "user", Content: "ping"}},
 		},
 		"auto",
+		"",
 		authContext{Token: "token", AuthMode: authModeChatGPT},
 	)
 	got, ok := payload["instructions"].(string)
@@ -30,6 +31,7 @@ func TestBuildPayload_OpenAIAuthDoesNotInjectDefaultInstructions(t *testing.T) {
 			Messages: []llmgateway.CanonicalMessage{{Role: "user", Content: "ping"}},
 		},
 		"auto",
+		"",
 		authContext{Token: "token"},
 	)
 	if _, exists := payload["instructions"]; exists {

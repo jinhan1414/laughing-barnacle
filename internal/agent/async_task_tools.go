@@ -29,21 +29,45 @@ func asyncTaskSubmitToolDefinition() llm.ToolDefinition {
 		Function: llm.ToolFunctionDefinition{
 			Name:        builtinAsyncTaskSubmitToolName,
 			Description: "Submit one async task. task_type supports generic or a2a. When task_type=a2a, agent_id and agent_input are required.",
-			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"task_type":         map[string]any{"type": "string", "enum": []string{asyncTaskTypeGeneric, asyncTaskTypeA2A}},
-					"request":           map[string]any{"type": "string", "description": "Task request summary for task list brief. Keep it stable and concise; for a2a tasks align with agent_input and avoid turn words like 再次/继续/重新."},
-					"agent_id":          map[string]any{"type": "string", "description": "Required when task_type=a2a."},
-					"agent_input":       map[string]any{"type": "string", "description": "Required when task_type=a2a. Describe the business task directly; do not use dispatch phrasing like 调用 <agent_id>."},
-					"dedupe_key":        map[string]any{"type": "string"},
-					"notify_on_finish":  map[string]any{"type": "boolean"},
-					"metadata":          map[string]any{"type": "object"},
-					"session_id_unused": map[string]any{"type": "string"},
+			Parameters: strictToolParameters(
+				map[string]any{
+					"task_type": map[string]any{
+						"type":        "string",
+						"enum":        []string{asyncTaskTypeGeneric, asyncTaskTypeA2A},
+						"description": "Task category.",
+					},
+					"request": map[string]any{
+						"type":        "string",
+						"description": "Task request summary for task list brief. Keep it stable and concise; for a2a tasks align with agent_input and avoid turn words like 再次/继续/重新.",
+					},
+					"agent_id": map[string]any{
+						"type":        "string",
+						"description": "Required when task_type=a2a.",
+					},
+					"agent_input": map[string]any{
+						"type":        "string",
+						"description": "Required when task_type=a2a. Describe the business task directly; do not use dispatch phrasing like 调用 <agent_id>.",
+					},
+					"dedupe_key": map[string]any{
+						"type":        "string",
+						"description": "Optional dedupe key.",
+					},
+					"notify_on_finish": map[string]any{
+						"type":        "boolean",
+						"description": "Optional completion notification flag.",
+					},
+					"metadata": map[string]any{
+						"type":        "object",
+						"description": "Optional metadata object.",
+					},
+					"session_id_unused": map[string]any{
+						"type":        "string",
+						"description": "Deprecated compatibility field; normally null.",
+					},
 				},
-				"required":             []string{"task_type", "request"},
-				"additionalProperties": false,
-			},
+				[]string{"task_type", "request"},
+				[]string{"agent_id", "agent_input", "dedupe_key", "notify_on_finish", "metadata", "session_id_unused"},
+			),
 		},
 	}
 }
@@ -54,17 +78,28 @@ func asyncTaskGetToolDefinition() llm.ToolDefinition {
 		Function: llm.ToolFunctionDefinition{
 			Name:        builtinAsyncTaskGetToolName,
 			Description: "Get async task status/result and optional log window.",
-			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"task_id":      map[string]any{"type": "string"},
-					"include_logs": map[string]any{"type": "boolean"},
-					"log_cursor":   map[string]any{"type": "number"},
-					"log_limit":    map[string]any{"type": "number"},
+			Parameters: strictToolParameters(
+				map[string]any{
+					"task_id": map[string]any{
+						"type":        "string",
+						"description": "Async task id to read.",
+					},
+					"include_logs": map[string]any{
+						"type":        "boolean",
+						"description": "Optional log inclusion flag.",
+					},
+					"log_cursor": map[string]any{
+						"type":        "number",
+						"description": "Optional log cursor.",
+					},
+					"log_limit": map[string]any{
+						"type":        "number",
+						"description": "Optional log page size.",
+					},
 				},
-				"required":             []string{"task_id"},
-				"additionalProperties": false,
-			},
+				[]string{"task_id"},
+				[]string{"include_logs", "log_cursor", "log_limit"},
+			),
 		},
 	}
 }
@@ -75,15 +110,20 @@ func asyncTaskCancelToolDefinition() llm.ToolDefinition {
 		Function: llm.ToolFunctionDefinition{
 			Name:        builtinAsyncTaskCancelToolName,
 			Description: "Cancel one running async task by task_id.",
-			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"task_id": map[string]any{"type": "string"},
-					"reason":  map[string]any{"type": "string"},
+			Parameters: strictToolParameters(
+				map[string]any{
+					"task_id": map[string]any{
+						"type":        "string",
+						"description": "Async task id to cancel.",
+					},
+					"reason": map[string]any{
+						"type":        "string",
+						"description": "Optional cancellation reason.",
+					},
 				},
-				"required":             []string{"task_id"},
-				"additionalProperties": false,
-			},
+				[]string{"task_id"},
+				[]string{"reason"},
+			),
 		},
 	}
 }

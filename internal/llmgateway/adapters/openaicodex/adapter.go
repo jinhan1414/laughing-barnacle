@@ -14,43 +14,46 @@ import (
 const providerName = "openai-codex"
 
 type Config struct {
-	BaseURL        string
-	APIToken       string
-	AuthFilePath   string
-	Timeout        time.Duration
-	HTTPClient     *http.Client
-	Transport      string
-	LogStore       *llmlog.Store
-	MaxRetries     int
-	RetryBaseDelay time.Duration
-	RetryMaxDelay  time.Duration
+	BaseURL         string
+	APIToken        string
+	AuthFilePath    string
+	Timeout         time.Duration
+	HTTPClient      *http.Client
+	Transport       string
+	ReasoningEffort string
+	LogStore        *llmlog.Store
+	MaxRetries      int
+	RetryBaseDelay  time.Duration
+	RetryMaxDelay   time.Duration
 }
 
 type Adapter struct {
-	baseURL        string
-	apiToken       string
-	authFilePath   string
-	http           *http.Client
-	transport      string
-	logs           *llmlog.Store
-	maxRetries     int
-	retryBaseDelay time.Duration
-	retryMaxDelay  time.Duration
+	baseURL         string
+	apiToken        string
+	authFilePath    string
+	http            *http.Client
+	transport       string
+	reasoningEffort string
+	logs            *llmlog.Store
+	maxRetries      int
+	retryBaseDelay  time.Duration
+	retryMaxDelay   time.Duration
 }
 
 func New(cfg Config) *Adapter {
 	baseDelay := normalizeRetryBaseDelay(cfg.RetryBaseDelay)
 	maxDelay := normalizeRetryMaxDelay(baseDelay, cfg.RetryMaxDelay)
 	return &Adapter{
-		baseURL:        strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/"),
-		apiToken:       strings.TrimSpace(cfg.APIToken),
-		authFilePath:   strings.TrimSpace(cfg.AuthFilePath),
-		http:           newHTTPClient(cfg.HTTPClient, cfg.Timeout),
-		transport:      strings.TrimSpace(cfg.Transport),
-		logs:           cfg.LogStore,
-		maxRetries:     normalizeRetries(cfg.MaxRetries),
-		retryBaseDelay: baseDelay,
-		retryMaxDelay:  maxDelay,
+		baseURL:         strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/"),
+		apiToken:        strings.TrimSpace(cfg.APIToken),
+		authFilePath:    strings.TrimSpace(cfg.AuthFilePath),
+		http:            newHTTPClient(cfg.HTTPClient, cfg.Timeout),
+		transport:       strings.TrimSpace(cfg.Transport),
+		reasoningEffort: strings.TrimSpace(cfg.ReasoningEffort),
+		logs:            cfg.LogStore,
+		maxRetries:      normalizeRetries(cfg.MaxRetries),
+		retryBaseDelay:  baseDelay,
+		retryMaxDelay:   maxDelay,
 	}
 }
 
@@ -104,7 +107,7 @@ func (a *Adapter) Chat(ctx context.Context, req llmgateway.CanonicalChatRequest)
 	if err != nil {
 		return llmgateway.CanonicalChatResponse{}, err
 	}
-	payload := buildPayload(req, a.transport, auth)
+	payload := buildPayload(req, a.transport, a.reasoningEffort, auth)
 	promptCacheKey := resolvePromptCacheKey(req, auth)
 	if promptCacheKey != "" {
 		payload["prompt_cache_key"] = promptCacheKey
