@@ -36,8 +36,9 @@ type HTTPClient struct {
 
 	reqID atomic.Int64
 
-	mu       sync.Mutex
-	sessions map[string]string
+	mu            sync.Mutex
+	sessions      map[string]string
+	stdioSessions map[string]*stdioSession
 }
 
 func NewHTTPClient(timeout time.Duration, protocolVersion string) *HTTPClient {
@@ -52,6 +53,7 @@ func NewHTTPClient(timeout time.Duration, protocolVersion string) *HTTPClient {
 		http:            &http.Client{Timeout: timeout},
 		protocolVersion: protocolVersion,
 		sessions:        make(map[string]string),
+		stdioSessions:   make(map[string]*stdioSession),
 	}
 }
 

@@ -47,6 +47,41 @@ func (c *HTTPClient) clearSession(serviceID string) {
 	delete(c.sessions, serviceID)
 }
 
+func (c *HTTPClient) getStdioSession(serviceID string) *stdioSession {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.stdioSessions[serviceID]
+}
+
+func (c *HTTPClient) setStdioSession(serviceID string, session *stdioSession) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.stdioSessions[serviceID] = session
+}
+
+func (c *HTTPClient) deleteStdioSession(serviceID string) *stdioSession {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	session := c.stdioSessions[serviceID]
+	delete(c.stdioSessions, serviceID)
+	return session
+}
+
+func (c *HTTPClient) invalidateStdioSession(serviceID string, session *stdioSession) {
+	if session == nil {
+		return
+	}
+	c.mu.Lock()
+	current := c.stdioSessions[serviceID]
+	if current == session {
+		delete(c.stdioSessions, serviceID)
+	}
+	c.mu.Unlock()
+	if current == session {
+		session.close()
+	}
+}
+
 type rpcRequest struct {
 	JSONRPC string         `json:"jsonrpc"`
 	ID      any            `json:"id,omitempty"`

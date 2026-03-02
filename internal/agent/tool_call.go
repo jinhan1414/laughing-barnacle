@@ -5,16 +5,22 @@ import (
 	"fmt"
 	"laughing-barnacle/internal/llm"
 	"strings"
+	"time"
 )
 
+const toolCallTimeout = 2 * time.Minute
+
 func (a *Agent) callTool(ctx context.Context, call llm.ToolCall) (string, error) {
-	if result, err, handled := a.callBuiltinTool(ctx, call); handled {
+	runCtx, cancel := context.WithTimeout(ctx, toolCallTimeout)
+	defer cancel()
+
+	if result, err, handled := a.callBuiltinTool(runCtx, call); handled {
 		return result, err
 	}
 	if a.tools == nil {
 		return "", fmt.Errorf("unknown tool %q", strings.TrimSpace(call.Function.Name))
 	}
-	return a.tools.CallTool(ctx, call)
+	return a.tools.CallTool(runCtx, call)
 }
 
 func (a *Agent) callBuiltinTool(ctx context.Context, call llm.ToolCall) (result string, err error, handled bool) {

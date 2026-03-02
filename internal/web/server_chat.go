@@ -248,10 +248,7 @@ func (s *Server) handleChatSend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
-	defer cancel()
-
-	if _, err := s.agent.HandleUserMessage(ctx, message); err != nil {
+	if _, err := s.agent.HandleUserMessage(r.Context(), message); err != nil {
 		query := url.Values{}
 		query.Set("error", err.Error())
 		query.Set("retry", "1")
@@ -269,10 +266,7 @@ func (s *Server) handleChatRetry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
-	defer cancel()
-
-	if _, err := s.agent.RetryLastUserMessage(ctx); err != nil {
+	if _, err := s.agent.RetryLastUserMessage(r.Context()); err != nil {
 		query := url.Values{}
 		query.Set("error", err.Error())
 		query.Set("retry", "1")
