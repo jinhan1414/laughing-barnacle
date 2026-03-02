@@ -5,7 +5,7 @@
 - Agent 自动压缩上下文（loop）
 - LLM 通过独立 `llm-gateway` 统一路由，内置 `cerber` 与 `openai-codex` adapters
 - Agent 工具调用支持 MCP（Model Context Protocol）与内置工具
-- 内置工具包含 `linux__bash` 与 A2A（`a2a__send` / `a2a__get` / `a2a__cancel`）
+- 内置工具包含 `bash` 与 A2A（`a2a__send` / `a2a__get` / `a2a__cancel`）
 - 支持 MCP `streamable_http` / `sse` / `stdio` 三种连接类型
 - 支持按 MCP 服务内单工具启用/禁用
 - 支持在设置页配置 Agent Skills（可启用/禁用的系统级技能指令）
@@ -21,7 +21,7 @@
 - 独立设置页管理 MCP 服务、Skills 与 MemoryFS 可视化（节点/segment）
 - MemoryFS 支持低置信记忆进入 Inbox 审核，确认后写入正式命名空间
 - Memory worker 内置维护任务：失败分段重试、trash 清理、children 索引一致性修复
-- 提供 API 供数字分身通过 `bash` 查询与检索：`/api/mcp/services`、`/api/skills`、`/api/skills/catalog/search`
+- 提供 API 供数字分身通过 `context__read` 查询与检索：`/api/mcp/services`、`/api/skills`、`/api/skills/index`、`/api/skills/read`、`/api/skills/catalog/search`
 - 提供 A2A 接入查询 API：`/api/a2a/agents`、`/api/a2a/agents/read`
 - 提供记忆 API：`/api/memory/index`、`/api/memory/read`、`/api/memory/section`、`/api/memory/upsert`、`/api/memory/move`、`/api/memory/delete`、`/api/memory/inbox`、`/api/memory/inbox/review`、`/api/memory/maintenance/run`、`/api/memory/rollback`、`/api/memory/audit`、`/api/memory/metrics`
 - 非流式输出
@@ -106,7 +106,7 @@ go build ./...
 
 项目根目录已提供两阶段 `Dockerfile`：
 - `builder` 阶段：使用 Go 镜像编译二进制
-- `runtime` 阶段：使用 Debian 运行时，内置常用 Linux 工具，便于 `linux__bash` 工具调用
+- `runtime` 阶段：使用 Debian 运行时，内置常用 Linux 工具，便于 `bash` 工具调用
 
 本地构建与运行：
 
@@ -153,7 +153,7 @@ docker run --rm -p 8080:8080 \
 1. 追加用户消息到全局历史
 2. 进入自动压缩 loop（达到阈值则触发压缩）
 3. 用“摘要 + 最近消息”调用 LLM 生成回复
-4. 若模型返回工具调用，则通过 `linux__bash` 或已启用 MCP 服务执行并回填结果，再继续推理
+4. 若模型返回工具调用，则通过 `bash` 或已启用 MCP 服务执行并回填结果，再继续推理
 5. 若模型命中 A2A 调用能力，则通过内置 `a2a__send` / `a2a__get` / `a2a__cancel` 执行
 6. 将已启用 Skills 的指令注入系统提示词后生成回复
 7. 追加助手回复

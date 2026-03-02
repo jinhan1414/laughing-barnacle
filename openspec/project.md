@@ -24,7 +24,7 @@
 ### Architecture Patterns
 - 单体服务分层：`cmd/server` 启动层，`internal/*` 按职责拆分（agent、llm、mcp、memory、conversation、web、config）。
 - 对话主链路固定：触发条件 -> 动作计划 -> 工具调用 -> 接口返回 -> 回读校验 -> 最终回复。
-- Agent 仅保留 `linux__bash` 作为内置本地工具；扩展能力通过 MCP 服务注入。
+- Agent 仅保留 `bash` 作为内置本地工具；扩展能力通过 MCP 服务注入。
 - Skill 通过存储层以标准 `SKILL.md` 管理，按“渐进式披露”注入（先索引，按需读取详情）。
 - 长上下文采用“结构化归档 + 轻摘要 + 按索引回读”策略，避免一次性注入全文。
 
@@ -57,5 +57,5 @@
 ## External Dependencies
 - Cerber LLM 服务（`CERBER_BASE_URL`、`CERBER_API_KEY`、`CERBER_MODEL`）
 - MCP 外部工具服务（HTTP/SSE/STDIO）
-- 本地与容器内 Linux 工具链（供 `linux__bash` 执行）
+- 本地与容器内 Linux 工具链（供 `bash` 执行）
 - GitHub Actions + GHCR（CI/CD 与镜像发布）

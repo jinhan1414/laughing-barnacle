@@ -1,10 +1,10 @@
 ## Context
-`linux__bash` 当前采用对象参数（`command`/`timeout_sec`/`working_dir`），模型在工具调用时经常生成高转义 JSON。  
+`bash` 当前采用对象参数（`command`/`timeout_sec`/`working_dir`），模型在工具调用时经常生成高转义 JSON。  
 本次目标是把调用入口收敛到“只传命令本身”，减少格式噪音，优先保证稳定执行。
 
 ## Goals / Non-Goals
 - Goals:
-  - 将 `linux__bash` 入参简化为单命令字符串
+  - 将 `bash` 入参简化为单命令字符串
   - 保持现有 shell 执行、超时控制、输出裁剪逻辑不变
   - 明确失败语义，拒绝旧格式时返回可诊断错误
 - Non-Goals:
@@ -13,7 +13,7 @@
   - 不调整工具执行结果结构（`exit_code/shell/stdout/stderr`）
 
 ## Decisions
-### Decision 1: `linux__bash` 仅接收命令字符串
+### Decision 1: `bash` 仅接收命令字符串
 工具参数定义改为字符串语义，模型调用时仅提供完整命令。  
 解析层仅接受该格式，空值或非字符串直接报错。
 
@@ -40,7 +40,7 @@ runtime prompt 与内置 Skill 中“参数键必须是 command”文案统一�
 - 取舍：放弃 `timeout_sec/working_dir` 灵活性，换取更低 token 与更稳参数生成。
 
 ## Migration Plan
-1. 修改 `linux__bash` tool 定义与参数解析器。
+1. 修改 `bash` tool 定义与参数解析器。
 2. 同步更新执行证据提取逻辑。
 3. 更新 runtime prompt 与内置 Skill 文案。
 4. 补齐/更新单元测试并执行回归。

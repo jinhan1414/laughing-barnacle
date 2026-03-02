@@ -28,7 +28,7 @@
   - `a2a__get(agent_id, task_id)`
   - `a2a__cancel(agent_id, task_id)`
 - 在 `callBuiltinTool` 优先分发，失败返回显式错误。
-- 原因：与 `linux__bash` 同级，减少中间层依赖与映射损耗。
+- 原因：与 `bash` 同级，减少中间层依赖与映射损耗。
 
 ### Decision 3: 目标 Agent 仅允许 agent_id 路由
 - 不允许模型直接传 URL；必须通过本地 registry 解析 `agent_id -> endpoint/auth`。
@@ -86,7 +86,7 @@
 - 方案 A：通过 MCP bridge 接 A2A  
   - 优点：复用 MCP 管理面。  
   - 缺点：与本需求“非 MCP、同级能力”冲突。
-- 方案 B：纯 Skill + linux__bash 调 A2A  
+- 方案 B：纯 Skill + bash 调 A2A  
   - 优点：改动快。  
   - 缺点：稳定性差、难审计、易产生执行幻觉，拒绝采用。
 

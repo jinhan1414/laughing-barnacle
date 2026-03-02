@@ -30,7 +30,7 @@ func TestAdapter_MapsCanonicalRequestAndResponse(t *testing.T) {
 					ID:   "call-1",
 					Type: "function",
 					Function: llm.ToolFunctionCall{
-						Name:      "linux__bash",
+						Name:      "bash",
 						Arguments: `{"command":"pwd"}`,
 					},
 				},
@@ -48,7 +48,7 @@ func TestAdapter_MapsCanonicalRequestAndResponse(t *testing.T) {
 			{
 				Type: "function",
 				Function: llmgateway.CanonicalToolFunctionDefinition{
-					Name: "linux__bash",
+					Name: "bash",
 				},
 			},
 		},
@@ -64,13 +64,13 @@ func TestAdapter_MapsCanonicalRequestAndResponse(t *testing.T) {
 	if len(client.req.Messages) != 1 || client.req.Messages[0].Content != "ping" {
 		t.Fatalf("unexpected request messages: %+v", client.req.Messages)
 	}
-	if len(client.req.Tools) != 1 || client.req.Tools[0].Function.Name != "linux__bash" {
+	if len(client.req.Tools) != 1 || client.req.Tools[0].Function.Name != "bash" {
 		t.Fatalf("unexpected request tools: %+v", client.req.Tools)
 	}
 	if resp.Content != "ok" || resp.Usage.TotalTokens != 3 {
 		t.Fatalf("unexpected response: %+v", resp)
 	}
-	if len(resp.ToolCalls) != 1 || resp.ToolCalls[0].Function.Name != "linux__bash" {
+	if len(resp.ToolCalls) != 1 || resp.ToolCalls[0].Function.Name != "bash" {
 		t.Fatalf("unexpected mapped tool calls: %+v", resp.ToolCalls)
 	}
 }

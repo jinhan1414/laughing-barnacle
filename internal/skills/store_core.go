@@ -44,59 +44,8 @@ func (s *Store) ListEnabledSkillIndex() []string {
 }
 
 func (s *Store) ReadEnabledSkillPrompt(skillID string) (string, bool) {
-	skillID = strings.TrimSpace(skillID)
-	if skillID == "" {
-		return "", false
-	}
-
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	skills, err := s.listSkillsLocked()
-	if err != nil {
-		return "", false
-	}
-
-	for _, skill := range skills {
-		if !skill.Enabled {
-			continue
-		}
-		if strings.TrimSpace(skill.ID) != skillID {
-			continue
-		}
-		data, err := os.ReadFile(filepath.Join(s.dir, skill.ID, "SKILL.md"))
-		if err != nil {
-			return "", false
-		}
-		markdown := strings.TrimSpace(string(data))
-		return markdown, markdown != ""
-	}
-
-	matched := Skill{}
-	found := false
-	for _, skill := range skills {
-		if !skill.Enabled {
-			continue
-		}
-		if !strings.EqualFold(strings.TrimSpace(skill.Name), skillID) {
-			continue
-		}
-		if found {
-			return "", false
-		}
-		matched = skill
-		found = true
-	}
-	if !found {
-		return "", false
-	}
-
-	data, err := os.ReadFile(filepath.Join(s.dir, matched.ID, "SKILL.md"))
-	if err != nil {
-		return "", false
-	}
-	markdown := strings.TrimSpace(string(data))
-	return markdown, markdown != ""
+	content, err := s.ReadEnabledSkillResource(skillID, "")
+	return content, err == nil && strings.TrimSpace(content) != ""
 }
 
 func (s *Store) UpsertSkill(skill Skill) error {

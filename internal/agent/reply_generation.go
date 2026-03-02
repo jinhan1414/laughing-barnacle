@@ -34,28 +34,17 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 	if a.skills != nil {
 		allSkillIndex := a.skills.ListEnabledSkillIndex()
 		if len(allSkillIndex) > 0 {
-			var b strings.Builder
 			if !resourceHeaderInjected {
+				var b strings.Builder
 				b.WriteString("# Resource Indexes (资源索引 - 渐进式披露)\n")
+				requestMessages = append(requestMessages, llm.Message{
+					Role:    "system",
+					Content: strings.TrimSpace(b.String()),
+				})
 				resourceHeaderInjected = true
 			}
 			resourceSection++
-			b.WriteString(fmt.Sprintf("## %d. Skills 索引 (共 %d 条)\n", resourceSection, len(allSkillIndex)))
-			b.WriteString("如需技能详情，仅在必要时调用：context__read(resource=\"skills\", action=\"read\", id=\"<skill_id>\")。\n")
-			b.WriteString("Skill 调用规则：每轮先按用户请求语义判断是否命中某个 skill_id；一旦命中，无需用户点名，先读取该 skill 详情再执行。\n")
-			b.WriteString("为节省上下文，单轮默认只读取 1 个最相关技能；若仍不足，再按需补充读取。\n")
-			b.WriteString("若未命中或技能不适用，再按普通问答流程回复。\n")
-
-			injectCandidates := compactSkillIndexByIDs(allSkillIndex, nil)
-			injected := 0
-			for _, line := range injectCandidates {
-				if line == "" {
-					continue
-				}
-				b.WriteString(fmt.Sprintf("%d. %s\n", injected+1, line))
-				injected++
-			}
-			skillIndexPrompt = strings.TrimSpace(b.String())
+			skillIndexPrompt = buildSkillIndexPrompt(allSkillIndex, resourceSection)
 			if skillIndexPrompt != "" {
 				requestMessages = append(requestMessages, llm.Message{
 					Role:    "system",

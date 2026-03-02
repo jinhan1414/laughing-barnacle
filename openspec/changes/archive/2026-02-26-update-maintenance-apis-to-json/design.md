@@ -1,6 +1,6 @@
 ## Context
 当前维护能力存在两条写链路：
-- LLM/Skill：偏向 `linux__bash + curl + 表单`
+- LLM/Skill：偏向 `bash + curl + 表单`
 - 人工设置页：`/settings/*` 表单
 
 在 shell 与提示词存在不确定性的前提下，表单拼接比 JSON 更脆弱。A2A 已切换 JSON 并验证稳定，需把维护链路统一到同一协议形态，降低执行偏差与调试成本。

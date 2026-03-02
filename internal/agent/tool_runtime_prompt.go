@@ -19,6 +19,7 @@ func (a *Agent) buildToolRuntimePrompt() string {
 				"工具执行环境：bash 当前在 Windows PowerShell 下执行。\n" +
 				"bash 仅用于本地 shell 命令（如文件/进程/时间查询），仅保留 command 参数。\n" +
 				"涉及本地 API 读取时优先调用 context__read；涉及维护写入时优先调用 maintenance__write。\n" +
+				"skill 文档与 references 优先用 context__read(resource=\"skills\", action=\"index|read\")；skill 脚本仅在确有必要时使用 bash 执行。\n" +
 				"本地 API 的路由白名单、字段必填与格式校验由工具 schema 与服务端统一执行。\n" +
 				"定时任务列表统一使用 context__read(resource=\"schedules\", action=\"list\")。\n" +
 				"A2A 任务执行统一使用 async_task__submit(task_type=a2a)，查询与取消统一使用 async_task__get/cancel。\n" +
@@ -32,6 +33,7 @@ func (a *Agent) buildToolRuntimePrompt() string {
 				"写 URL 时使用正常双引号，例如 curl -sS \"http://127.0.0.1:9080/...\"。\n" +
 				"优先使用 cmd 兼容命令（如 dir/findstr/schtasks/echo）。\n" +
 				"涉及本地 API 读取时优先调用 context__read；涉及维护写入时优先调用 maintenance__write。\n" +
+				"skill 文档与 references 优先用 context__read(resource=\"skills\", action=\"index|read\")；skill 脚本仅在确有必要时使用 bash 执行。\n" +
 				"本地 API 的路由白名单、字段必填与格式校验由工具 schema 与服务端统一执行。\n" +
 				"定时任务列表统一使用 context__read(resource=\"schedules\", action=\"list\")。\n" +
 				"A2A 任务执行统一使用 async_task__submit(task_type=a2a)，查询与取消统一使用 async_task__get/cancel。\n" +
@@ -43,6 +45,7 @@ func (a *Agent) buildToolRuntimePrompt() string {
 				"工具执行环境：bash 当前在 Linux shell 下执行。\n" +
 				"bash 仅用于本地 shell 命令（如文件/进程/时间查询），仅保留 command 参数。\n" +
 				"涉及本地 API 读取时优先调用 context__read；涉及维护写入时优先调用 maintenance__write。\n" +
+				"skill 文档与 references 优先用 context__read(resource=\"skills\", action=\"index|read\")；skill 脚本仅在确有必要时使用 bash 执行。\n" +
 				"本地 API 的路由白名单、字段必填与格式校验由工具 schema 与服务端统一执行。\n" +
 				"定时任务列表统一使用 context__read(resource=\"schedules\", action=\"list\")。\n" +
 				"A2A 任务执行统一使用 async_task__submit(task_type=a2a)，查询与取消统一使用 async_task__get/cancel。\n" +
@@ -50,8 +53,9 @@ func (a *Agent) buildToolRuntimePrompt() string {
 		)
 	default:
 		return strings.TrimSpace(
-			"# Tool & Environment Constraints (工具与环境硬约束)\n" +
+				"# Tool & Environment Constraints (工具与环境硬约束)\n" +
 				"bash 用于本地 shell 命令；本地 API 读取优先使用 context__read，维护写入优先使用 maintenance__write；" +
+				"skill 文档与 references 优先用 context__read(resource=\"skills\", action=\"index|read\")，skill 脚本仅在确有必要时使用 bash 执行；" +
 				"本地 API 的路由白名单、字段必填与格式校验由工具 schema 与服务端统一执行；" +
 				"定时任务列表统一使用 context__read(resource=\"schedules\", action=\"list\")；" +
 				"A2A 执行统一使用 async_task__submit(task_type=a2a)，查询与取消统一使用 async_task__get/cancel。\n" +

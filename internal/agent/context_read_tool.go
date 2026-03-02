@@ -13,7 +13,7 @@ func contextReadToolDefinition() llm.ToolDefinition {
 		Type: "function",
 		Function: llm.ToolFunctionDefinition{
 			Name:        builtinContextReadToolName,
-			Description: "Read local context through whitelisted resources. Supported pairs: mcp=list; skills=list/read; schedules=list; a2a=list/read; memory=index/read/section; async=list/get.",
+			Description: "Read local context through whitelisted resources. Supported pairs: mcp=list; skills=list/index/read; schedules=list; a2a=list/read; memory=index/read/section; async=list/get.",
 			Parameters: strictToolParameters(
 				map[string]any{
 					"resource": map[string]any{
@@ -28,11 +28,11 @@ func contextReadToolDefinition() llm.ToolDefinition {
 					},
 					"id": map[string]any{
 						"type":        "string",
-						"description": "Required only for skills.read and a2a.read.",
+						"description": "Required for skills.index, skills.read, and a2a.read.",
 					},
 					"path": map[string]any{
 						"type":        "string",
-						"description": "Required only for memory.index, memory.read, and memory.section.",
+						"description": "Required for memory.index/read/section; optional for skills.read when reading references/<file>.md.",
 					},
 					"section_id": map[string]any{
 						"type":        "string",
@@ -102,12 +102,22 @@ func (a *Agent) callContextReadSkills(ctx context.Context, action string, args m
 	switch action {
 	case "list":
 		return a.doLocalAPIRequest(ctx, "GET", "/api/skills", nil, nil)
+	case "index":
+		id := requireStringArgument(args, "id")
+		if id == "" {
+			return "", fmt.Errorf("id is required for skills index")
+		}
+		return a.doLocalAPIRequest(ctx, "GET", "/api/skills/index", map[string]string{"id": id}, nil)
 	case "read":
 		id := requireStringArgument(args, "id")
 		if id == "" {
 			return "", fmt.Errorf("id is required for skills read")
 		}
-		return a.doLocalAPIRequest(ctx, "GET", "/api/skills/read", map[string]string{"id": id}, nil)
+		query := map[string]string{"id": id}
+		if path := strings.TrimSpace(requireStringArgument(args, "path")); path != "" {
+			query["path"] = path
+		}
+		return a.doLocalAPIRequest(ctx, "GET", "/api/skills/read", query, nil)
 	default:
 		return "", fmt.Errorf("unsupported action %q for skills", action)
 	}

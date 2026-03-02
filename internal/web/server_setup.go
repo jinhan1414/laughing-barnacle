@@ -114,6 +114,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/a2a/agents/toggle", s.handleAPIA2AAgentToggle)
 	mux.HandleFunc("/api/a2a/agents/delete", s.handleAPIA2AAgentDelete)
 	mux.HandleFunc("/api/skills", s.handleAPISkills)
+	mux.HandleFunc("/api/skills/index", s.handleAPISkillIndex)
 	mux.HandleFunc("/api/skills/read", s.handleAPISkillRead)
 	mux.HandleFunc("/api/skills/save", s.handleAPISkillSave)
 	mux.HandleFunc("/api/skills/toggle", s.handleAPISkillToggle)

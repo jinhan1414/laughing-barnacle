@@ -43,6 +43,50 @@ func TestCallContextRead_ListSchedules(t *testing.T) {
 	}
 }
 
+func TestCallContextRead_SkillIndex(t *testing.T) {
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/skills/index" || r.URL.Query().Get("id") != "fixture-skill" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		_, _ = w.Write([]byte(`{"id":"fixture-skill","resources":[{"path":"SKILL.md","kind":"skill"}]}`))
+	}))
+	t.Cleanup(apiServer.Close)
+
+	agentSvc := New(Config{Model: "test-model", LocalAPIBaseURL: apiServer.URL}, conversation.NewStore(), &mockLLM{}, nil)
+	out, err := agentSvc.callContextRead(context.Background(), `{"resource":"skills","action":"index","id":"fixture-skill"}`)
+	if err != nil {
+		t.Fatalf("callContextRead error: %v", err)
+	}
+	if !strings.Contains(out, `"path":"/api/skills/index"`) || !strings.Contains(out, `"fixture-skill"`) {
+		t.Fatalf("unexpected output: %s", out)
+	}
+}
+
+func TestCallContextRead_SkillReadWithPath(t *testing.T) {
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/skills/read" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		if r.URL.Query().Get("id") != "fixture-skill" || r.URL.Query().Get("path") != "references/guide.md" {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		_, _ = w.Write([]byte(`{"id":"fixture-skill","path":"references/guide.md","content":"ok"}`))
+	}))
+	t.Cleanup(apiServer.Close)
+
+	agentSvc := New(Config{Model: "test-model", LocalAPIBaseURL: apiServer.URL}, conversation.NewStore(), &mockLLM{}, nil)
+	out, err := agentSvc.callContextRead(context.Background(), `{"resource":"skills","action":"read","id":"fixture-skill","path":"references/guide.md"}`)
+	if err != nil {
+		t.Fatalf("callContextRead error: %v", err)
+	}
+	if !strings.Contains(out, `"path":"/api/skills/read"`) || !strings.Contains(out, `"references/guide.md"`) {
+		t.Fatalf("unexpected output: %s", out)
+	}
+}
+
 func TestCallContextRead_RejectsInvalidResource(t *testing.T) {
 	agentSvc := New(Config{
 		Model:                      "test-model",

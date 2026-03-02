@@ -21,7 +21,7 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 
 - 应用界面仅适配手机端。新增或修改前端页面时，按移动端优先设计与实现，不要求桌面端适配。
 - Docker 镜像目标架构固定为 `linux/arm64`。新增或修改 Dockerfile、构建脚本、CI 配置时，默认保持 arm64，不切换为 amd64。
-- Skill 技术方案固定为“渐进式披露”：首轮仅注入 skill 索引，不直接注入完整技能说明；需要详情时，只能通过 `linux__bash` 执行 `curl -s "http://127.0.0.1:8080/api/skills/read?id=<skill_id>"` 按需读取，不新增其他内置工具。
+- Skill 技术方案固定为“渐进式披露”：首轮仅注入 skill 索引，不直接注入完整技能说明；需要详情时，通过 `context__read(resource="skills", action="read", id="<skill_id>")` 按需读取 `SKILL.md`，若需补充文档先读 `context__read(resource="skills", action="index", id="<skill_id>")`，再按 `path=references/<file>.md` 读取。
 - 当用户明确提出“记住”某项长期规则时，必须同步更新到 `AGENTS.md` 后再回复确认；后续实现默认遵循已记录规则。
 - 当前处于开发阶段，接受破坏性变更；上下文版本管理改为纯数据库方案，不再使用 Git 持久化。
 - 完成任务后需要及时推送 Git（至少包含 `git commit` 与 `git push`），除非用户明确表示本次不要推送。

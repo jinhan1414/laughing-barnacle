@@ -1,7 +1,7 @@
 # Change: Add Native A2A Capability for Digital Twin
 
 ## Why
-当前系统可稳定调用 `linux__bash` 与 MCP 工具，但缺少“数字分身调用其他 Agent”的原生执行通道。  
+当前系统可稳定调用 `bash` 与 MCP 工具，但缺少“数字分身调用其他 Agent”的原生执行通道。  
 将 A2A 仅做成 Skill 会把协议执行退化为提示词+命令拼接，难以保证状态机一致性、认证安全与执行证据完整。
 此外，当用户提供新的 Agent 信息时，数字分身尚不能自主完成 A2A 接入登记，导致接入链路割裂。
 

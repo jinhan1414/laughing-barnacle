@@ -108,7 +108,7 @@ func TestToResponsesInput_EncodesToolRoundAsStructuredItems(t *testing.T) {
 					ID:   "call_123",
 					Type: "function",
 					Function: llmgateway.CanonicalToolFunctionCall{
-						Name:      "linux__bash",
+						Name:      "bash",
 						Arguments: "{\"command\":\"Get-Date\"}",
 					},
 				},
@@ -145,7 +145,7 @@ func TestParseResponse_ParsesToolCallsFromTextSummary(t *testing.T) {
 				"content":[
 					{
 						"type":"output_text",
-						"text":"tool_calls=[{\"ID\":\"call_abc\",\"Type\":\"function\",\"Function\":{\"Name\":\"linux__bash\",\"Arguments\":\"{\\\"command\\\":\\\"Get-Date\\\"}\"}}]"
+						"text":"tool_calls=[{\"ID\":\"call_abc\",\"Type\":\"function\",\"Function\":{\"Name\":\"bash\",\"Arguments\":\"{\\\"command\\\":\\\"Get-Date\\\"}\"}}]"
 					}
 				]
 			}
@@ -158,7 +158,7 @@ func TestParseResponse_ParsesToolCallsFromTextSummary(t *testing.T) {
 	if len(resp.ToolCalls) != 1 {
 		t.Fatalf("expected 1 parsed tool call, got %d", len(resp.ToolCalls))
 	}
-	if resp.ToolCalls[0].Function.Name != "linux__bash" {
+	if resp.ToolCalls[0].Function.Name != "bash" {
 		t.Fatalf("unexpected tool name: %+v", resp.ToolCalls[0])
 	}
 	if resp.Content != "" {

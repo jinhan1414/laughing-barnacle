@@ -57,32 +57,6 @@ func (s *Server) handleAPISkills(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"skills": items})
 }
 
-func (s *Server) handleAPISkillRead(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-	skillID := strings.TrimSpace(r.URL.Query().Get("id"))
-	if skillID == "" {
-		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]any{"error": "query parameter id is required"})
-		return
-	}
-
-	prompt, ok := s.skillStore.ReadEnabledSkillPrompt(skillID)
-	if !ok {
-		w.WriteHeader(http.StatusNotFound)
-		_ = json.NewEncoder(w).Encode(map[string]any{"error": "skill not found or not enabled"})
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"id":     skillID,
-		"prompt": strings.TrimSpace(prompt),
-	})
-}
-
 func (s *Server) handleAPISkillsCatalogSearch(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
