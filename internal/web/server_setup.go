@@ -25,9 +25,17 @@ func NewServer(
 	if err != nil {
 		return nil, err
 	}
+	var turnManager *chatTurnManager
+	if convStore != nil && agent != nil {
+		turnManager, err = newChatTurnManager(convStore, agent)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	return &Server{
 		agent:      agent,
+		turns:      turnManager,
 		convStore:  convStore,
 		logStore:   logStore,
 		mcpStore:   mcpStore,
@@ -138,6 +146,8 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/memory/rollback", s.handleAPIMemoryRollback)
 	mux.HandleFunc("/api/memory/audit", s.handleAPIMemoryAudit)
 	mux.HandleFunc("/api/memory/metrics", s.handleAPIMemoryMetrics)
+	mux.HandleFunc("/api/chat/send", s.handleAPIChatSend)
+	mux.HandleFunc("/api/chat/stream", s.handleAPIChatStream)
 	mux.HandleFunc("/api/chat/updates", s.handleAPIChatUpdates)
 	mux.HandleFunc("/api/chat/archive/index", s.handleAPIChatArchiveIndex)
 	mux.HandleFunc("/api/chat/archive/section", s.handleAPIChatArchiveSection)

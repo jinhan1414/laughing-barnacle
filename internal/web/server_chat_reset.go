@@ -16,6 +16,12 @@ func (s *Server) handleChatReset(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/chat?error="+url.QueryEscape("重置上下文失败："+err.Error()), http.StatusFound)
 		return
 	}
+	if s.turns != nil {
+		if err := s.turns.Reset(); err != nil {
+			http.Redirect(w, r, "/chat?error="+url.QueryEscape("重置聊天队列失败："+err.Error()), http.StatusFound)
+			return
+		}
+	}
 	if s.agent != nil {
 		if err := s.agent.ResetAsyncTasks(); err != nil {
 			http.Redirect(w, r, "/chat?error="+url.QueryEscape("重置后台任务失败："+err.Error()), http.StatusFound)

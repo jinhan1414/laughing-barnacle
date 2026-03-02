@@ -38,3 +38,31 @@ func TestBuildChatTimeline_DedupesAsyncTaskStatusByTaskID(t *testing.T) {
 		t.Fatalf("expected latest event content, got %q", item.Content)
 	}
 }
+
+func TestBuildChatTimeline_DedupesTurnStatusByTurnID(t *testing.T) {
+	msgTime := time.Now()
+	events := []conversation.Event{
+		{
+			Type:      chatTurnEventType,
+			Content:   "turn_id=turn_1 | message_id=msg_1 | status=queued | brief=测试",
+			CreatedAt: msgTime,
+		},
+		{
+			Type:      chatTurnEventType,
+			Content:   "turn_id=turn_1 | message_id=msg_1 | status=working | brief=测试",
+			CreatedAt: msgTime.Add(2 * time.Second),
+		},
+	}
+
+	timeline := buildChatTimeline(nil, events)
+	if len(timeline) != 1 {
+		t.Fatalf("expected one timeline item after dedupe, got %d", len(timeline))
+	}
+	item := timeline[0]
+	if item.EventType != chatTurnEventType || item.EventTurnID != "turn_1" {
+		t.Fatalf("unexpected timeline item: %+v", item)
+	}
+	if !strings.Contains(item.Content, "status=working") {
+		t.Fatalf("expected latest event content, got %q", item.Content)
+	}
+}

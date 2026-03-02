@@ -68,9 +68,9 @@
             </div>
           </article>
           {{else if eq .Kind "event"}}
-          <article class="mb-2.5 flex justify-center" data-chat-message="1" data-created-at="{{.CreatedAt.Unix}}" data-created-at-us="{{.CreatedAt.UnixMicro}}" data-event-type="{{.EventType}}" data-event-task-id="{{.EventTaskID}}">
+          <article class="mb-2.5 flex justify-center" data-chat-message="1" data-created-at="{{.CreatedAt.Unix}}" data-created-at-us="{{.CreatedAt.UnixMicro}}" data-event-type="{{.EventType}}" data-event-task-id="{{.EventTaskID}}" data-event-turn-id="{{.EventTurnID}}">
             <details class="w-full max-w-[86%] rounded-xl border border-dashed border-slate-300 bg-slate-100/95 px-3 py-2 text-[12px] leading-5 text-slate-600">
-              <summary class="cursor-pointer list-none font-medium text-slate-500">{{if eq .EventType "context_compression"}}已压缩上下文，点击展开摘要{{else if eq .EventType "async_task_status"}}后台任务状态更新{{else}}系统事件{{end}}</summary>
+              <summary class="cursor-pointer list-none font-medium text-slate-500">{{if eq .EventType "context_compression"}}已压缩上下文，点击展开摘要{{else if eq .EventType "async_task_status"}}后台任务状态更新{{else if eq .EventType "turn_status"}}聊天处理状态更新{{else}}系统事件{{end}}</summary>
               <div class="mt-1 js-chat-content whitespace-pre-wrap break-words transition-[max-height] duration-200">{{.Content}}</div>
               <button type="button" class="js-chat-toggle mt-1 hidden text-[11px] font-medium text-slate-500">展开</button>
               <div class="mt-1 text-[11px] text-slate-500">Tokens: -</div>
@@ -107,9 +107,10 @@
         </button>
       </form>
       <div id="chat-tool-status" class="mt-2 hidden rounded-lg border px-2 py-1 text-[12px]"></div>
+      <div id="chat-runtime-status" class="mt-2 hidden rounded-lg border border-slate-200 bg-white px-2 py-2 text-[12px] text-slate-600"></div>
       <div id="chat-processing" class="mt-2 hidden items-center gap-2 px-1 text-[12px] text-slate-500">
         <span class="h-2 w-2 animate-pulse rounded-full bg-emerald-500"></span>
-        <span>AI 正在处理消息...</span>
+        <span>数字分身正在接收或执行消息...</span>
       </div>
     </footer>
   </main>
@@ -261,15 +262,20 @@
       var submitLabel = document.getElementById("chat-submit-label");
       var submitSpinner = document.getElementById("chat-submit-spinner");
       var processing = document.getElementById("chat-processing");
+      var runtimeStatus = document.getElementById("chat-runtime-status");
       var toolToggleBtn = document.getElementById("chat-tool-toggle");
       var toolPanel = document.getElementById("chat-tool-panel");
       var toolList = document.getElementById("chat-tool-list");
       var toolStatus = document.getElementById("chat-tool-status");
       var submitting = false;
+      var streamSource = null;
+      var streamConnected = false;
       var toolRunning = false;
       var archiveIndexLoading = false;
       var userInteracted = false;
       var toolStatusTimer = 0;
+      var activeTurns = {};
+      var activeTasks = {};
       var archiveContainer = document.createElement("div");
       var archiveSectionNoticeAdded = false;
       archiveContainer.id = "chat-archive-stream";
@@ -326,6 +332,46 @@
         container.scrollTop = container.scrollHeight;
       }
 
+      function appendLocalUserMessage(content) {
+        var text = (content || "").trim();
+        if (!text) {
+          return;
+        }
+        var createdAtMs = Date.now();
+        if (shouldInsertTimestamp(createdAtMs)) {
+          appendTimestamp(createdAtMs);
+        }
+
+        var article = document.createElement("article");
+        article.className = "mb-2.5 flex items-end justify-end gap-2";
+
+        var wrap = document.createElement("div");
+        wrap.className = "max-w-[78%]";
+
+        var bubble = document.createElement("div");
+        bubble.className = "rounded-2xl rounded-br-md bg-[#95ec69] px-3 py-2 text-[15px] leading-6 text-slate-900 shadow-[0_1px_1px_rgba(0,0,0,0.08)]";
+
+        var contentNode = document.createElement("div");
+        contentNode.className = "js-chat-content whitespace-pre-wrap break-words";
+        contentNode.textContent = text;
+        bubble.appendChild(contentNode);
+
+        var usageNode = document.createElement("div");
+        usageNode.className = "mt-1 text-[11px] text-emerald-800/80";
+        usageNode.textContent = "Tokens: -";
+        bubble.appendChild(usageNode);
+
+        var avatar = document.createElement("div");
+        avatar.className = "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-emerald-500 text-xs font-semibold text-white";
+        avatar.textContent = "我";
+
+        wrap.appendChild(bubble);
+        article.appendChild(wrap);
+        article.appendChild(avatar);
+        container.appendChild(article);
+        container.scrollTop = container.scrollHeight;
+      }
+
       function formatUsageLabel(usage) {
         if (!usage) {
           return "Tokens: -";
@@ -355,6 +401,101 @@
         return "Tokens: 总 " + total + " | 输 " + prompt + " | 出 " + completion + " | 缓 " + cached;
       }
 
+      function parseStatusFields(content) {
+        var out = {};
+        var parts = String(content || "").split("|");
+        for (var i = 0; i < parts.length; i++) {
+          var part = String(parts[i] || "").trim();
+          var pivot = part.indexOf("=");
+          if (pivot <= 0) {
+            continue;
+          }
+          out[part.slice(0, pivot).trim()] = part.slice(pivot + 1).trim();
+        }
+        return out;
+      }
+
+      function renderRuntimeStatus() {
+        if (!runtimeStatus) {
+          return;
+        }
+        var lines = [];
+        var turnIDs = Object.keys(activeTurns);
+        var taskIDs = Object.keys(activeTasks);
+        for (var i = 0; i < turnIDs.length; i++) {
+          var turn = activeTurns[turnIDs[i]];
+          if (!turn) {
+            continue;
+          }
+          lines.push("消息处理中: " + (turn.brief || turn.id || ""));
+        }
+        for (var j = 0; j < taskIDs.length; j++) {
+          var task = activeTasks[taskIDs[j]];
+          if (!task) {
+            continue;
+          }
+          lines.push("后台任务 " + (task.id || "") + ": " + (task.status || ""));
+        }
+        if (!lines.length) {
+          runtimeStatus.classList.add("hidden");
+          runtimeStatus.textContent = "";
+          if (processing) {
+            processing.classList.add("hidden");
+            processing.classList.remove("flex");
+          }
+          return;
+        }
+        runtimeStatus.classList.remove("hidden");
+        runtimeStatus.textContent = lines.join("\n");
+        if (processing) {
+          processing.classList.remove("hidden");
+          processing.classList.add("flex");
+        }
+      }
+
+      function upsertTurnRuntime(fields) {
+        var turnID = String(fields.turn_id || "").trim();
+        var status = String(fields.status || "").trim();
+        if (!turnID || !status) {
+          return;
+        }
+        if (status === "queued" || status === "working") {
+          activeTurns[turnID] = {
+            id: turnID,
+            status: status,
+            brief: String(fields.brief || "").trim()
+          };
+        } else {
+          delete activeTurns[turnID];
+        }
+        renderRuntimeStatus();
+      }
+
+      function upsertTaskRuntime(fields) {
+        var taskID = String(fields.task_id || "").trim();
+        var status = String(fields.status || "").trim().toLowerCase();
+        if (!taskID || !status) {
+          return;
+        }
+        if (status === "submitted" || status === "working" || status === "running" || status === "pending") {
+          activeTasks[taskID] = { id: taskID, status: status };
+        } else {
+          delete activeTasks[taskID];
+        }
+        renderRuntimeStatus();
+      }
+
+      function applyRuntimeStatusEvent(eventType, content) {
+        var fields = parseStatusFields(content);
+        if (eventType === "async_task_status") {
+          upsertTaskRuntime(fields);
+          return;
+        }
+        if (eventType === "turn_status") {
+          upsertTurnRuntime(fields);
+        }
+      }
+
       function eventSummaryLabel(eventType) {
         if (eventType === "context_compression") {
           return "已压缩上下文，点击展开摘要";
@@ -362,10 +503,21 @@
         if (eventType === "async_task_status") {
           return "后台任务状态更新";
         }
+        if (eventType === "turn_status") {
+          return "聊天处理状态更新";
+        }
         return "系统事件";
       }
 
       function parseAsyncTaskIDFromEventContent(content) {
+        return parseEventIDFromContent(content, "task_id=");
+      }
+
+      function parseTurnIDFromEventContent(content) {
+        return parseEventIDFromContent(content, "turn_id=");
+      }
+
+      function parseEventIDFromContent(content, prefix) {
         var text = String(content || "").trim();
         if (!text) {
           return "";
@@ -373,10 +525,10 @@
         var parts = text.split("|");
         for (var i = 0; i < parts.length; i++) {
           var part = String(parts[i] || "").trim();
-          if (part.indexOf("task_id=") !== 0) {
+          if (part.indexOf(prefix) !== 0) {
             continue;
           }
-          return part.slice("task_id=".length).trim();
+          return part.slice(prefix.length).trim();
         }
         return "";
       }
@@ -403,6 +555,28 @@
         return null;
       }
 
+      function findTurnEventArticle(turnID) {
+        if (!turnID) {
+          return null;
+        }
+        var nodes = container.querySelectorAll("[data-chat-message='1'][data-event-type='turn_status']");
+        for (var i = 0; i < nodes.length; i++) {
+          var node = nodes[i];
+          var knownTurnID = String(node.getAttribute("data-event-turn-id") || "").trim();
+          if (!knownTurnID) {
+            var bodyNode = node.querySelector(".js-chat-content");
+            knownTurnID = parseTurnIDFromEventContent(bodyNode ? bodyNode.textContent : "");
+            if (knownTurnID) {
+              node.setAttribute("data-event-turn-id", knownTurnID);
+            }
+          }
+          if (knownTurnID === turnID) {
+            return node;
+          }
+        }
+        return null;
+      }
+
       function appendEventMessage(content, createdAtUs, eventType) {
         var text = (content || "").trim();
         if (!text) {
@@ -411,6 +585,7 @@
         createdAtUs = normalizeCreatedAtUs(createdAtUs);
         var createdAtMs = usToMs(createdAtUs);
         var taskID = "";
+        var turnID = "";
         if (eventType === "async_task_status") {
           taskID = parseAsyncTaskIDFromEventContent(text);
           if (taskID) {
@@ -423,6 +598,26 @@
               existing.setAttribute("data-created-at", String(Math.floor(createdAtMs / 1000)));
               existing.setAttribute("data-created-at-us", String(createdAtUs));
               existing.setAttribute("data-event-task-id", taskID);
+              applyRuntimeStatusEvent(eventType, text);
+              updateMessageCursor(createdAtUs, createdAtMs);
+              container.scrollTop = container.scrollHeight;
+              return;
+            }
+          }
+        }
+        if (eventType === "turn_status") {
+          turnID = parseTurnIDFromEventContent(text);
+          if (turnID) {
+            var existingTurn = findTurnEventArticle(turnID);
+            if (existingTurn) {
+              var turnBody = existingTurn.querySelector(".js-chat-content");
+              if (turnBody) {
+                turnBody.textContent = text;
+              }
+              existingTurn.setAttribute("data-created-at", String(Math.floor(createdAtMs / 1000)));
+              existingTurn.setAttribute("data-created-at-us", String(createdAtUs));
+              existingTurn.setAttribute("data-event-turn-id", turnID);
+              applyRuntimeStatusEvent(eventType, text);
               updateMessageCursor(createdAtUs, createdAtMs);
               container.scrollTop = container.scrollHeight;
               return;
@@ -443,6 +638,9 @@
         if (taskID) {
           article.setAttribute("data-event-task-id", taskID);
         }
+        if (turnID) {
+          article.setAttribute("data-event-turn-id", turnID);
+        }
 
         var details = document.createElement("details");
         details.className = "w-full max-w-[86%] rounded-xl border border-dashed border-slate-300 bg-slate-100/95 px-3 py-2 text-[12px] leading-5 text-slate-600";
@@ -459,8 +657,22 @@
         details.appendChild(body);
         article.appendChild(details);
         container.appendChild(article);
+        applyRuntimeStatusEvent(eventType, text);
         updateMessageCursor(createdAtUs, createdAtMs);
         container.scrollTop = container.scrollHeight;
+      }
+
+      function bootstrapRuntimeStatusFromTimeline() {
+        var nodes = container.querySelectorAll("[data-chat-message='1'][data-event-type]");
+        for (var i = 0; i < nodes.length; i++) {
+          var node = nodes[i];
+          var eventType = String(node.getAttribute("data-event-type") || "").trim();
+          var bodyNode = node.querySelector(".js-chat-content");
+          if (!eventType || !bodyNode) {
+            continue;
+          }
+          applyRuntimeStatusEvent(eventType, bodyNode.textContent || "");
+        }
       }
 
       function normalizeArchiveMessages(sectionPayload) {
@@ -780,6 +992,80 @@
         });
       }
 
+      function setSubmittingState(active) {
+        submitting = !!active;
+        if (form) {
+          if (submitting) {
+            form.setAttribute("aria-busy", "true");
+          } else {
+            form.removeAttribute("aria-busy");
+          }
+        }
+        if (submitBtn) {
+          submitBtn.disabled = submitting;
+          submitBtn.classList.toggle("opacity-80", submitting);
+        }
+        if (input) {
+          input.readOnly = submitting;
+        }
+        if (submitLabel) {
+          submitLabel.textContent = submitting ? "发送中" : "发送";
+        }
+        if (submitSpinner) {
+          submitSpinner.classList.toggle("hidden", !submitting);
+        }
+      }
+
+      function handleIncomingChatUpdate(item) {
+        if (!item) {
+          return;
+        }
+        if (item.kind === "assistant") {
+          appendAssistantMessage(item.content, item.created_at_us, item.usage || null);
+          renderRuntimeStatus();
+          return;
+        }
+        if (item.kind === "event") {
+          appendEventMessage(item.content, item.created_at_us, item.event_type || "");
+          if (item.event_type === "context_compression") {
+            window.setTimeout(loadArchiveIndexes, 100);
+          }
+        }
+      }
+
+      function connectChatStream() {
+        if (!window.EventSource) {
+          streamConnected = false;
+          return;
+        }
+        if (streamSource) {
+          streamSource.close();
+        }
+        streamSource = new EventSource("/api/chat/stream?since_us=" + encodeURIComponent(String(lastMessageAtUs)));
+        streamSource.addEventListener("open", function () {
+          streamConnected = true;
+        });
+        streamSource.addEventListener("assistant.message", function (event) {
+          handleIncomingChatUpdate(JSON.parse(event.data || "{}"));
+        });
+        streamSource.addEventListener("task.status", function (event) {
+          handleIncomingChatUpdate(JSON.parse(event.data || "{}"));
+        });
+        streamSource.addEventListener("turn.status", function (event) {
+          handleIncomingChatUpdate(JSON.parse(event.data || "{}"));
+        });
+        streamSource.addEventListener("context.compression", function (event) {
+          handleIncomingChatUpdate(JSON.parse(event.data || "{}"));
+        });
+        streamSource.onerror = function () {
+          streamConnected = false;
+          if (streamSource) {
+            streamSource.close();
+            streamSource = null;
+          }
+        };
+      }
+
       if (form && input && submitBtn) {
         if ((input.value || "").trim()) {
           userInteracted = true;
@@ -790,41 +1076,66 @@
           }
         });
         form.addEventListener("submit", function (event) {
+          event.preventDefault();
           if (submitting) {
             return;
           }
           if (toolRunning) {
-            event.preventDefault();
             setToolStatus("工具执行中，请稍后发送消息", true);
             return;
           }
           var message = (input.value || "").trim();
           if (!message) {
-            event.preventDefault();
             return;
           }
 
           userInteracted = true;
-          submitting = true;
-          form.setAttribute("aria-busy", "true");
-          submitBtn.disabled = true;
-          submitBtn.classList.add("opacity-80");
-          input.readOnly = true;
-          if (submitLabel) {
-            submitLabel.textContent = "发送中";
-          }
-          if (submitSpinner) {
-            submitSpinner.classList.remove("hidden");
-          }
+          appendLocalUserMessage(message);
+          input.value = "";
+          setSubmittingState(true);
           if (processing) {
             processing.classList.remove("hidden");
             processing.classList.add("flex");
           }
+          fetch("/api/chat/send", {
+            method: "POST",
+            headers: {
+              "Accept": "application/json",
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ message: message })
+          })
+            .then(function (resp) {
+              return resp.json().catch(function () {
+                return {};
+              }).then(function (payload) {
+                return { ok: resp.ok, payload: payload || {} };
+              });
+            })
+            .then(function (result) {
+              if (!result.ok) {
+                throw new Error((result.payload && result.payload.error) ? result.payload.error : "发送失败");
+              }
+              upsertTurnRuntime({
+                turn_id: result.payload.turn_id,
+                status: "queued",
+                brief: message
+              });
+              connectChatStream();
+            })
+            .catch(function (err) {
+              var errMsg = (err && err.message) ? err.message : "发送失败";
+              setToolStatus(errMsg, true);
+            })
+            .finally(function () {
+              setSubmittingState(false);
+              renderRuntimeStatus();
+            });
         });
       }
 
       function pollChatUpdates() {
-        if (!window.fetch || submitting || pollInFlight) {
+        if (!window.fetch || pollInFlight || streamConnected) {
           return;
         }
         pollInFlight = true;
@@ -846,20 +1157,7 @@
               return;
             }
             for (var i = 0; i < payload.updates.length; i++) {
-              var item = payload.updates[i];
-              if (!item) {
-                continue;
-              }
-              if (item.kind === "assistant") {
-                appendAssistantMessage(item.content, item.created_at_us, item.usage || null);
-                continue;
-              }
-              if (item.kind === "event") {
-                appendEventMessage(item.content, item.created_at_us, item.event_type || "");
-                if (item.event_type === "context_compression") {
-                  window.setTimeout(loadArchiveIndexes, 100);
-                }
-              }
+              handleIncomingChatUpdate(payload.updates[i]);
             }
           })
           .catch(function () {
@@ -874,7 +1172,7 @@
         if (!window.fetch) {
           return;
         }
-        if (submitting || userInteracted) {
+        if (userInteracted) {
           return;
         }
         fetch("/chat/greet", {
@@ -900,6 +1198,8 @@
           });
       }, 900);
 
+      bootstrapRuntimeStatusFromTimeline();
+      connectChatStream();
       window.setInterval(pollChatUpdates, pollIntervalMs);
       window.setTimeout(pollChatUpdates, 1500);
       window.setTimeout(loadArchiveIndexes, 250);

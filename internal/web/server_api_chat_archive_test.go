@@ -95,6 +95,12 @@ func TestHandleChatPage_RendersArchiveAsChatStreamScript(t *testing.T) {
 	if !strings.Contains(body, `archiveContainer.id = "chat-archive-stream"`) {
 		t.Fatalf("expected archive chat stream script in chat page")
 	}
+	if !strings.Contains(body, `new EventSource("/api/chat/stream?since_us="`) {
+		t.Fatalf("expected chat page to open sse stream")
+	}
+	if !strings.Contains(body, `id="chat-runtime-status"`) {
+		t.Fatalf("expected runtime status container in chat page")
+	}
 }
 
 func newArchiveBackedStore(t *testing.T) *conversation.Store {

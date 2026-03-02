@@ -5,9 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"laughing-barnacle/internal/conversation"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -21,59 +19,18 @@ func (s *Server) handleAPIChatUpdates(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		return
 	}
-
-	sinceUS := int64(0)
-	if raw := strings.TrimSpace(r.URL.Query().Get("since_us")); raw != "" {
-		parsed, err := strconv.ParseInt(raw, 10, 64)
-		if err != nil || parsed < 0 {
-			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"error": "query parameter since_us must be a non-negative integer",
-			})
-			return
-		}
-		sinceUS = parsed
-	}
-
-	_, messages, events := s.convStore.SnapshotWithEvents()
-	timeline := buildChatTimeline(messages, events)
-	updates := make([]apiChatUpdate, 0, len(timeline))
-	for _, item := range timeline {
-		if item.Kind != "assistant" && item.Kind != "event" {
-			continue
-		}
-		createdAtUS := item.CreatedAt.UnixMicro()
-		if createdAtUS <= sinceUS {
-			continue
-		}
-		updates = append(updates, apiChatUpdate{
-			Kind:        item.Kind,
-			EventType:   item.EventType,
-			Content:     item.Content,
-			CreatedAtUS: createdAtUS,
-			Usage:       toAPITokenUsage(item.Usage),
+	sinceUS, err := parseChatCursor(r)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error": err.Error(),
 		})
+		return
 	}
-
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"updates": updates,
+		"updates": s.listChatUpdates(sinceUS),
 	})
-}
-
-func toAPITokenUsage(usage *conversation.TokenUsage) *apiTokenUsage {
-	if usage == nil {
-		return nil
-	}
-	if usage.PromptTokens == 0 && usage.CompletionTokens == 0 && usage.TotalTokens == 0 && usage.CachedTokens == 0 {
-		return nil
-	}
-	return &apiTokenUsage{
-		PromptTokens:     usage.PromptTokens,
-		CompletionTokens: usage.CompletionTokens,
-		TotalTokens:      usage.TotalTokens,
-		CachedTokens:     usage.CachedTokens,
-	}
 }
 
 func (s *Server) handleAPIChatToolRun(w http.ResponseWriter, r *http.Request) {

@@ -104,7 +104,10 @@ func (s *Store) Reset() error {
 	if err := s.persistLocked(); err != nil {
 		return err
 	}
-	return s.deleteAsyncTaskStateLocked()
+	if err := s.deleteAsyncTaskStateLocked(); err != nil {
+		return err
+	}
+	return s.deleteChatTurnStateLocked()
 }
 
 func (s *Store) Close() error {

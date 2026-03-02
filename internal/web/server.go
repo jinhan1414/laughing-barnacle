@@ -17,6 +17,7 @@ var embeddedTemplates embed.FS
 
 type Server struct {
 	agent       *agent.Agent
+	turns       *chatTurnManager
 	convStore   *conversation.Store
 	logStore    *llmlog.Store
 	mcpStore    *mcp.Store
@@ -55,6 +56,7 @@ type chatTimelineItem struct {
 	Kind           string
 	EventType      string
 	EventTaskID    string
+	EventTurnID    string
 	Content        string
 	ToolCalls      []conversation.ToolCall
 	Usage          *conversation.TokenUsage
@@ -320,6 +322,17 @@ type apiChatUpdate struct {
 	Content     string         `json:"content"`
 	CreatedAtUS int64          `json:"created_at_us"`
 	Usage       *apiTokenUsage `json:"usage,omitempty"`
+}
+
+type apiChatSendRequest struct {
+	Message string `json:"message"`
+}
+
+type apiChatSendResponse struct {
+	OK           bool   `json:"ok"`
+	MessageID    string `json:"message_id"`
+	TurnID       string `json:"turn_id"`
+	AcceptedAtUS int64  `json:"accepted_at_us"`
 }
 
 type apiTokenUsage struct {

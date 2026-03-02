@@ -95,6 +95,7 @@ func buildChatTimeline(messages []conversation.Message, events []conversation.Ev
 
 	all := make([]timelineWithSeq, 0, len(messages)+len(events))
 	asyncTaskEventIndex := make(map[string]int)
+	turnEventIndex := make(map[string]int)
 	seq := 0
 	for _, msg := range messages {
 		role := strings.TrimSpace(msg.Role)
@@ -122,18 +123,23 @@ func buildChatTimeline(messages []conversation.Message, events []conversation.Ev
 
 	for _, evt := range events {
 		eventType := strings.TrimSpace(evt.Type)
-		if eventType != "context_compression" && eventType != "async_task_status" {
+		if !allowChatEventType(eventType) {
 			continue
 		}
 		eventTaskID := ""
+		eventTurnID := ""
 		if eventType == "async_task_status" {
 			eventTaskID = extractAsyncTaskStatusTaskID(evt.Content)
+		}
+		if eventType == chatTurnEventType {
+			eventTurnID = extractChatTurnStatusTurnID(evt.Content)
 		}
 		next := timelineWithSeq{
 			item: chatTimelineItem{
 				Kind:        "event",
 				EventType:   eventType,
 				EventTaskID: eventTaskID,
+				EventTurnID: eventTurnID,
 				Content:     evt.Content,
 				CreatedAt:   evt.CreatedAt,
 			},
@@ -146,9 +152,18 @@ func buildChatTimeline(messages []conversation.Message, events []conversation.Ev
 				continue
 			}
 		}
+		if eventTurnID != "" {
+			if idx, ok := turnEventIndex[eventTurnID]; ok {
+				all[idx] = next
+				continue
+			}
+		}
 		all = append(all, next)
 		if eventTaskID != "" {
 			asyncTaskEventIndex[eventTaskID] = len(all) - 1
+		}
+		if eventTurnID != "" {
+			turnEventIndex[eventTurnID] = len(all) - 1
 		}
 	}
 
@@ -221,12 +236,20 @@ func sameLocalDay(left, right time.Time) bool {
 }
 
 func extractAsyncTaskStatusTaskID(content string) string {
+	return extractStatusValue(content, "task_id=")
+}
+
+func extractChatTurnStatusTurnID(content string) string {
+	return extractStatusValue(content, "turn_id=")
+}
+
+func extractStatusValue(content, prefix string) string {
 	for _, part := range strings.Split(content, "|") {
 		text := strings.TrimSpace(part)
-		if !strings.HasPrefix(text, "task_id=") {
+		if !strings.HasPrefix(text, prefix) {
 			continue
 		}
-		return strings.TrimSpace(strings.TrimPrefix(text, "task_id="))
+		return strings.TrimSpace(strings.TrimPrefix(text, prefix))
 	}
 	return ""
 }

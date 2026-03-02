@@ -93,6 +93,7 @@ const (
 
 	metaConversationState = "conversation_state"
 	metaAsyncTaskState    = "async_task_state"
+	metaChatTurnState     = "chat_turn_state"
 )
 
 type archiveRecord struct {
