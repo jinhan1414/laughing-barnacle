@@ -5,6 +5,14 @@ description: "当用户询问 A2A / Agent2Agent 协议是什么、权威资料�
 
 目标：用“权威来源优先、代码现状优先、标准与实现分层”的方式回答 A2A 问题，避免把本仓库实现细节误说成协议标准。
 
+按需阅读，避免一次性加载全部引用资料：
+- 先读本文件，确定问题属于“协议权威 / 基础概念 / SDK 接入 / 仓库实现 / 排障”哪一类。
+- 需要核对权威来源与优先级时，读 `references/authority.md`。
+- 需要解释基础概念时，读 `references/concepts.md`。
+- 需要回答 Go/Python SDK、Agent Card 发现、接入路径时，读 `references/sdk-and-integration.md`。
+- 需要回答“本仓库现在怎么做”时，读 `references/repo-implementation.md`。
+- 需要定位接入失败、状态异常、执行证据不足时，读 `references/troubleshooting.md`。
+
 先判断回答范围：
 - 若用户问的是通用 A2A 协议，优先使用外部权威源。
 - 若用户问的是本仓库里的 A2A 行为、接入、报错或链路，优先使用本仓库代码与测试。
@@ -40,6 +48,12 @@ description: "当用户询问 A2A / Agent2Agent 协议是什么、权威资料�
 - A2A 执行走内置能力，当前后端通过官方 `a2a-go` SDK 调远端 Agent；参考服务 `integrations/codex-a2a` 通过官方 `a2a-python` SDK 暴露 `/.well-known/agent-card.json` 与 `/a2a/rpc`。
 - 当前代码要求 Agent Card 必须有 `skills`；缺失或为空会被显式拒绝。
 - 当前产品对长耗时 A2A 任务采用“进行中/错误直返，禁止同轮轮询扩张”的策略；解释执行问题时要把协议状态与产品编排策略分开说明。
+
+组织回答时优先采用这个结构：
+1. 先回答“标准上是什么”。
+2. 再回答“本仓库当前怎么实现”。
+3. 若存在差异，单独列出“标准 vs 当前实现”。
+4. 若涉及执行结果，补充“以 task/status/artifact/日志证据为准”。
 
 回答本仓库 A2A 问题时，排查顺序固定为：
 1. 触发条件是否命中正确的 A2A 维护或执行链路。

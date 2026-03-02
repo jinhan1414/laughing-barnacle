@@ -57,6 +57,11 @@ func TestA2AKnowledgeBaseSkill_IsIndexedAndReadable(t *testing.T) {
 		"https://github.com/a2aproject/A2A",
 		"https://github.com/a2aproject/a2a-go",
 		"https://github.com/a2aproject/a2a-python",
+		"references/authority.md",
+		"references/concepts.md",
+		"references/sdk-and-integration.md",
+		"references/repo-implementation.md",
+		"references/troubleshooting.md",
 		"Agent Card",
 		"Task",
 		"MCP",
@@ -67,6 +72,19 @@ func TestA2AKnowledgeBaseSkill_IsIndexedAndReadable(t *testing.T) {
 	for _, snippet := range requiredSnippets {
 		if !strings.Contains(prompt, snippet) {
 			t.Fatalf("expected prompt to contain %q, got %q", snippet, prompt)
+		}
+	}
+
+	requiredFiles := []string{
+		filepath.Join(filepath.Dir(source), "references", "authority.md"),
+		filepath.Join(filepath.Dir(source), "references", "concepts.md"),
+		filepath.Join(filepath.Dir(source), "references", "sdk-and-integration.md"),
+		filepath.Join(filepath.Dir(source), "references", "repo-implementation.md"),
+		filepath.Join(filepath.Dir(source), "references", "troubleshooting.md"),
+	}
+	for _, path := range requiredFiles {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("expected reference file %s: %v", path, err)
 		}
 	}
 }
