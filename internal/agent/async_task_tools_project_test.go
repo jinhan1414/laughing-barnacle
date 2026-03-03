@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -86,5 +87,53 @@ func TestCallAsyncTaskSubmit_CodexLocalFallsBackToRootWorkingDir(t *testing.T) {
 	waitAsyncTaskTerminal(t, manager, manager.ListTasks()[0].ID)
 	if got := provider.lastSend.Metadata["working_dir"]; got != rootDir {
 		t.Fatalf("expected fallback working_dir %q, got %#v", rootDir, provider.lastSend.Metadata)
+	}
+}
+
+func TestCallAsyncTaskSubmit_CodexLocalRejectsWorkingDirOutsideRoot(t *testing.T) {
+	rootDir := t.TempDir()
+	manager := newAsyncTaskManager(nil, "", time.Now)
+	agentSvc := &Agent{
+		asyncTasks: manager,
+		projectCfg: &mockProjectRoot{rootDir: rootDir},
+	}
+	_, err := agentSvc.callAsyncTaskSubmit(
+		context.Background(),
+		`{"task_type":"a2a","request":"拉取仓库","agent_id":"codex-local","agent_input":"请拉取并测试","metadata":{"working_dir":"E:\\projects\\ai\\laughing-barnacle"}}`,
+	)
+	if err == nil {
+		t.Fatalf("expected out-of-root working_dir rejection")
+	}
+	if !strings.Contains(err.Error(), "metadata.working_dir must be under APP_PROJECT_ROOT_DIR") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestCallAsyncTaskSubmit_CodexLocalResolvesRelativeWorkingDirUnderRoot(t *testing.T) {
+	rootDir := t.TempDir()
+	manager := newAsyncTaskManager(nil, "", time.Now)
+	provider := &metadataCaptureA2AProvider{
+		sendResult: A2ATaskResult{AgentID: codexLocalAgentID, TaskID: "remote-relative", Status: "completed"},
+	}
+	manager.SetA2AProvider(provider)
+	agentSvc := &Agent{
+		asyncTasks: manager,
+		projectCfg: &mockProjectRoot{rootDir: rootDir},
+	}
+	target := filepath.Join(rootDir, "social-push")
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatalf("mkdir social-push: %v", err)
+	}
+
+	_, err := agentSvc.callAsyncTaskSubmit(
+		context.Background(),
+		`{"task_type":"a2a","request":"拉取仓库","agent_id":"codex-local","agent_input":"请拉取并测试","metadata":{"working_dir":"social-push"}}`,
+	)
+	if err != nil {
+		t.Fatalf("callAsyncTaskSubmit failed: %v", err)
+	}
+	waitAsyncTaskTerminal(t, manager, manager.ListTasks()[0].ID)
+	if got := provider.lastSend.Metadata["working_dir"]; got != target {
+		t.Fatalf("expected resolved working_dir %q, got %#v", target, provider.lastSend.Metadata)
 	}
 }

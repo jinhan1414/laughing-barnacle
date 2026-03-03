@@ -40,6 +40,11 @@ func (a *Agent) prepareCodexLocalMetadata(metadata map[string]any) (map[string]a
 		out = make(map[string]any, 2)
 	}
 	if text := strings.TrimSpace(readMapString(out, "working_dir")); text != "" {
+		normalized, err := a.normalizeCodexLocalWorkingDir(text)
+		if err != nil {
+			return nil, err
+		}
+		out["working_dir"] = normalized
 		return out, nil
 	}
 	projectID := strings.TrimSpace(readMapString(out, "project_id"))
@@ -86,6 +91,40 @@ func (a *Agent) prepareCodexLocalMetadata(metadata map[string]any) (map[string]a
 	}
 	out["working_dir"] = workingDir
 	return out, nil
+}
+
+func (a *Agent) normalizeCodexLocalWorkingDir(raw string) (string, error) {
+	text := strings.TrimSpace(raw)
+	if text == "" {
+		return "", fmt.Errorf("metadata.working_dir must not be empty")
+	}
+	rootDir := a.readProjectRootDir()
+	if rootDir == "" {
+		if filepath.IsAbs(text) {
+			return text, nil
+		}
+		cwd, err := os.Getwd()
+		if err != nil {
+			return "", fmt.Errorf("resolve working_dir from cwd: %w", err)
+		}
+		return filepath.Join(cwd, filepath.FromSlash(text)), nil
+	}
+	rootAbs, err := a.requireProjectRootDir()
+	if err != nil {
+		return "", err
+	}
+	candidate := text
+	if !filepath.IsAbs(candidate) {
+		candidate = filepath.Join(rootAbs, filepath.FromSlash(candidate))
+	}
+	candidateAbs, err := filepath.Abs(candidate)
+	if err != nil {
+		return "", fmt.Errorf("resolve metadata.working_dir: %w", err)
+	}
+	if !isPathWithinRoot(rootAbs, candidateAbs) {
+		return "", fmt.Errorf("metadata.working_dir must be under APP_PROJECT_ROOT_DIR: %s", rootAbs)
+	}
+	return candidateAbs, nil
 }
 
 func (a *Agent) deriveFallbackWorkingDir() (string, error) {
@@ -207,6 +246,18 @@ func normalizeProjectIDFromName(raw string) string {
 		return ""
 	}
 	return strings.ReplaceAll(normalizedPath, "/", "-")
+}
+
+func isPathWithinRoot(rootDir, candidate string) bool {
+	rel, err := filepath.Rel(rootDir, candidate)
+	if err != nil {
+		return false
+	}
+	rel = filepath.Clean(rel)
+	if rel == ".." {
+		return false
+	}
+	return !strings.HasPrefix(rel, ".."+string(os.PathSeparator))
 }
 
 func readMapString(in map[string]any, key string) string {
