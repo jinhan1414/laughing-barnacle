@@ -30,11 +30,11 @@ class CodexExecRuntimeTests(unittest.TestCase):
         self.assertIn("-C", command)
         self.assertEqual("-", command[-1])
 
-    def test_resolve_task_workdir_uses_default_when_metadata_missing(self) -> None:
+    def test_resolve_task_workdir_requires_metadata_working_dir(self) -> None:
         with TemporaryDirectory() as tmp:
             default_workdir = Path(tmp).resolve()
-            resolved = resolve_task_workdir(default_workdir, {})
-            self.assertEqual(default_workdir, resolved)
+            with self.assertRaisesRegex(ValueError, "metadata\\.working_dir is required"):
+                resolve_task_workdir(default_workdir, {})
 
     def test_resolve_task_workdir_uses_valid_metadata(self) -> None:
         with TemporaryDirectory() as tmp:

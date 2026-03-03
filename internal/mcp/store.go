@@ -86,6 +86,7 @@ type AgentHabitState struct {
 	LastChatGreetingDate    string    `json:"last_chat_greeting_date,omitempty"`
 	LastChatGreetingAt      string    `json:"last_chat_greeting_at,omitempty"`
 	LastChatGreetingContent string    `json:"last_chat_greeting_content,omitempty"`
+	ProjectRootDir          string    `json:"project_root_dir,omitempty"`
 	UpdatedAt               time.Time `json:"updated_at,omitempty"`
 }
 

@@ -15,7 +15,7 @@ func TestCallAsyncTaskSubmit_NormalizesA2ASelfDispatchPhrases(t *testing.T) {
 	manager.SetA2AProvider(provider)
 	agentSvc := &Agent{asyncTasks: manager}
 
-	raw := `{"task_type":"a2a","request":"再次重新调用 codex-local 分析项目 E:\\projects\\ai\\work-notiy","agent_id":"codex-local","agent_input":"请调用 codex-local 分析本地项目 E:\\projects\\ai\\work-notiy"}`
+	raw := `{"task_type":"a2a","request":"再次重新调用 codex-local 分析项目 E:\\projects\\ai\\work-notiy","agent_id":"codex-local","agent_input":"请调用 codex-local 分析本地项目 E:\\projects\\ai\\work-notiy","metadata":{"working_dir":"E:\\projects\\ai\\work-notiy"}}`
 	output, err := agentSvc.callAsyncTaskSubmit(context.Background(), raw)
 	if err != nil {
 		t.Fatalf("callAsyncTaskSubmit failed: %v", err)
@@ -46,4 +46,3 @@ func extractAsyncTaskID(text string) string {
 	}
 	return ""
 }
-

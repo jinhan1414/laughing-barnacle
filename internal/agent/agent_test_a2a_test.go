@@ -121,7 +121,7 @@ func TestHandleUserMessage_A2ASubmitRunsViaAsyncTaskTool(t *testing.T) {
 						Type: "function",
 						Function: llm.ToolFunctionCall{
 							Name:      builtinAsyncTaskSubmitToolName,
-							Arguments: `{"task_type":"a2a","request":"调用codex修复bug","agent_id":"codex-local","agent_input":"请修复这个 bug","notify_on_finish":false}`,
+							Arguments: `{"task_type":"a2a","request":"调用codex修复bug","agent_id":"codex-local","agent_input":"请修复这个 bug","notify_on_finish":false,"metadata":{"working_dir":"E:\\projects\\ai\\laughing-barnacle"}}`,
 						},
 					},
 				},
@@ -203,7 +203,7 @@ func TestHandleUserMessage_A2AInProgressDoesNotBlockCurrentTurn(t *testing.T) {
 						Type: "function",
 						Function: llm.ToolFunctionCall{
 							Name:      builtinAsyncTaskSubmitToolName,
-							Arguments: `{"task_type":"a2a","request":"分析项目","agent_id":"codex-local","agent_input":"请分析项目","notify_on_finish":false}`,
+							Arguments: `{"task_type":"a2a","request":"分析项目","agent_id":"codex-local","agent_input":"请分析项目","notify_on_finish":false,"metadata":{"working_dir":"E:\\projects\\ai\\laughing-barnacle"}}`,
 						},
 					},
 				},
@@ -275,7 +275,7 @@ func TestHandleUserMessage_AsyncTaskSubmitValidationErrorReturnsToModel(t *testi
 						Type: "function",
 						Function: llm.ToolFunctionCall{
 							Name:      builtinAsyncTaskSubmitToolName,
-							Arguments: `{"task_type":"a2a","request":"查任务","agent_id":"codex-local"}`,
+							Arguments: `{"task_type":"a2a","request":"查任务","agent_id":"codex-local","metadata":{"working_dir":"E:\\projects\\ai\\laughing-barnacle"}}`,
 						},
 					},
 				},

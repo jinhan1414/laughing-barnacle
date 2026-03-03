@@ -42,6 +42,10 @@ type MemoryProvider interface {
 	AppendTurn(user, assistant string, toolCalls []conversation.ToolCall, now time.Time) error
 }
 
+type ProjectRootProvider interface {
+	GetProjectRootDir() string
+}
+
 type A2AProvider interface {
 	ListIndexLines(limit int) []string
 	Send(ctx context.Context, req A2ASendRequest) (A2ATaskResult, error)
@@ -101,6 +105,7 @@ type Agent struct {
 	tools      ToolProvider
 	skills     SkillProvider
 	memory     MemoryProvider
+	projectCfg ProjectRootProvider
 	a2a        A2AProvider
 	asyncTasks *AsyncTaskManager
 	runs       *AutonomousRunManager
@@ -151,6 +156,12 @@ func (a *Agent) SetMemoryProvider(provider MemoryProvider) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.memory = provider
+}
+
+func (a *Agent) SetProjectRootProvider(provider ProjectRootProvider) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.projectCfg = provider
 }
 
 func (a *Agent) SetA2AProvider(provider A2AProvider) {

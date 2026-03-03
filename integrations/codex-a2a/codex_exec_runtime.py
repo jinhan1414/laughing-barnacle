@@ -48,7 +48,7 @@ def build_codex_exec_command(codex_bin: str, workdir: Path) -> list[str]:
 
 def resolve_task_workdir(default_workdir: Path, metadata: Mapping[str, Any] | None) -> Path:
     if not metadata or "working_dir" not in metadata:
-        return default_workdir
+        raise ValueError("metadata.working_dir is required")
     raw = metadata.get("working_dir")
     if not isinstance(raw, str):
         raise ValueError("metadata.working_dir must be a string")

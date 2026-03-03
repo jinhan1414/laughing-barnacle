@@ -131,6 +131,7 @@ func run() error {
 	}
 	agentSvc.SetSkillProvider(skillStore)
 	agentSvc.SetMemoryProvider(memoryStore)
+	agentSvc.SetProjectRootProvider(mcpStore)
 	agentSvc.SetA2AProvider(a2aProvider)
 	agentSvc.SetPromptProvider(mcpStore)
 	agentSvc.SetPromptUpdater(mcpStore)

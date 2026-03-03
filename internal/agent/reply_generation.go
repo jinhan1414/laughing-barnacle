@@ -30,6 +30,7 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 	}
 	skillIndexPrompt := ""
 	memoryIndexPrompt := ""
+	projectIndexPrompt := ""
 	a2aIndexPrompt := ""
 	asyncTaskIndexPrompt := ""
 	runIndexPrompt := ""
@@ -50,6 +51,18 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 		}
 	}
 	if a.memory != nil {
+		projectIndex := a.listProjectIndexLines(20)
+		if len(projectIndex) > 0 {
+			requestMessages = appendResourceIndexHeader(requestMessages, &resourceHeaderInjected)
+			resourceSection++
+			projectIndexPrompt = buildProjectIndexPrompt(projectIndex, resourceSection)
+			if projectIndexPrompt != "" {
+				requestMessages = append(requestMessages, llm.Message{
+					Role:    "system",
+					Content: projectIndexPrompt,
+				})
+			}
+		}
 		memoryIndex := a.memory.ListIndexLines(20)
 		if len(memoryIndex) > 0 {
 			requestMessages = appendResourceIndexHeader(requestMessages, &resourceHeaderInjected)
@@ -119,7 +132,7 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 			Content: currentDateContextPrompt,
 		})
 	}
-	summary = pruneSummaryOverlap(summary, systemPrompt, skillIndexPrompt, memoryIndexPrompt, a2aIndexPrompt, asyncTaskIndexPrompt, runIndexPrompt, runtimePrompt)
+	summary = pruneSummaryOverlap(summary, systemPrompt, skillIndexPrompt, projectIndexPrompt, memoryIndexPrompt, a2aIndexPrompt, asyncTaskIndexPrompt, runIndexPrompt, runtimePrompt)
 	if strings.TrimSpace(summary) != "" {
 		requestMessages = append(requestMessages, llm.Message{
 			Role:    "system",

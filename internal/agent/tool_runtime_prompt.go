@@ -10,6 +10,7 @@ const executionConsistencyPrompt = "" +
 	"大型开发、仓库分析、多步产出类任务：若已有匹配的已启用 A2A agent，优先委托该 agent 执行主体工作；数字分身负责调度、回读与汇总，不要先展开本地主体开发。\n" +
 	"调用 async_task__submit 时，request 必须是稳定任务摘要（不含“再次/继续/重新”等轮次词）；完整执行要求放在 agent_input。\n" +
 	"task_type=a2a 时，agent_input 直接写业务目标与验收点，不写“调用 <agent_id>/让 <agent_id> 执行”这类调度语句。\n" +
+	"涉及 codex-local 的本地项目开发/分析任务时，必须先基于已注入 Projects Index 选择项目；提交时 metadata 至少提供 working_dir，或提供 project_id 让系统派生 working_dir；新项目还需显式给 create_project=true。\n" +
 	"若任务是多步且需要在后台结果返回后自动继续，必须在提交 async_task 后调用 autonomous_run__checkpoint 落盘 run 状态。\n" +
 	"恢复 autonomous run 时，结束前必须再次调用 autonomous_run__checkpoint，禁止只用自然语言描述“我会继续”。\n" +
 	"在获得工具返回结果前，保持简洁说明并等待执行证据，不输出承诺式进度话术。"

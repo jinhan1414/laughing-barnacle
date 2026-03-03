@@ -32,6 +32,19 @@ func buildMemoryIndexPrompt(lines []string, section int) string {
 	return strings.TrimSpace(b.String())
 }
 
+func buildProjectIndexPrompt(lines []string, section int) string {
+	if len(lines) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("## %d. Projects Index (共 %d 条)\n", section, len(lines)))
+	b.WriteString("项目索引（固定注入）：用于本地项目开发/分析时确定 project_id 与 working_dir。\n")
+	b.WriteString("执行规则：优先基于项目索引选择 project_id；需要详情时再用 memory.read/section 读取单个项目节点。\n")
+	b.WriteString("codex-local 任务必须带 metadata.working_dir；若未直接给路径，则至少提供 metadata.project_id，新项目需额外提供 metadata.create_project=true。\n")
+	appendIndexLines(&b, lines)
+	return strings.TrimSpace(b.String())
+}
+
 func buildA2AIndexPrompt(lines []string, section int) string {
 	if len(lines) == 0 {
 		return ""

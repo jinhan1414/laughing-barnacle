@@ -67,10 +67,17 @@ type mockSkills struct {
 }
 
 type mockMemory struct {
-	indexLines []string
-	appends    int
-	lastUser   string
-	lastReply  string
+	indexLines        []string
+	projectIndexLines []string
+	projectDirs       map[string]string
+	upsertedProjects  []map[string]any
+	appends           int
+	lastUser          string
+	lastReply         string
+}
+
+type mockProjectRoot struct {
+	rootDir string
 }
 
 type mockA2A struct {
@@ -112,6 +119,34 @@ func (m *mockMemory) AppendTurn(user, assistant string, _ []conversation.ToolCal
 	m.appends++
 	m.lastUser = strings.TrimSpace(user)
 	m.lastReply = strings.TrimSpace(assistant)
+	return nil
+}
+
+func (m *mockMemory) ListProjectIndexLines(_ int, _ string) []string {
+	if m == nil {
+		return nil
+	}
+	return append([]string(nil), m.projectIndexLines...)
+}
+
+func (m *mockMemory) ResolveProjectWorkingDir(_ string, projectID string) (string, bool, error) {
+	if m == nil || len(m.projectDirs) == 0 {
+		return "", false, nil
+	}
+	workdir, ok := m.projectDirs[strings.TrimSpace(projectID)]
+	return workdir, ok, nil
+}
+
+func (m *mockMemory) UpsertProject(projectID, relativePath string, aliases []string, summary string) error {
+	if m == nil {
+		return nil
+	}
+	m.upsertedProjects = append(m.upsertedProjects, map[string]any{
+		"project_id":    projectID,
+		"relative_path": relativePath,
+		"aliases":       append([]string(nil), aliases...),
+		"summary":       summary,
+	})
 	return nil
 }
 
@@ -176,6 +211,13 @@ func (m *mockPromptUpdater) UpdateAgentPrompts(systemPrompt, compressionSystemPr
 	m.compressionSystemPrompt = compressionSystemPrompt
 	m.calls++
 	return nil
+}
+
+func (m *mockProjectRoot) GetProjectRootDir() string {
+	if m == nil {
+		return ""
+	}
+	return strings.TrimSpace(m.rootDir)
 }
 
 func (m *mockTools) ListTools(_ context.Context) ([]llm.ToolDefinition, error) {

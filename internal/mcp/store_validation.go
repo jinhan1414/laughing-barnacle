@@ -192,6 +192,20 @@ func validateAgentHabitState(state AgentHabitState) error {
 	if err := validateOptionalTimestamp(strings.TrimSpace(state.LastChatGreetingAt)); err != nil {
 		return fmt.Errorf("last_chat_greeting_at: %w", err)
 	}
+	if err := validateProjectRootDir(strings.TrimSpace(state.ProjectRootDir)); err != nil {
+		return fmt.Errorf("project_root_dir: %w", err)
+	}
+	return nil
+}
+
+func validateProjectRootDir(v string) error {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return nil
+	}
+	if strings.ContainsAny(v, "\r\n\t") {
+		return fmt.Errorf("must not contain control whitespace")
+	}
 	return nil
 }
 

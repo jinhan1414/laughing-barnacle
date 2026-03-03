@@ -58,7 +58,7 @@ func asyncTaskSubmitToolDefinition() llm.ToolDefinition {
 					},
 					"metadata": map[string]any{
 						"type":        "object",
-						"description": "Optional metadata object.",
+						"description": "Optional metadata object. For codex-local project tasks, include working_dir directly, or provide project_id so the system can derive working_dir. For new projects also set create_project=true and optional relative_path/aliases/project_summary.",
 					},
 					"session_id_unused": map[string]any{
 						"type":        "string",
@@ -146,6 +146,13 @@ func (a *Agent) callAsyncTaskSubmit(ctx context.Context, raw string) (string, er
 	if strings.EqualFold(strings.TrimSpace(taskType), asyncTaskTypeA2A) {
 		request, agentInput = normalizeA2ARequestAndInput(agentID, request, agentInput)
 	}
+	metadata := readObjectArgument(args, "metadata")
+	if strings.EqualFold(agentID, codexLocalAgentID) {
+		metadata, err = a.prepareCodexLocalMetadata(metadata)
+		if err != nil {
+			return "", err
+		}
+	}
 	notifyOnFinish := true
 	if v, ok := args["notify_on_finish"].(bool); ok {
 		notifyOnFinish = v
@@ -157,7 +164,7 @@ func (a *Agent) callAsyncTaskSubmit(ctx context.Context, raw string) (string, er
 		AgentInput:     agentInput,
 		DedupeKey:      readStringArgument(args, "dedupe_key"),
 		NotifyOnFinish: notifyOnFinish,
-		Metadata:       readObjectArgument(args, "metadata"),
+		Metadata:       metadata,
 	})
 	if err != nil {
 		return "", err
