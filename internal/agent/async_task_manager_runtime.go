@@ -43,6 +43,7 @@ func (m *AsyncTaskManager) finishTask(taskID, status, result, errText string) {
 	state.task.Error = strings.TrimSpace(errText)
 	state.task.TrackerState = asyncTaskTrackerStateIdle
 	state.task.TrackerReason = asyncTaskTrackerReasonNone
+	state.task.ProgressSummary = ""
 	state.task.NextPollAt = time.Time{}
 	state.task.UpdatedAt = m.nowFn().Truncate(time.Second)
 	if state.task.Error != "" {

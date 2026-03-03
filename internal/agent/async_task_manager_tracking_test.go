@@ -82,7 +82,7 @@ func (s *inMemoryAsyncTaskStateStore) Save(tasks []AsyncTask) error {
 	return nil
 }
 
-func TestA2ATrackingWindowExhaustionPausesWithoutFailure(t *testing.T) {
+func TestA2ATrackingWindowExhaustionSchedulesRecoveryWithoutFailure(t *testing.T) {
 	manager := newAsyncTaskManager(nil, "", time.Now)
 	err := manager.SetA2ATrackingPolicy(A2ATrackingPolicy{
 		InitialInterval:      5 * time.Millisecond,
@@ -111,22 +111,22 @@ func TestA2ATrackingWindowExhaustionPausesWithoutFailure(t *testing.T) {
 		t.Fatalf("Submit failed: %v", err)
 	}
 	paused := waitTaskUntil(t, manager, task.ID, 2*time.Second, func(task AsyncTask) bool {
-		return task.TrackerState == asyncTaskTrackerStatePaused
+		return hasTaskLog(task, "tracking_window_exhausted")
 	})
 	if paused.Status != asyncTaskStatusWorking {
 		t.Fatalf("expected working status after tracking pause, got %+v", paused)
 	}
-	if paused.TrackerReason != asyncTaskTrackerReasonWindowExhausted {
-		t.Fatalf("expected tracking window exhausted reason, got %+v", paused)
-	}
 	if paused.TrackingRenewals < 1 || paused.LastRenewedAt.IsZero() {
 		t.Fatalf("expected renewal evidence, got %+v", paused)
 	}
-	if !hasTaskLog(paused, "tracking_window_exhausted") {
-		t.Fatalf("expected tracking window evidence in logs, got %+v", paused.Logs)
-	}
 	if paused.Error != "" {
 		t.Fatalf("expected no terminal error for paused task, got %+v", paused)
+	}
+	resumed := waitTaskUntil(t, manager, task.ID, 2*time.Second, func(task AsyncTask) bool {
+		return hasTaskLog(task, "a2a tracking resumed")
+	})
+	if resumed.TrackerState == asyncTaskTrackerStatePaused {
+		t.Fatalf("expected tracking to leave paused state after scheduled recovery, got %+v", resumed)
 	}
 }
 
@@ -193,7 +193,7 @@ func TestAsyncTaskGetReconcileAdvancesToTerminal(t *testing.T) {
 	manager := newAsyncTaskManager(nil, "", time.Now)
 	err := manager.SetA2ATrackingPolicy(A2ATrackingPolicy{
 		InitialInterval:      5 * time.Millisecond,
-		MaxInterval:          10 * time.Millisecond,
+		MaxInterval:          500 * time.Millisecond,
 		MaxTrackingDuration:  30 * time.Second,
 		MaxConsecutiveErrors: 1,
 		MinReconcileInterval: 0,
@@ -219,7 +219,7 @@ func TestAsyncTaskGetReconcileAdvancesToTerminal(t *testing.T) {
 		t.Fatalf("Submit failed: %v", err)
 	}
 	waitTaskUntil(t, manager, task.ID, 2*time.Second, func(task AsyncTask) bool {
-		return task.TrackerState == asyncTaskTrackerStatePaused
+		return hasTaskLog(task, "a2a tracking paused after polling errors")
 	})
 	reconciled, err := manager.Get(AsyncTaskGetInput{TaskID: task.ID})
 	if err != nil {
@@ -288,7 +288,7 @@ func TestAsyncTaskGetReconcileDebounce(t *testing.T) {
 	manager := newAsyncTaskManager(nil, "", time.Now)
 	err := manager.SetA2ATrackingPolicy(A2ATrackingPolicy{
 		InitialInterval:      5 * time.Millisecond,
-		MaxInterval:          10 * time.Millisecond,
+		MaxInterval:          500 * time.Millisecond,
 		MaxTrackingDuration:  10 * time.Second,
 		MaxConsecutiveErrors: 1,
 		MinReconcileInterval: 1 * time.Second,
@@ -315,7 +315,7 @@ func TestAsyncTaskGetReconcileDebounce(t *testing.T) {
 		t.Fatalf("Submit failed: %v", err)
 	}
 	waitTaskUntil(t, manager, task.ID, 2*time.Second, func(task AsyncTask) bool {
-		return task.TrackerState == asyncTaskTrackerStatePaused
+		return hasTaskLog(task, "a2a tracking paused after polling errors")
 	})
 	first, err := manager.Get(AsyncTaskGetInput{TaskID: task.ID})
 	if err != nil {

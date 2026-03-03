@@ -61,6 +61,7 @@ func (m *AsyncTaskManager) markRecoveredWorkerRunning(taskID string) (AsyncTask,
 	state.workerRunning = true
 	state.task.TrackerState = asyncTaskTrackerStateRecovering
 	state.task.TrackerReason = asyncTaskTrackerReasonNone
+	state.task.NextPollAt = time.Time{}
 	state.task.UpdatedAt = m.nowFn().Truncate(time.Second)
 	m.appendLogLocked(state, "info", "a2a tracking resumed")
 	m.persistSnapshotLocked()
@@ -169,6 +170,7 @@ func normalizeLoadedTask(task AsyncTask, fallbackNow time.Time) AsyncTask {
 	task.Status = strings.TrimSpace(task.Status)
 	task.TrackerState = strings.TrimSpace(task.TrackerState)
 	task.TrackerReason = strings.TrimSpace(task.TrackerReason)
+	task.ProgressSummary = strings.TrimSpace(task.ProgressSummary)
 	task.AgentID = strings.TrimSpace(task.AgentID)
 	task.RemoteTaskID = strings.TrimSpace(task.RemoteTaskID)
 	if task.Status == "" {

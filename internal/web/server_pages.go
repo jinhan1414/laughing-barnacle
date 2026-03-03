@@ -95,6 +95,8 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 				Skills:          append([]mcp.A2ASkill(nil), item.Skills...),
 				HasAuthToken:    strings.TrimSpace(item.AuthToken) != "",
 				Enabled:         item.Enabled,
+				HealthURL:       buildA2AHealthURL(item.Endpoint),
+				DebugTasksURL:   buildA2ADebugTasksURL(item.Endpoint),
 			}
 			if !item.UpdatedAt.IsZero() {
 				view.UpdatedAt = item.UpdatedAt.Format("2006-01-02 15:04:05")
@@ -111,6 +113,7 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 				Status:            task.Status,
 				TrackerState:      task.TrackerState,
 				TrackerReason:     task.TrackerReason,
+				ProgressSummary:   task.ProgressSummary,
 				Request:           task.Request,
 				AgentID:           task.AgentID,
 				RemoteTaskID:      task.RemoteTaskID,
@@ -118,6 +121,12 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 				Error:             task.Error,
 				TrackingRenewals:  task.TrackingRenewals,
 				ConsecutiveErrors: task.ConsecutiveErrors,
+			}
+			if task.TaskType == "a2a" {
+				if record, ok := s.mcpStore.GetA2AAgent(task.AgentID); ok {
+					view.RemoteHealthURL = buildA2AHealthURL(record.Endpoint)
+					view.RemoteDebugURL = buildA2ADebugTaskURL(record.Endpoint, task.RemoteTaskID)
+				}
 			}
 			if !task.CreatedAt.IsZero() {
 				view.CreatedAt = task.CreatedAt.Format("2006-01-02 15:04:05")

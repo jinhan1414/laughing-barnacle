@@ -130,6 +130,8 @@ type a2aAgentView struct {
 	HasAuthToken    bool
 	Enabled         bool
 	UpdatedAt       string
+	HealthURL       string
+	DebugTasksURL   string
 }
 
 type skillView struct {
@@ -237,6 +239,7 @@ type asyncTaskView struct {
 	Status            string
 	TrackerState      string
 	TrackerReason     string
+	ProgressSummary   string
 	Request           string
 	AgentID           string
 	RemoteTaskID      string
@@ -249,6 +252,8 @@ type asyncTaskView struct {
 	LastReconciledAt  string
 	TrackingRenewals  int
 	ConsecutiveErrors int
+	RemoteHealthURL   string
+	RemoteDebugURL    string
 	Logs              []asyncTaskLogView
 }
 

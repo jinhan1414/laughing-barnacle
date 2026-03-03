@@ -158,6 +158,36 @@ func TestProviderSendFailsWhenCardResolveFails(t *testing.T) {
 	}
 }
 
+func TestProviderGetTaskPrefersEndpointWhenCardUnavailable(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		req := decodeRPCRequest(t, r)
+		if req.Method != "tasks/get" {
+			writeRPCError(t, w, req.ID, "unsupported method")
+			return
+		}
+		writeRPCResult(t, w, req.ID, `{"kind":"task","id":"task-2","contextId":"ctx-2","status":{"state":"completed"}}`)
+	}))
+	defer server.Close()
+
+	provider, agentID := newTestProviderWithAgent(t, testProviderAgent{
+		Name:         "codex-local",
+		Endpoint:     server.URL,
+		AgentCardURL: "http://127.0.0.1:1/.well-known/agent-card.json",
+		Enabled:      true,
+		Timeout:      300 * time.Millisecond,
+	})
+	result, err := provider.GetTask(context.Background(), agent.A2ATaskQuery{
+		AgentID: agentID,
+		TaskID:  "task-2",
+	})
+	if err != nil {
+		t.Fatalf("GetTask failed: %v", err)
+	}
+	if result.Status != "completed" {
+		t.Fatalf("unexpected result: %#v", result)
+	}
+}
+
 func TestProviderDisablesKeepAlive(t *testing.T) {
 	provider, _ := newTestProviderWithAgent(t, testProviderAgent{
 		Name:     "codex-local",

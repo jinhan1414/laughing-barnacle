@@ -61,6 +61,7 @@ type AsyncTask struct {
 	Status                     string
 	TrackerState               string
 	TrackerReason              string
+	ProgressSummary            string
 	Request                    string
 	AgentID                    string
 	AgentInput                 string

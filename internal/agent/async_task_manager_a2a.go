@@ -73,7 +73,7 @@ func (m *AsyncTaskManager) pollA2ATask(ctx context.Context, taskID, agentID, rem
 			return
 		}
 		stopped := false
-		windowStartedAt, stopped = m.updateInProgressTracking(taskID, result.Status, windowStartedAt, policy)
+		windowStartedAt, stopped = m.updateInProgressTracking(taskID, result, windowStartedAt, policy)
 		if stopped {
 			return
 		}
@@ -164,6 +164,19 @@ func (m *AsyncTaskManager) updatePollingLog(taskID, message string) {
 	m.mu.Unlock()
 }
 
+func buildA2AProgressSummary(result A2ATaskResult) string {
+	parts := make([]string, 0, 2)
+	if text := strings.TrimSpace(result.Message); text != "" {
+		parts = append(parts, trimRunes(text, 160))
+	}
+	if len(parts) == 0 {
+		if text := strings.TrimSpace(result.Status); text != "" {
+			parts = append(parts, "status="+text)
+		}
+	}
+	return strings.TrimSpace(strings.Join(parts, " | "))
+}
+
 func (m *AsyncTaskManager) isCancelRequested(taskID string) bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -181,6 +194,9 @@ func renderAsyncTaskOutput(task AsyncTask, logs []AsyncTaskLog) string {
 	}
 	if text := strings.TrimSpace(task.TrackerReason); text != "" {
 		b.WriteString("tracker_reason: " + text + "\n")
+	}
+	if text := strings.TrimSpace(task.ProgressSummary); text != "" {
+		b.WriteString("progress: " + text + "\n")
 	}
 	if text := strings.TrimSpace(task.AgentID); text != "" {
 		b.WriteString("agent_id: " + text + "\n")

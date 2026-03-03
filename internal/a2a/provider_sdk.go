@@ -30,7 +30,7 @@ func (p *Provider) Send(ctx context.Context, req agent.A2ASendRequest) (agent.A2
 	if err != nil {
 		return agent.A2ATaskResult{}, err
 	}
-	client, err := p.buildSDKClient(ctx, target)
+	client, err := p.buildSDKClient(ctx, target, false)
 	if err != nil {
 		return agent.A2ATaskResult{}, err
 	}
@@ -62,7 +62,7 @@ func (p *Provider) GetTask(ctx context.Context, req agent.A2ATaskQuery) (agent.A
 	if err != nil {
 		return agent.A2ATaskResult{}, err
 	}
-	client, err := p.buildSDKClient(ctx, target)
+	client, err := p.buildSDKClient(ctx, target, true)
 	if err != nil {
 		return agent.A2ATaskResult{}, err
 	}
@@ -89,7 +89,7 @@ func (p *Provider) CancelTask(ctx context.Context, req agent.A2ATaskQuery) (agen
 	if err != nil {
 		return agent.A2ATaskResult{}, err
 	}
-	client, err := p.buildSDKClient(ctx, target)
+	client, err := p.buildSDKClient(ctx, target, true)
 	if err != nil {
 		return agent.A2ATaskResult{}, err
 	}
@@ -152,7 +152,7 @@ func cloneMetadata(in map[string]any) map[string]any {
 	return out
 }
 
-func (p *Provider) buildSDKClient(ctx context.Context, target mcp.A2AAgent) (*a2aclient.Client, error) {
+func (p *Provider) buildSDKClient(ctx context.Context, target mcp.A2AAgent, preferEndpoint bool) (*a2aclient.Client, error) {
 	options := []a2aclient.FactoryOption{
 		a2aclient.WithJSONRPCTransport(p.http),
 		a2aclient.WithConfig(a2aclient.Config{Polling: true}),
@@ -165,7 +165,11 @@ func (p *Provider) buildSDKClient(ctx context.Context, target mcp.A2AAgent) (*a2
 		))
 	}
 
+	endpoint := strings.TrimSpace(target.Endpoint)
 	cardURL := strings.TrimSpace(target.AgentCardURL)
+	if preferEndpoint && endpoint != "" {
+		return newSDKClientFromEndpoint(ctx, endpoint, options)
+	}
 	if cardURL != "" {
 		card, err := p.resolveAgentCard(ctx, target)
 		if err != nil {
@@ -177,11 +181,17 @@ func (p *Provider) buildSDKClient(ctx context.Context, target mcp.A2AAgent) (*a2
 		}
 		return client, nil
 	}
-
-	endpoint := strings.TrimSpace(target.Endpoint)
 	if endpoint == "" {
 		return nil, fmt.Errorf("a2a endpoint is required")
 	}
+	return newSDKClientFromEndpoint(ctx, endpoint, options)
+}
+
+func newSDKClientFromEndpoint(
+	ctx context.Context,
+	endpoint string,
+	options []a2aclient.FactoryOption,
+) (*a2aclient.Client, error) {
 	endpoints := []a2asdk.AgentInterface{
 		{Transport: a2asdk.TransportProtocolJSONRPC, URL: endpoint},
 	}

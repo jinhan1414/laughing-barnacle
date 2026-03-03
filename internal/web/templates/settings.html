@@ -266,10 +266,13 @@
                     remote_task_id: {{if .RemoteTaskID}}{{.RemoteTaskID}}{{else}}-{{end}}<br>
                     tracker_state: {{if .TrackerState}}{{.TrackerState}}{{else}}-{{end}}<br>
                     tracker_reason: {{if .TrackerReason}}{{.TrackerReason}}{{else}}-{{end}}<br>
+                    progress: {{if .ProgressSummary}}{{.ProgressSummary}}{{else}}-{{end}}<br>
                     next_poll_at: {{if .NextPollAt}}{{.NextPollAt}}{{else}}-{{end}}<br>
                     last_reconciled_at: {{if .LastReconciledAt}}{{.LastReconciledAt}}{{else}}-{{end}}<br>
                     last_renewed_at: {{if .LastRenewedAt}}{{.LastRenewedAt}}{{else}}-{{end}}<br>
                     tracking_renewals: {{.TrackingRenewals}} | consecutive_errors: {{.ConsecutiveErrors}}<br>
+                    remote_health: {{if .RemoteHealthURL}}<a class="text-sky-600 underline" href="{{.RemoteHealthURL}}" target="_blank" rel="noreferrer">healthz</a>{{else}}-{{end}}<br>
+                    remote_debug: {{if .RemoteDebugURL}}<a class="text-sky-600 underline" href="{{.RemoteDebugURL}}" target="_blank" rel="noreferrer">debug task</a>{{else}}-{{end}}<br>
                     created: {{if .CreatedAt}}{{.CreatedAt}}{{else}}-{{end}}<br>
                     updated: {{if .UpdatedAt}}{{.UpdatedAt}}{{else}}-{{end}}
                   </div>

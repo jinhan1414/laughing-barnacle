@@ -38,15 +38,17 @@ func (m *AsyncTaskManager) handlePollingError(taskID string, pollErr error, poll
 	state.task.TrackerReason = asyncTaskTrackerReasonNone
 	state.task.UpdatedAt = m.nowFn().Truncate(time.Second)
 	if state.task.ConsecutiveErrors >= policy.MaxConsecutiveErrors {
+		retryAt := state.task.UpdatedAt.Add(policy.MaxInterval)
 		state.task.TrackerState = asyncTaskTrackerStatePaused
 		state.task.TrackerReason = asyncTaskTrackerReasonConsecutiveErrorsReached
-		state.task.NextPollAt = time.Time{}
+		state.task.NextPollAt = retryAt
 		m.appendLogLocked(state, "warn", "a2a tracking paused after polling errors: "+trimRunes(strings.TrimSpace(pollErr.Error()), 200))
 		m.persistSnapshotLocked()
 		snapshot := cloneAsyncTask(state.task)
 		state.workerRunning = false
 		m.mu.Unlock()
 		m.emitStatusChange(snapshot)
+		m.scheduleA2ARecovery(taskID, retryAt)
 		return pollInterval, true
 	}
 	nextInterval := nextBackoffInterval(pollInterval, policy)
@@ -59,8 +61,13 @@ func (m *AsyncTaskManager) handlePollingError(taskID string, pollErr error, poll
 	return nextInterval, false
 }
 
-func (m *AsyncTaskManager) updateInProgressTracking(taskID, status string, windowStartedAt time.Time, policy A2ATrackingPolicy) (time.Time, bool) {
-	m.updatePollingLog(taskID, "a2a status: "+strings.TrimSpace(status))
+func (m *AsyncTaskManager) updateInProgressTracking(taskID string, result A2ATaskResult, windowStartedAt time.Time, policy A2ATrackingPolicy) (time.Time, bool) {
+	progress := buildA2AProgressSummary(result)
+	logMessage := "a2a status: " + strings.TrimSpace(result.Status)
+	if progress != "" {
+		logMessage += " | " + progress
+	}
+	m.updatePollingLog(taskID, logMessage)
 	m.mu.Lock()
 	state := m.tasks[taskID]
 	if state == nil {
@@ -69,6 +76,7 @@ func (m *AsyncTaskManager) updateInProgressTracking(taskID, status string, windo
 	}
 	now := m.nowFn().Truncate(time.Second)
 	state.task.LastReconciledAt = now
+	state.task.ProgressSummary = progress
 	if now.Sub(windowStartedAt) < policy.MaxTrackingDuration {
 		m.persistSnapshotLocked()
 		m.mu.Unlock()
@@ -88,7 +96,7 @@ func (m *AsyncTaskManager) updateInProgressTracking(taskID, status string, windo
 	}
 	state.task.TrackerState = asyncTaskTrackerStatePaused
 	state.task.TrackerReason = asyncTaskTrackerReasonWindowExhausted
-	state.task.NextPollAt = time.Time{}
+	state.task.NextPollAt = now.Add(policy.MaxInterval)
 	state.task.UpdatedAt = now
 	m.appendLogLocked(state, "warn", "a2a tracking paused: tracking_window_exhausted")
 	m.persistSnapshotLocked()
@@ -96,6 +104,7 @@ func (m *AsyncTaskManager) updateInProgressTracking(taskID, status string, windo
 	state.workerRunning = false
 	m.mu.Unlock()
 	m.emitStatusChange(snapshot)
+	m.scheduleA2ARecovery(taskID, snapshot.NextPollAt)
 	return windowStartedAt, true
 }
 
@@ -108,7 +117,7 @@ func (m *AsyncTaskManager) pauseTracking(taskID, message, reason string) {
 	}
 	state.task.TrackerState = asyncTaskTrackerStatePaused
 	state.task.TrackerReason = strings.TrimSpace(reason)
-	state.task.NextPollAt = time.Time{}
+	state.task.NextPollAt = m.nowFn().Truncate(time.Second).Add(m.a2aPolicy.MaxInterval)
 	state.task.UpdatedAt = m.nowFn().Truncate(time.Second)
 	m.appendLogLocked(state, "warn", trimRunes(strings.TrimSpace(message), 240))
 	m.persistSnapshotLocked()
@@ -116,4 +125,5 @@ func (m *AsyncTaskManager) pauseTracking(taskID, message, reason string) {
 	state.workerRunning = false
 	m.mu.Unlock()
 	m.emitStatusChange(snapshot)
+	m.scheduleA2ARecovery(taskID, snapshot.NextPollAt)
 }

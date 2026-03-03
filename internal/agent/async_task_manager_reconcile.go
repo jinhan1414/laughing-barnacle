@@ -65,11 +65,13 @@ func (m *AsyncTaskManager) markReconcileError(taskID string, err error) AsyncTas
 	state.task.TrackerReason = asyncTaskTrackerReasonReconcileError
 	state.task.UpdatedAt = m.nowFn().Truncate(time.Second)
 	state.task.LastReconciledAt = state.task.UpdatedAt
+	state.task.NextPollAt = state.task.UpdatedAt.Add(m.a2aPolicy.MaxInterval)
 	m.appendLogLocked(state, "warn", "a2a reconcile failed: "+trimRunes(strings.TrimSpace(err.Error()), 200))
 	m.persistSnapshotLocked()
 	snapshot := cloneAsyncTask(state.task)
 	m.mu.Unlock()
 	m.emitStatusChange(snapshot)
+	m.scheduleA2ARecovery(taskID, snapshot.NextPollAt)
 	return snapshot
 }
 
@@ -107,9 +109,14 @@ func (m *AsyncTaskManager) applyReconcileResult(taskID string, result A2ATaskRes
 	state.task.ConsecutiveErrors = 0
 	state.task.LastReconciledAt = now
 	state.task.UpdatedAt = now
+	state.task.ProgressSummary = buildA2AProgressSummary(result)
 	policy := m.a2aPolicy
 	state.task.NextPollAt = now.Add(policy.InitialInterval)
-	m.appendLogLocked(state, "info", "a2a reconcile status: "+strings.TrimSpace(result.Status))
+	logMessage := "a2a reconcile status: " + strings.TrimSpace(result.Status)
+	if text := strings.TrimSpace(state.task.ProgressSummary); text != "" {
+		logMessage += " | " + text
+	}
+	m.appendLogLocked(state, "info", logMessage)
 	m.persistSnapshotLocked()
 	snapshot := cloneAsyncTask(state.task)
 	m.mu.Unlock()

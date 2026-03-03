@@ -5,10 +5,13 @@
 ## 目录
 
 - `codex_a2a_agent.py`：A2A 服务（官方 SDK 实现）
+- `persistent_task_store.py`：任务持久化存储（JSON 文件）
+- `codex_a2a_observability.py`：健康检查与调试接口
 - `requirements.txt`：Python 依赖
 - `run.ps1`：启动脚本
 - `register_local_agent.ps1`：向主服务登记本地 A2A Agent
 - `state/output/`：Codex 事件流输出目录（自动创建，保存 `*.events.jsonl`）
+- `state/tasks/`：任务持久化目录（自动创建，保存 `*.json`）
 
 ## 依赖
 
@@ -32,6 +35,9 @@ cd integrations/codex-a2a
 
 - Agent Card：`/.well-known/agent-card.json`
 - JSON-RPC：`/a2a/rpc`
+- 健康检查：`/healthz`
+- 任务列表：`/debug/tasks`
+- 任务详情：`/debug/tasks/{task_id}`
 
 Agent Card 包含：
 
@@ -40,11 +46,18 @@ Agent Card 包含：
 
 ## 任务生命周期（send/get/cancel）
 
-服务由官方 `DefaultRequestHandler` + `InMemoryTaskStore` 托管任务状态机，执行器为 `CodexAgentExecutor`：
+服务由官方 `DefaultRequestHandler` + `PersistentJSONTaskStore` 托管任务状态机，执行器为 `CodexAgentExecutor`：
 
 - `message/send`：提交任务并异步执行本地 `codex exec`
 - `tasks/get`：查询任务状态与产物
 - `tasks/cancel`：终止运行中任务并标记 `canceled`
+
+可观测性与恢复：
+
+- 任务状态会持久化到 `state/tasks/`，服务重启后仍可查询历史任务
+- 服务启动时会将非终态遗留任务显式标记为 `failed`，原因：`service_restarted_orphaned_task`
+- `/healthz` 会返回 codex 可用性、活跃进程数与任务状态分布
+- `/debug/tasks/{task_id}` 会返回当前阶段信息、状态消息和关联输出文件路径
 
 执行语义：
 
