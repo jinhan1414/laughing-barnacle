@@ -19,6 +19,7 @@ type Config struct {
 	ConversationFile string
 	MemoryFile       string
 	LLMLogFile       string
+	ProjectRootDir   string
 
 	AgentModel      string
 	Temperature     float64
@@ -87,6 +88,7 @@ func newConfig(llmEnv llmGatewayEnv) Config {
 		ConversationFile: envOrDefault("APP_CONVERSATION_FILE", "./data/conversation.json"),
 		MemoryFile:       envOrDefault("APP_MEMORY_FILE", "./data/memory.db"),
 		LLMLogFile:       envOrDefault("APP_LLM_LOG_FILE", "./data/llm_logs.json"),
+		ProjectRootDir:   envOrDefault("APP_PROJECT_ROOT_DIR", ""),
 
 		AgentModel:      envOrDefault("AGENT_LLM_MODEL", defaultModelRef),
 		Temperature:     envFloat("CERBER_TEMPERATURE", 0.2),
@@ -229,6 +231,9 @@ func (c Config) validateStorage() error {
 	}
 	if c.MemoryFile == "" {
 		return fmt.Errorf("APP_MEMORY_FILE is required")
+	}
+	if strings.ContainsAny(c.ProjectRootDir, "\r\n\t") {
+		return fmt.Errorf("APP_PROJECT_ROOT_DIR must not contain control whitespace")
 	}
 	if c.SkillsDir == "" {
 		return fmt.Errorf("APP_SKILLS_DIR is required")

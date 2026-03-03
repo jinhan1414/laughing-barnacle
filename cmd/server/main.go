@@ -71,6 +71,11 @@ func run() error {
 	}); err != nil {
 		return err
 	}
+	if cfg.ProjectRootDir != "" {
+		if err := mcpStore.SetProjectRootDir(cfg.ProjectRootDir); err != nil {
+			return err
+		}
+	}
 	mcpHTTPClient := mcp.NewHTTPClient(cfg.MCPRequestTimeout, cfg.MCPProtocolVersion)
 	mcpToolProvider := mcp.NewToolProvider(mcpStore, mcpHTTPClient, cfg.MCPToolCacheTTL)
 	a2aProvider := a2a.NewProvider(mcpStore, cfg.MCPRequestTimeout)

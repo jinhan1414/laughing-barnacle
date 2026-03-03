@@ -127,3 +127,16 @@ func TestLoad_DefaultOpenAICodexReasoningEffortIsHigh(t *testing.T) {
 		t.Fatalf("expected default reasoning effort high, got %q", cfg.LLMGatewayOpenAICodexReasoningEffort)
 	}
 }
+
+func TestLoad_ProjectRootDirFromEnv(t *testing.T) {
+	t.Setenv("CERBER_API_KEY", "test-key")
+	t.Setenv("APP_PROJECT_ROOT_DIR", `E:\projects\ai`)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load error: %v", err)
+	}
+	if cfg.ProjectRootDir != `E:\projects\ai` {
+		t.Fatalf("expected project root dir from env, got %q", cfg.ProjectRootDir)
+	}
+}
