@@ -66,7 +66,26 @@ func (a *Agent) callAutonomousRunCheckpoint(_ context.Context, raw string) (stri
 	if err != nil {
 		return "", err
 	}
+	a.resumeWaitingRunIfTaskAlreadyTerminal(run)
 	return renderAutonomousRunOutput(run), nil
+}
+
+func (a *Agent) resumeWaitingRunIfTaskAlreadyTerminal(run AutonomousRun) {
+	if a == nil || a.asyncTasks == nil || a.runs == nil {
+		return
+	}
+	if strings.TrimSpace(run.Status) != autonomousRunStatusWaitingAsync {
+		return
+	}
+	taskID := strings.TrimSpace(run.WaitingRef)
+	if taskID == "" {
+		return
+	}
+	task, ok := a.asyncTasks.GetLocal(taskID)
+	if !ok || !isAsyncTaskTerminal(task.Status) {
+		return
+	}
+	go a.resumeAutonomousRunsForTask(context.Background(), task)
 }
 
 func renderAutonomousRunOutput(run AutonomousRun) string {

@@ -95,17 +95,11 @@ func (m *AsyncTaskManager) emitStatusChange(task AsyncTask) {
 }
 
 func (m *AsyncTaskManager) emitCompletion(ctx context.Context, task AsyncTask) {
-	if !task.NotifyOnFinish {
-		return
-	}
 	if !isAsyncTaskTerminal(task.Status) {
 		return
 	}
-	if ctx == nil {
+	if ctx == nil || ctx.Err() != nil {
 		ctx = context.Background()
-	}
-	if ctx.Err() != nil {
-		return
 	}
 	m.mu.RLock()
 	hook := m.onDone

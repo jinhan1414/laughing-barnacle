@@ -32,22 +32,24 @@ func (a *Agent) onAsyncTaskStatusChanged(task AsyncTask) {
 }
 
 func (a *Agent) onAsyncTaskCompleted(ctx context.Context, task AsyncTask) {
-	if a == nil || a.store == nil {
+	if a == nil {
 		return
 	}
-	if ctx != nil && ctx.Err() != nil {
-		return
+	resumeCtx := ctx
+	if resumeCtx == nil || resumeCtx.Err() != nil {
+		resumeCtx = context.Background()
 	}
-	resp, text, err := a.generateAsyncTaskNotification(ctx, task)
-	if err != nil || text == "" {
-		text = fallbackAsyncTaskNotification(task)
+	if task.NotifyOnFinish && a.store != nil && (ctx == nil || ctx.Err() == nil) {
+		resp, text, err := a.generateAsyncTaskNotification(ctx, task)
+		if err != nil || text == "" {
+			text = fallbackAsyncTaskNotification(task)
+		}
+		if ctx == nil || ctx.Err() == nil {
+			text = mergeNotificationSummary(text, buildAsyncTaskResultSummary(task))
+			a.store.AppendAssistant(text, toConversationUsage(resp.Usage))
+		}
 	}
-	if ctx != nil && ctx.Err() != nil {
-		return
-	}
-	text = mergeNotificationSummary(text, buildAsyncTaskResultSummary(task))
-	a.store.AppendAssistant(text, toConversationUsage(resp.Usage))
-	go a.resumeAutonomousRunsForTask(ctx, task)
+	go a.resumeAutonomousRunsForTask(resumeCtx, task)
 }
 
 func fallbackAsyncTaskNotification(task AsyncTask) string {

@@ -18,9 +18,10 @@ func TestOnAsyncTaskCompleted_AppendsSucceededResultSummary(t *testing.T) {
 	agentSvc := New(Config{Model: "test-model"}, store, fakeLLM, nil)
 
 	agentSvc.onAsyncTaskCompleted(context.Background(), AsyncTask{
-		ID:       "async_1",
-		TaskType: asyncTaskTypeA2A,
-		Status:   asyncTaskStatusSucceeded,
+		ID:             "async_1",
+		TaskType:       asyncTaskTypeA2A,
+		Status:         asyncTaskStatusSucceeded,
+		NotifyOnFinish: true,
 		Result: "agent_id: codex-local\n" +
 			"task_id: remote-1\n" +
 			"status: completed\n" +
@@ -49,9 +50,10 @@ func TestOnAsyncTaskCompleted_WritesFallbackWithoutLLM(t *testing.T) {
 	agentSvc := New(Config{Model: "test-model"}, store, nil, nil)
 
 	agentSvc.onAsyncTaskCompleted(context.Background(), AsyncTask{
-		ID:     "async_2",
-		Status: asyncTaskStatusFailed,
-		Error:  "network timeout",
+		ID:             "async_2",
+		Status:         asyncTaskStatusFailed,
+		NotifyOnFinish: true,
+		Error:          "network timeout",
 	})
 
 	_, messages := store.Snapshot()
@@ -74,14 +76,31 @@ func TestOnAsyncTaskCompleted_SkipsWhenContextCanceled(t *testing.T) {
 	cancel()
 
 	agentSvc.onAsyncTaskCompleted(ctx, AsyncTask{
-		ID:     "async_3",
-		Status: asyncTaskStatusFailed,
-		Error:  "canceled",
+		ID:             "async_3",
+		Status:         asyncTaskStatusFailed,
+		NotifyOnFinish: true,
+		Error:          "canceled",
 	})
 
 	_, messages := store.Snapshot()
 	if len(messages) != 0 {
 		t.Fatalf("expected no assistant message, got %d", len(messages))
+	}
+}
+
+func TestOnAsyncTaskCompleted_SkipsNotificationWhenNotifyDisabled(t *testing.T) {
+	store := conversation.NewStore()
+	agentSvc := New(Config{Model: "test-model"}, store, nil, nil)
+
+	agentSvc.onAsyncTaskCompleted(context.Background(), AsyncTask{
+		ID:             "async_4",
+		Status:         asyncTaskStatusSucceeded,
+		NotifyOnFinish: false,
+	})
+
+	_, messages := store.Snapshot()
+	if len(messages) != 0 {
+		t.Fatalf("expected no assistant message when notify_on_finish=false, got %d", len(messages))
 	}
 }
 

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -215,4 +216,64 @@ func TestHandleUserMessage_InjectsAutonomousRunIndex(t *testing.T) {
 	if !found {
 		t.Fatalf("expected autonomous run index prompt in request messages")
 	}
+}
+
+func TestAutonomousRunCheckpoint_ResumesWhenTaskAlreadyTerminal(t *testing.T) {
+	store := conversation.NewStore()
+	fakeLLM := &mockLLM{
+		responses: map[string][]string{"chat_reply": {"", ""}},
+		toolCalls: map[string][][]llm.ToolCall{"chat_reply": {{{
+			ID:   "call_checkpoint_resume",
+			Type: "function",
+			Function: llm.ToolFunctionCall{
+				Name: builtinAutonomousRunCheckpointToolName,
+			},
+		}}}},
+	}
+	agentSvc := New(Config{Model: "test-model", MaxToolCallRounds: 2, SystemPrompt: "system", CompressionSystemPrompt: "compressor"}, store, fakeLLM, nil)
+	seedTerminalAsyncTask(agentSvc, "async_terminal_1")
+	run, err := agentSvc.runs.Checkpoint(AutonomousRunCheckpointInput{Goal: "自动运营 7 天", Status: autonomousRunStatusRunning, CurrentStep: "delegating", StepSummary: "准备委托"})
+	if err != nil {
+		t.Fatalf("seed run error: %v", err)
+	}
+	fakeLLM.toolCalls["chat_reply"][0][0].Function.Arguments = fmt.Sprintf(`{"run_id":"%s","goal":"自动运营 7 天","status":"completed","current_step":"done","waiting_ref":null,"step_summary":"已完成","error":null,"context_patch":null}`, run.ID)
+
+	_, err = agentSvc.callAutonomousRunCheckpoint(context.Background(), fmt.Sprintf(`{"run_id":"%s","goal":"自动运营 7 天","status":"waiting_async","current_step":"wait_async","waiting_ref":"async_terminal_1","step_summary":"等待异步完成","error":null,"context_patch":null}`, run.ID))
+	if err != nil {
+		t.Fatalf("callAutonomousRunCheckpoint error: %v", err)
+	}
+	waitRunStatus(t, agentSvc, run.ID, autonomousRunStatusCompleted, 2*time.Second)
+}
+
+func seedTerminalAsyncTask(agentSvc *Agent, taskID string) {
+	agentSvc.asyncTasks.mu.Lock()
+	defer agentSvc.asyncTasks.mu.Unlock()
+	now := time.Now().Truncate(time.Second)
+	agentSvc.asyncTasks.tasks[taskID] = &asyncTaskState{
+		task: AsyncTask{
+			ID:             taskID,
+			TaskType:       asyncTaskTypeA2A,
+			Status:         asyncTaskStatusSucceeded,
+			NotifyOnFinish: false,
+			Request:        "seed task",
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		},
+		ctx: context.Background(),
+	}
+	agentSvc.asyncTasks.order = append(agentSvc.asyncTasks.order, taskID)
+}
+
+func waitRunStatus(t *testing.T, agentSvc *Agent, runID, expected string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		run, err := agentSvc.runs.Get(runID)
+		if err == nil && run.Status == expected {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	run, _ := agentSvc.runs.Get(runID)
+	t.Fatalf("run %s did not reach status=%s, latest=%+v", runID, expected, run)
 }

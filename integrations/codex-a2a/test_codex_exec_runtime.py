@@ -11,6 +11,7 @@ from codex_exec_runtime import (
     build_codex_exec_command,
     build_effective_prompt,
     build_event_summary_evidence,
+    build_terminal_evidence_error,
     parse_codex_event_stream,
     resolve_task_workdir,
 )
@@ -95,6 +96,28 @@ class CodexExecRuntimeTests(unittest.TestCase):
         payload = json.loads(evidence)
         self.assertTrue(payload["turn_completed"])
         self.assertEqual(8, payload["event_count"])
+
+    def test_build_terminal_evidence_error_contains_diagnostics(self) -> None:
+        summary = CodexEventSummary(
+            final_message="中间进度",
+            turn_completed=False,
+            event_count=5,
+            parse_warnings=("line 1: invalid json",),
+        )
+        error = build_terminal_evidence_error(summary)
+        self.assertIn("missing terminal evidence", error)
+        self.assertIn("turn.completed", error)
+        self.assertIn("parse_warnings=", error)
+        self.assertIn("final_message_preview=中间进度", error)
+
+    def test_build_terminal_evidence_error_empty_when_complete(self) -> None:
+        summary = CodexEventSummary(
+            final_message="最终结果",
+            turn_completed=True,
+            event_count=4,
+            parse_warnings=tuple(),
+        )
+        self.assertEqual("", build_terminal_evidence_error(summary))
 
 
 if __name__ == "__main__":

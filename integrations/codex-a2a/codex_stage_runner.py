@@ -59,7 +59,7 @@ class CodexStageRunner:
         summary = parse_codex_event_stream(stdout_text)
         terminal_error = build_terminal_evidence_error(summary)
         if terminal_error:
-            raise RuntimeError(terminal_error)
+            raise RuntimeError(f"{terminal_error} | events_file={events_file}")
 
         evidence = build_event_summary_evidence(summary, req.workdir, events_file)
         self._logger.info("codex stage completed task_id=%s stage=%s", req.task_id, req.stage_id)

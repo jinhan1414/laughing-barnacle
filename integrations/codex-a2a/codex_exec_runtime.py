@@ -16,6 +16,7 @@ DEFAULT_EXECUTION_PREFIX = (
     "5. 失败时在最后一次消息中显式返回失败原因与关键证据。"
 )
 MAX_PARSE_WARNINGS = 3
+MAX_FINAL_MESSAGE_PREVIEW_LEN = 160
 
 
 @dataclass(frozen=True)
@@ -110,11 +111,33 @@ def build_event_summary_evidence(summary: CodexEventSummary, workdir: Path, even
 
 
 def build_terminal_evidence_error(summary: CodexEventSummary) -> str:
+    missing_parts: list[str] = []
     if not summary.turn_completed:
-        return "codex output missing turn.completed event"
+        missing_parts.append("turn.completed")
     if summary.final_message == "":
-        return "codex output missing final agent_message"
-    return ""
+        missing_parts.append("final agent_message")
+    if len(missing_parts) == 0:
+        return ""
+    diagnostics = format_terminal_diagnostics(summary)
+    return "codex output missing terminal evidence: " + ", ".join(missing_parts) + diagnostics
+
+
+def format_terminal_diagnostics(summary: CodexEventSummary) -> str:
+    parts: list[str] = [f"event_count={summary.event_count}"]
+    if summary.parse_warnings:
+        warning_text = " | ".join(summary.parse_warnings)
+        parts.append("parse_warnings=" + warning_text)
+    if summary.final_message != "":
+        preview = trim_message_preview(summary.final_message)
+        parts.append("final_message_preview=" + preview)
+    return " | " + " | ".join(parts)
+
+
+def trim_message_preview(message: str) -> str:
+    text = message.strip()
+    if len(text) <= MAX_FINAL_MESSAGE_PREVIEW_LEN:
+        return text
+    return text[:MAX_FINAL_MESSAGE_PREVIEW_LEN].strip()
 
 
 def parse_event_line(line: str, line_no: int, warnings: list[str]) -> dict[str, Any] | None:
