@@ -83,7 +83,7 @@ func toResponsesInput(messages []llmgateway.CanonicalMessage) []map[string]any {
 	input := make([]map[string]any, 0, len(messages))
 	for msgIdx, msg := range messages {
 		if strings.TrimSpace(msg.ToolCallID) != "" {
-			output := strings.TrimSpace(msg.Content)
+			output := sanitizeFunctionCallOutputText(msg.Content)
 			if output != "" {
 				input = append(input, map[string]any{
 					"type":    "function_call_output",
@@ -94,7 +94,7 @@ func toResponsesInput(messages []llmgateway.CanonicalMessage) []map[string]any {
 			continue
 		}
 
-		content := strings.TrimSpace(msg.Content)
+		content := sanitizeResponsesMessageText(msg.Role, msg.Content)
 		role := normalizeCodexInputRole(msg.Role)
 		if content != "" {
 			input = append(input, map[string]any{

@@ -170,6 +170,9 @@ func handleEventChunk(
 		text.WriteString(readEventTextDelta(payload))
 		return llmgateway.CanonicalChatResponse{}, false, nil
 	}
+	if eventType == "response.failed" {
+		return llmgateway.CanonicalChatResponse{}, true, readFailedResponse(payload)
+	}
 	if eventType != "response.completed" {
 		return llmgateway.CanonicalChatResponse{}, false, nil
 	}
@@ -218,6 +221,38 @@ func readCompletedResponse(payload string) ([]byte, error) {
 		return nil, fmt.Errorf("completed event missing response")
 	}
 	return event.Response, nil
+}
+
+func readFailedResponse(payload string) error {
+	var event struct {
+		Response struct {
+			Status string `json:"status"`
+			Error  struct {
+				Code    string `json:"code"`
+				Message string `json:"message"`
+			} `json:"error"`
+		} `json:"response"`
+	}
+	if err := json.Unmarshal([]byte(payload), &event); err != nil {
+		return fmt.Errorf("decode failed event: %w", err)
+	}
+	code := strings.TrimSpace(event.Response.Error.Code)
+	message := strings.TrimSpace(event.Response.Error.Message)
+	status := strings.TrimSpace(event.Response.Status)
+	parts := make([]string, 0, 3)
+	if code != "" {
+		parts = append(parts, code)
+	}
+	if message != "" {
+		parts = append(parts, message)
+	}
+	if status != "" {
+		parts = append(parts, "status="+status)
+	}
+	if len(parts) == 0 {
+		return fmt.Errorf("response.failed without error details")
+	}
+	return fmt.Errorf("provider rejected event stream: %s", strings.Join(parts, " | "))
 }
 
 func providerError(statusCode int, err error) error {

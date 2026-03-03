@@ -137,6 +137,25 @@ func TestToResponsesInput_EncodesToolRoundAsStructuredItems(t *testing.T) {
 	}
 }
 
+func TestToResponsesInput_StripsAssistantScratchpadLeakSuffix(t *testing.T) {
+	input := toResponsesInput([]llmgateway.CanonicalMessage{
+		{
+			Role:    "assistant",
+			Content: "先开始执行代码改造。\nI need to inspect files in chunks before coding.\n{\"command\":\"Get-Content foo\"}",
+		},
+	})
+	if len(input) != 1 {
+		t.Fatalf("expected 1 input item, got %d", len(input))
+	}
+	content, ok := input[0]["content"].([]map[string]any)
+	if !ok || len(content) == 0 {
+		t.Fatalf("invalid content shape: %#v", input[0]["content"])
+	}
+	if got := content[0]["text"]; got != "先开始执行代码改造。" {
+		t.Fatalf("expected scratchpad suffix removed, got %v", got)
+	}
+}
+
 func TestParseResponse_ParsesToolCallsFromTextSummary(t *testing.T) {
 	raw := []byte(`{
 		"output":[

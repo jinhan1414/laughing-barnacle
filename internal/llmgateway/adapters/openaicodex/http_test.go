@@ -22,3 +22,19 @@ func TestParseEventStreamResponse_UsesCompletedEventPayload(t *testing.T) {
 		t.Fatalf("expected usage total 5, got %+v", resp.Usage)
 	}
 }
+
+func TestParseEventStreamResponse_ReturnsFailedEventReason(t *testing.T) {
+	stream := "" +
+		"event: response.created\n" +
+		"data: {\"type\":\"response.created\",\"response\":{\"status\":\"in_progress\"}}\n\n" +
+		"event: response.failed\n" +
+		"data: {\"type\":\"response.failed\",\"response\":{\"status\":\"failed\",\"error\":{\"code\":\"cyber_policy_violation\",\"message\":\"temporarily limited\"}}}\n\n"
+
+	_, err := parseEventStreamResponse([]byte(stream))
+	if err == nil {
+		t.Fatalf("expected failed event error")
+	}
+	if got := err.Error(); got != "provider rejected event stream: cyber_policy_violation | temporarily limited | status=failed" {
+		t.Fatalf("unexpected failed event error: %q", got)
+	}
+}
