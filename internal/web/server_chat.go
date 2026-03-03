@@ -111,11 +111,12 @@ func buildChatTimeline(messages []conversation.Message, events []conversation.Ev
 		}
 		all = append(all, timelineWithSeq{
 			item: chatTimelineItem{
-				Kind:      kind,
-				Content:   msg.Content,
-				ToolCalls: msg.ToolCalls,
-				Usage:     msg.Usage,
-				CreatedAt: msg.CreatedAt,
+				Kind:       kind,
+				Content:    msg.Content,
+				ToolCalls:  msg.ToolCalls,
+				Usage:      msg.Usage,
+				UsageLabel: formatChatUsageLabel(msg.Usage),
+				CreatedAt:  msg.CreatedAt,
 			},
 			seq: seq,
 		})

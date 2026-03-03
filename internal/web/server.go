@@ -61,6 +61,7 @@ type chatTimelineItem struct {
 	Content        string
 	ToolCalls      []conversation.ToolCall
 	Usage          *conversation.TokenUsage
+	UsageLabel     string
 	CreatedAt      time.Time
 	ShowTimestamp  bool
 	TimestampLabel string
@@ -103,6 +104,7 @@ type mcpServiceToolView struct {
 type settingsPageData struct {
 	ActiveSection  string
 	Sections       []settingsSection
+	TokenStats     tokenStatsPageView
 	Services       []mcpServiceView
 	A2AAgents      []a2aAgentView
 	Skills         []skillView

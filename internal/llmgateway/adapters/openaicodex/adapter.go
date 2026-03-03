@@ -124,7 +124,7 @@ func (a *Adapter) Chat(ctx context.Context, req llmgateway.CanonicalChatRequest)
 		payloadBytes,
 		promptCacheKey,
 	)
-	a.appendLog(req, payloadBytes, respBody, statusCode, time.Since(start), callErr, attempts)
+	a.appendLog(req, parsed.Usage, payloadBytes, respBody, statusCode, time.Since(start), callErr, attempts)
 	if callErr != nil {
 		return llmgateway.CanonicalChatResponse{}, callErr
 	}

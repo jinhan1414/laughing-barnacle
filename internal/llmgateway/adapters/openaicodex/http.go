@@ -271,6 +271,7 @@ func providerError(statusCode int, err error) error {
 
 func (a *Adapter) appendLog(
 	req llmgateway.CanonicalChatRequest,
+	usage llmgateway.CanonicalTokenUsage,
 	requestBody []byte,
 	responseBody []byte,
 	statusCode int,
@@ -285,13 +286,18 @@ func (a *Adapter) appendLog(
 		attempts = 1
 	}
 	entry := llmlog.Entry{
-		Purpose:    req.Purpose,
-		Model:      req.Provider + "/" + req.Model,
-		DurationMS: duration.Milliseconds(),
-		StatusCode: statusCode,
-		Attempts:   attempts,
-		Request:    prettyJSONForLog(requestBody),
-		Response:   prettyJSONForLog(responseBody),
+		Purpose:          req.Purpose,
+		Provider:         req.Provider,
+		Model:            req.Provider + "/" + req.Model,
+		PromptTokens:     usage.PromptTokens,
+		CompletionTokens: usage.CompletionTokens,
+		TotalTokens:      usage.TotalTokens,
+		CachedTokens:     usage.CachedTokens,
+		DurationMS:       duration.Milliseconds(),
+		StatusCode:       statusCode,
+		Attempts:         attempts,
+		Request:          prettyJSONForLog(requestBody),
+		Response:         prettyJSONForLog(responseBody),
 	}
 	if err != nil {
 		entry.Error = err.Error()

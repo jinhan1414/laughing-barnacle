@@ -21,7 +21,7 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 	if section == "" {
 		section = "mcp"
 	}
-	if section != "mcp" && section != "a2a" && section != "async_tasks" && section != "autonomous_runs" && section != "llm" && section != "security" && section != "skills" && section != "schedules" && section != "memory" {
+	if section != "mcp" && section != "a2a" && section != "async_tasks" && section != "autonomous_runs" && section != "llm" && section != "security" && section != "skills" && section != "schedules" && section != "memory" && section != "token_stats" {
 		section = "mcp"
 	}
 
@@ -34,6 +34,7 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 			{Key: "autonomous_runs", Title: "自主运行", Description: "查看多步自动任务状态、等待条件与步骤轨迹"},
 			{Key: "memory", Title: "记忆模块", Description: "可视化查看 MemoryFS 命名空间、节点与沉淀分段"},
 			{Key: "schedules", Title: "定时任务", Description: "统一管理系统 Cron 定时任务"},
+			{Key: "token_stats", Title: "Token 统计", Description: "按 LLM 渠道查看输入/输出/缓存消耗"},
 			{Key: "llm", Title: "提示词策略", Description: "配置 Agent 系统提示词与压缩提示词"},
 			{Key: "security", Title: "安全策略", Description: "预留：权限与审计配置"},
 			{Key: "skills", Title: "Skill 技能", Description: "配置 Agent 的可复用技能指令"},
@@ -294,6 +295,10 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 				}
 				data.MemoryPending = append(data.MemoryPending, view)
 			}
+		}
+	} else if section == "token_stats" {
+		if s.logStore != nil {
+			data.TokenStats = buildTokenStatsPage(s.logStore.List())
 		}
 	} else if section == "llm" {
 		cfg := s.mcpStore.GetAgentPromptConfig()

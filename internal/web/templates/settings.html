@@ -574,6 +574,41 @@
             <option value="skill:daily-review"></option>
             <option value="skill:project-memory-maintainer"></option>
           </datalist>
+        {{else if eq .ActiveSection "token_stats"}}
+          <h2 class="text-base font-semibold">Token 消耗统计</h2>
+          <p class="mt-1 text-sm leading-6 text-slate-500">基于 LLM 调用日志按渠道聚合展示输入、输出、缓存与总消耗（单位自动格式化为 K/M）。</p>
+
+          {{if .TokenStats.HasData}}
+            <article class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+              <div class="text-sm font-semibold text-slate-800">总计</div>
+              <div class="mt-2 grid grid-cols-2 gap-2 text-xs text-slate-600 sm:grid-cols-5">
+                <div class="rounded-lg border border-slate-200 bg-white px-2 py-2">请求次数<br><span class="text-sm font-semibold text-slate-800">{{.TokenStats.Total.RequestCount}}</span></div>
+                <div class="rounded-lg border border-slate-200 bg-white px-2 py-2">总 Tokens<br><span class="text-sm font-semibold text-slate-800">{{.TokenStats.Total.TotalTokens}}</span></div>
+                <div class="rounded-lg border border-slate-200 bg-white px-2 py-2">输入<br><span class="text-sm font-semibold text-slate-800">{{.TokenStats.Total.PromptTokens}}</span></div>
+                <div class="rounded-lg border border-slate-200 bg-white px-2 py-2">输出<br><span class="text-sm font-semibold text-slate-800">{{.TokenStats.Total.CompletionTokens}}</span></div>
+                <div class="rounded-lg border border-slate-200 bg-white px-2 py-2">缓存<br><span class="text-sm font-semibold text-slate-800">{{.TokenStats.Total.CachedTokens}}</span></div>
+              </div>
+            </article>
+
+            <div class="mt-4 space-y-3">
+              {{range .TokenStats.ByChannel}}
+                <article class="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <div class="flex items-center justify-between gap-2">
+                    <div class="text-sm font-semibold text-slate-800">{{.Channel}}</div>
+                    <span class="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-xs text-slate-600">请求 {{.RequestCount}}</span>
+                  </div>
+                  <div class="mt-2 grid grid-cols-2 gap-2 text-xs text-slate-600 sm:grid-cols-4">
+                    <div class="rounded-lg border border-slate-200 bg-white px-2 py-2">总 Tokens<br><span class="text-sm font-semibold text-slate-800">{{.TotalTokens}}</span></div>
+                    <div class="rounded-lg border border-slate-200 bg-white px-2 py-2">输入<br><span class="text-sm font-semibold text-slate-800">{{.PromptTokens}}</span></div>
+                    <div class="rounded-lg border border-slate-200 bg-white px-2 py-2">输出<br><span class="text-sm font-semibold text-slate-800">{{.CompletionTokens}}</span></div>
+                    <div class="rounded-lg border border-slate-200 bg-white px-2 py-2">缓存<br><span class="text-sm font-semibold text-slate-800">{{.CachedTokens}}</span></div>
+                  </div>
+                </article>
+              {{end}}
+            </div>
+          {{else}}
+            <div class="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm text-slate-500">暂无可统计的 token 记录。先发送几条消息后再查看。</div>
+          {{end}}
         {{else if eq .ActiveSection "llm"}}
           <h2 class="text-base font-semibold">提示词策略</h2>
           <p class="mt-1 text-sm leading-6 text-slate-500">这里配置 Agent 的基础系统提示词与上下文压缩提示词。保存后立即生效并持久化到设置文件。</p>

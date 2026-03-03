@@ -36,7 +36,7 @@
               <div class="rounded-2xl rounded-br-md bg-[#95ec69] px-3 py-2 text-[15px] leading-6 text-slate-900 shadow-[0_1px_1px_rgba(0,0,0,0.08)]">
                 <div class="js-chat-content whitespace-pre-wrap break-words transition-[max-height] duration-200">{{.Content}}</div>
                 <button type="button" class="js-chat-toggle mt-1 hidden text-[12px] font-medium text-emerald-700">展开</button>
-                <div class="mt-1 text-[11px] text-emerald-800/80">Tokens: {{if .Usage}}总 {{.Usage.TotalTokens}} | 输 {{.Usage.PromptTokens}} | 出 {{.Usage.CompletionTokens}} | 缓 {{.Usage.CachedTokens}}{{else}}-{{end}}</div>
+                <div class="mt-1 text-[11px] text-emerald-800/80">{{.UsageLabel}}</div>
               </div>
               {{if .ToolCalls}}
               <div class="mt-2 space-y-2">
@@ -64,7 +64,7 @@
             <div class="max-w-[78%] rounded-2xl rounded-bl-md border border-slate-200 bg-white px-3 py-2 text-[15px] leading-6 text-slate-900 shadow-[0_1px_1px_rgba(0,0,0,0.08)]">
               <div class="js-chat-content whitespace-pre-wrap break-words transition-[max-height] duration-200">{{.Content}}</div>
               <button type="button" class="js-chat-toggle mt-1 hidden text-[12px] font-medium text-slate-600">展开</button>
-              <div class="mt-1 text-[11px] text-slate-500">Tokens: {{if .Usage}}总 {{.Usage.TotalTokens}} | 输 {{.Usage.PromptTokens}} | 出 {{.Usage.CompletionTokens}} | 缓 {{.Usage.CachedTokens}}{{else}}-{{end}}</div>
+              <div class="mt-1 text-[11px] text-slate-500">{{.UsageLabel}}</div>
             </div>
           </article>
           {{else if eq .Kind "event"}}
@@ -399,7 +399,33 @@
         if (total === 0 && prompt === 0 && completion === 0 && cached === 0) {
           return "Tokens: -";
         }
-        return "Tokens: 总 " + total + " | 输 " + prompt + " | 出 " + completion + " | 缓 " + cached;
+        return "Tokens: 总 " + formatTokenCompact(total) + " | 输 " + formatTokenCompact(prompt) + " | 出 " + formatTokenCompact(completion) + " | 缓 " + formatTokenCompact(cached);
+      }
+
+      function formatTokenCompact(value) {
+        var n = parseInt(value, 10);
+        if (isNaN(n) || n <= 0) {
+          return "0";
+        }
+        if (n >= 1000000) {
+          return compactTokenWithSuffix(n / 1000000, "M");
+        }
+        if (n >= 1000) {
+          return compactTokenWithSuffix(n / 1000, "K");
+        }
+        return String(n);
+      }
+
+      function compactTokenWithSuffix(raw, suffix) {
+        var rounded = Math.round(raw * 10) / 10;
+        if (Math.abs(rounded - Math.round(rounded)) < 0.001) {
+          return String(Math.round(rounded)) + suffix;
+        }
+        var text = String(rounded);
+        if (text.indexOf(".") >= 0) {
+          text = text.replace(/0+$/, "").replace(/\.$/, "");
+        }
+        return text + suffix;
       }
 
       function parseStatusFields(content) {

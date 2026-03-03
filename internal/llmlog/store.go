@@ -14,16 +14,21 @@ import (
 
 // Entry captures one real LLM call's input and output.
 type Entry struct {
-	ID         int64
-	Time       time.Time
-	Purpose    string
-	Model      string
-	Request    string
-	Response   string
-	Error      string
-	StatusCode int
-	DurationMS int64
-	Attempts   int
+	ID               int64
+	Time             time.Time
+	Purpose          string
+	Provider         string
+	Model            string
+	PromptTokens     int
+	CompletionTokens int
+	TotalTokens      int
+	CachedTokens     int
+	Request          string
+	Response         string
+	Error            string
+	StatusCode       int
+	DurationMS       int64
+	Attempts         int
 }
 
 // Store keeps in-memory LLM call logs for the log page.

@@ -18,6 +18,7 @@ import (
 
 func (c *Client) appendLog(
 	req llm.ChatRequest,
+	usage llm.TokenUsage,
 	requestBody []byte,
 	responseBody []byte,
 	statusCode int,
@@ -33,13 +34,18 @@ func (c *Client) appendLog(
 	}
 
 	entry := llmlog.Entry{
-		Purpose:    req.Purpose,
-		Model:      req.Model,
-		DurationMS: duration.Milliseconds(),
-		StatusCode: statusCode,
-		Attempts:   attempts,
-		Request:    prettyJSONForLog(requestBody),
-		Response:   prettyJSONForLog(responseBody),
+		Purpose:          req.Purpose,
+		Provider:         "cerber",
+		Model:            "cerber/" + req.Model,
+		PromptTokens:     usage.PromptTokens,
+		CompletionTokens: usage.CompletionTokens,
+		TotalTokens:      usage.TotalTokens,
+		CachedTokens:     usage.CachedTokens,
+		DurationMS:       duration.Milliseconds(),
+		StatusCode:       statusCode,
+		Attempts:         attempts,
+		Request:          prettyJSONForLog(requestBody),
+		Response:         prettyJSONForLog(responseBody),
 	}
 	if err != nil {
 		entry.Error = err.Error()

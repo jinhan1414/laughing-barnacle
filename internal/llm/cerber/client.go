@@ -124,7 +124,7 @@ func (c *Client) Chat(ctx context.Context, req llm.ChatRequest) (llm.ChatRespons
 		lastRespBody = respBody
 		lastStatus = statusCode
 		if err == nil {
-			c.appendLog(req, payloadBytes, respBody, statusCode, time.Since(start), nil, attempts)
+			c.appendLog(req, resp.Usage, payloadBytes, respBody, statusCode, time.Since(start), nil, attempts)
 			return resp, nil
 		}
 
@@ -139,6 +139,6 @@ func (c *Client) Chat(ctx context.Context, req llm.ChatRequest) (llm.ChatRespons
 		}
 	}
 
-	c.appendLog(req, payloadBytes, lastRespBody, lastStatus, time.Since(start), lastErr, attempts)
+	c.appendLog(req, llm.TokenUsage{}, payloadBytes, lastRespBody, lastStatus, time.Since(start), lastErr, attempts)
 	return llm.ChatResponse{}, lastErr
 }
