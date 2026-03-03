@@ -38,6 +38,7 @@ func (m *AsyncTaskManager) finishTask(taskID, status, result, errText string) {
 		m.mu.Unlock()
 		return
 	}
+	callbackCtx := state.ctx
 	state.task.Status = status
 	state.task.Result = strings.TrimSpace(result)
 	state.task.Error = strings.TrimSpace(errText)
@@ -56,7 +57,7 @@ func (m *AsyncTaskManager) finishTask(taskID, status, result, errText string) {
 	m.mu.Unlock()
 
 	m.emitStatusChange(snapshot)
-	m.emitCompletion(snapshot)
+	m.emitCompletion(callbackCtx, snapshot)
 }
 
 func (m *AsyncTaskManager) runGenericTask(ctx context.Context, task AsyncTask) {
@@ -93,11 +94,17 @@ func (m *AsyncTaskManager) emitStatusChange(task AsyncTask) {
 	}
 }
 
-func (m *AsyncTaskManager) emitCompletion(task AsyncTask) {
+func (m *AsyncTaskManager) emitCompletion(ctx context.Context, task AsyncTask) {
 	if !task.NotifyOnFinish {
 		return
 	}
 	if !isAsyncTaskTerminal(task.Status) {
+		return
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if ctx.Err() != nil {
 		return
 	}
 	m.mu.RLock()
@@ -106,7 +113,7 @@ func (m *AsyncTaskManager) emitCompletion(task AsyncTask) {
 	if hook == nil {
 		return
 	}
-	go hook(context.Background(), task)
+	go hook(ctx, task)
 }
 
 func (m *AsyncTaskManager) appendLogLocked(state *asyncTaskState, level, message string) {

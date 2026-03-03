@@ -35,13 +35,19 @@ func (a *Agent) onAsyncTaskCompleted(ctx context.Context, task AsyncTask) {
 	if a == nil || a.store == nil {
 		return
 	}
+	if ctx != nil && ctx.Err() != nil {
+		return
+	}
 	resp, text, err := a.generateAsyncTaskNotification(ctx, task)
 	if err != nil || text == "" {
 		text = fallbackAsyncTaskNotification(task)
 	}
+	if ctx != nil && ctx.Err() != nil {
+		return
+	}
 	text = mergeNotificationSummary(text, buildAsyncTaskResultSummary(task))
 	a.store.AppendAssistant(text, toConversationUsage(resp.Usage))
-	go a.resumeAutonomousRunsForTask(task)
+	go a.resumeAutonomousRunsForTask(ctx, task)
 }
 
 func fallbackAsyncTaskNotification(task AsyncTask) string {

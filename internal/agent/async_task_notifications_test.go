@@ -67,6 +67,24 @@ func TestOnAsyncTaskCompleted_WritesFallbackWithoutLLM(t *testing.T) {
 	}
 }
 
+func TestOnAsyncTaskCompleted_SkipsWhenContextCanceled(t *testing.T) {
+	store := conversation.NewStore()
+	agentSvc := New(Config{Model: "test-model"}, store, nil, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	agentSvc.onAsyncTaskCompleted(ctx, AsyncTask{
+		ID:     "async_3",
+		Status: asyncTaskStatusFailed,
+		Error:  "canceled",
+	})
+
+	_, messages := store.Snapshot()
+	if len(messages) != 0 {
+		t.Fatalf("expected no assistant message, got %d", len(messages))
+	}
+}
+
 func TestSummarizeSucceededTaskResult_PrefersMultilineArtifactAndSkipsEvidence(t *testing.T) {
 	summary := summarizeSucceededTaskResult("agent_id: codex-local\n" +
 		"task_id: remote-1\n" +

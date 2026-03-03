@@ -110,7 +110,7 @@ func TestResumeAutonomousRun_UpdatesWaitingRun(t *testing.T) {
 	fakeLLM.toolCalls["chat_reply"][0][0].Function.Arguments =
 		`{"run_id":"` + run.ID + `","goal":"自动运营 7 天","status":"completed","current_step":"day_1_done","waiting_ref":null,"step_summary":"已完成第 1 天自动运营","error":null,"context_patch":{"published_posts":1}}`
 
-	agentSvc.resumeAutonomousRun(AsyncTask{
+	agentSvc.resumeAutonomousRun(context.Background(), AsyncTask{
 		ID:       "async_1",
 		TaskType: asyncTaskTypeA2A,
 		Status:   asyncTaskStatusSucceeded,
@@ -160,7 +160,7 @@ func TestResumeAutonomousRun_MissingCheckpointFailsRun(t *testing.T) {
 		t.Fatalf("seed run error: %v", err)
 	}
 
-	agentSvc.resumeAutonomousRun(AsyncTask{
+	agentSvc.resumeAutonomousRun(context.Background(), AsyncTask{
 		ID:     "async_2",
 		Status: asyncTaskStatusSucceeded,
 	}, run)

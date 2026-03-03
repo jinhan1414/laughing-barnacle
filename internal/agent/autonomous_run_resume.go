@@ -33,19 +33,34 @@ func (a *Agent) onAutonomousRunStatusChanged(run AutonomousRun) {
 	a.store.AppendEvent("autonomous_run_status", strings.Join(parts, " | "))
 }
 
-func (a *Agent) resumeAutonomousRunsForTask(task AsyncTask) {
+func (a *Agent) resumeAutonomousRunsForTask(parentCtx context.Context, task AsyncTask) {
 	if a == nil || a.runs == nil {
+		return
+	}
+	if parentCtx == nil {
+		parentCtx = context.Background()
+	}
+	if parentCtx.Err() != nil {
 		return
 	}
 	runs := a.runs.MatchWaitingAsyncTask(task.ID)
 	for _, run := range runs {
-		a.resumeAutonomousRun(task, run)
+		if parentCtx.Err() != nil {
+			return
+		}
+		a.resumeAutonomousRun(parentCtx, task, run)
 	}
 }
 
-func (a *Agent) resumeAutonomousRun(task AsyncTask, run AutonomousRun) {
-	ctx, cancel := context.WithTimeout(context.Background(), autonomousRunResumeTimeout)
+func (a *Agent) resumeAutonomousRun(parentCtx context.Context, task AsyncTask, run AutonomousRun) {
+	if parentCtx == nil {
+		parentCtx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(parentCtx, autonomousRunResumeTimeout)
 	defer cancel()
+	if ctx.Err() != nil {
+		return
+	}
 
 	a.mu.Lock()
 	defer a.mu.Unlock()
