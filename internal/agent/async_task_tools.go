@@ -57,8 +57,10 @@ func asyncTaskSubmitToolDefinition() llm.ToolDefinition {
 						"description": "Optional completion notification flag.",
 					},
 					"metadata": map[string]any{
-						"type":        "object",
-						"description": "Optional metadata object. For codex-local project tasks, include working_dir directly, or provide project_id so the system can derive working_dir. For new projects also set create_project=true and optional relative_path/aliases/project_summary.",
+						"type":                 "object",
+						"properties":           asyncTaskMetadataSchema(),
+						"additionalProperties": false,
+						"description":          "Optional metadata object. For codex-local project tasks, include working_dir directly, or provide project_id so the system can derive working_dir. For new projects also set create_project=true and optional relative_path/aliases/project_summary.",
 					},
 					"session_id_unused": map[string]any{
 						"type":        "string",
@@ -68,6 +70,36 @@ func asyncTaskSubmitToolDefinition() llm.ToolDefinition {
 				[]string{"task_type", "request"},
 				[]string{"agent_id", "agent_input", "dedupe_key", "notify_on_finish", "metadata", "session_id_unused"},
 			),
+		},
+	}
+}
+
+func asyncTaskMetadataSchema() map[string]any {
+	return map[string]any{
+		"working_dir": map[string]any{
+			"type":        "string",
+			"description": "Absolute or root-relative working directory for codex-local execution.",
+		},
+		"project_id": map[string]any{
+			"type":        "string",
+			"description": "Project identifier for deriving working_dir from project index.",
+		},
+		"create_project": map[string]any{
+			"type":        "boolean",
+			"description": "When true and project_id is provided, create project directory under root.",
+		},
+		"relative_path": map[string]any{
+			"type":        "string",
+			"description": "Optional project relative path used when create_project=true.",
+		},
+		"aliases": map[string]any{
+			"type":        "array",
+			"items":       map[string]any{"type": "string"},
+			"description": "Optional project aliases for registry.",
+		},
+		"project_summary": map[string]any{
+			"type":        "string",
+			"description": "Optional project summary for registry.",
 		},
 	}
 }

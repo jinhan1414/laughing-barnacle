@@ -63,3 +63,28 @@ func TestCallAsyncTaskSubmit_CodexLocalRejectsMissingProjectContext(t *testing.T
 		t.Fatalf("expected missing project context error")
 	}
 }
+
+func TestCallAsyncTaskSubmit_CodexLocalFallsBackToRootWorkingDir(t *testing.T) {
+	rootDir := t.TempDir()
+	manager := newAsyncTaskManager(nil, "", time.Now)
+	provider := &metadataCaptureA2AProvider{
+		sendResult: A2ATaskResult{AgentID: codexLocalAgentID, TaskID: "remote-root", Status: "completed"},
+	}
+	manager.SetA2AProvider(provider)
+	agentSvc := &Agent{
+		asyncTasks: manager,
+		projectCfg: &mockProjectRoot{rootDir: rootDir},
+	}
+
+	_, err := agentSvc.callAsyncTaskSubmit(
+		context.Background(),
+		`{"task_type":"a2a","request":"拉取仓库","agent_id":"codex-local","agent_input":"请拉取并测试"}`,
+	)
+	if err != nil {
+		t.Fatalf("callAsyncTaskSubmit failed: %v", err)
+	}
+	waitAsyncTaskTerminal(t, manager, manager.ListTasks()[0].ID)
+	if got := provider.lastSend.Metadata["working_dir"]; got != rootDir {
+		t.Fatalf("expected fallback working_dir %q, got %#v", rootDir, provider.lastSend.Metadata)
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -19,25 +20,36 @@ type projectIndexMemory interface {
 }
 
 func (a *Agent) listProjectIndexLines(limit int) []string {
-	memory, ok := a.memory.(projectIndexMemory)
-	if !ok {
-		return nil
-	}
 	rootDir := a.readProjectRootDir()
 	if strings.TrimSpace(rootDir) == "" {
 		return nil
 	}
-	return memory.ListProjectIndexLines(limit, rootDir)
+	memory, ok := a.memory.(projectIndexMemory)
+	if ok {
+		lines := memory.ListProjectIndexLines(limit, rootDir)
+		if len(lines) > 0 {
+			return lines
+		}
+	}
+	return scanProjectRootIndexLines(rootDir, limit)
 }
 
 func (a *Agent) prepareCodexLocalMetadata(metadata map[string]any) (map[string]any, error) {
 	out := cloneAnyMap(metadata)
+	if out == nil {
+		out = make(map[string]any, 2)
+	}
 	if text := strings.TrimSpace(readMapString(out, "working_dir")); text != "" {
 		return out, nil
 	}
 	projectID := strings.TrimSpace(readMapString(out, "project_id"))
 	if projectID == "" {
-		return nil, fmt.Errorf("codex-local requires metadata.working_dir or metadata.project_id")
+		fallbackDir, err := a.deriveFallbackWorkingDir()
+		if err != nil {
+			return nil, err
+		}
+		out["working_dir"] = fallbackDir
+		return out, nil
 	}
 	rootDir, err := a.requireProjectRootDir()
 	if err != nil {
@@ -64,10 +76,34 @@ func (a *Agent) prepareCodexLocalMetadata(metadata map[string]any) (map[string]a
 		return nil, err
 	}
 	if !found {
+		candidateDir := filepath.Join(rootDir, filepath.FromSlash(normalizeProjectRelativePath(projectID)))
+		info, statErr := os.Stat(candidateDir)
+		if statErr == nil && info.IsDir() {
+			out["working_dir"] = candidateDir
+			return out, nil
+		}
 		return nil, fmt.Errorf("project not found: %s", projectID)
 	}
 	out["working_dir"] = workingDir
 	return out, nil
+}
+
+func (a *Agent) deriveFallbackWorkingDir() (string, error) {
+	rootDir, err := a.requireProjectRootDir()
+	if err != nil {
+		return "", err
+	}
+	cwd, cwdErr := os.Getwd()
+	if cwdErr == nil {
+		cwdAbs, absErr := filepath.Abs(cwd)
+		if absErr == nil {
+			rel, relErr := filepath.Rel(rootDir, cwdAbs)
+			if relErr == nil && (rel == "." || !strings.HasPrefix(rel, "..")) {
+				return cwdAbs, nil
+			}
+		}
+	}
+	return rootDir, nil
 }
 
 func (a *Agent) requireProjectRootDir() (string, error) {
@@ -130,6 +166,47 @@ func normalizeProjectRelativePath(raw string) string {
 		out = append(out, part)
 	}
 	return strings.Join(out, "/")
+}
+
+func scanProjectRootIndexLines(rootDir string, limit int) []string {
+	entries, err := os.ReadDir(rootDir)
+	if err != nil || len(entries) == 0 {
+		return nil
+	}
+	lines := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		projectID := normalizeProjectIDFromName(entry.Name())
+		if projectID == "" {
+			continue
+		}
+		relativePath := normalizeProjectRelativePath(entry.Name())
+		if relativePath == "" {
+			continue
+		}
+		lines = append(lines, fmt.Sprintf(
+			"project_id=%s | working_dir=%s | relative_path=%s | aliases= | summary=%s",
+			projectID,
+			filepath.Join(rootDir, filepath.FromSlash(relativePath)),
+			relativePath,
+			"root-scan",
+		))
+	}
+	sort.Strings(lines)
+	if limit > 0 && len(lines) > limit {
+		lines = lines[:limit]
+	}
+	return lines
+}
+
+func normalizeProjectIDFromName(raw string) string {
+	normalizedPath := normalizeProjectRelativePath(raw)
+	if normalizedPath == "" {
+		return ""
+	}
+	return strings.ReplaceAll(normalizedPath, "/", "-")
 }
 
 func readMapString(in map[string]any, key string) string {

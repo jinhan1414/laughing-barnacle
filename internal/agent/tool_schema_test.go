@@ -32,6 +32,24 @@ func TestAsyncTaskToolDefinitions_UseNullableOptionalFields(t *testing.T) {
 	if _, ok := submitProps["agent_id"].(map[string]any)["anyOf"]; !ok {
 		t.Fatalf("agent_id should be nullable for strict schema")
 	}
+	metadataSchemaAnyOf, ok := submitProps["metadata"].(map[string]any)["anyOf"].([]any)
+	if !ok || len(metadataSchemaAnyOf) != 2 {
+		t.Fatalf("metadata should be nullable for strict schema, got %#v", submitProps["metadata"])
+	}
+	metadataSchema, ok := metadataSchemaAnyOf[0].(map[string]any)
+	if !ok {
+		t.Fatalf("metadata schema missing object definition")
+	}
+	metadataProps, ok := metadataSchema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("metadata properties missing")
+	}
+	if _, ok := metadataProps["working_dir"]; !ok {
+		t.Fatalf("metadata should expose working_dir")
+	}
+	if _, ok := metadataProps["project_id"]; !ok {
+		t.Fatalf("metadata should expose project_id")
+	}
 
 	cancelParams := asyncTaskCancelToolDefinition().Function.Parameters
 	cancelProps := cancelParams["properties"].(map[string]any)

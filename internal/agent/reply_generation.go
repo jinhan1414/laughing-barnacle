@@ -262,6 +262,17 @@ func (a *Agent) generateReply(ctx context.Context, messages []conversation.Messa
 				ToolCallID: toolCallID,
 				Content:    trimmedResult,
 			})
+			if stop, guardPrompt := shouldStopToolLoopOnError(callName, callErr); stop {
+				requestMessages = append(requestMessages, llm.Message{
+					Role:    "system",
+					Content: guardPrompt,
+				})
+				finalContent, finalCalls, finalUsage, finalErr := finalWithoutTools()
+				if finalErr != nil {
+					return "", finalCalls, finalUsage, finalErr
+				}
+				return finalContent, finalCalls, finalUsage, nil
+			}
 		}
 	}
 }
