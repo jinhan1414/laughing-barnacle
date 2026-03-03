@@ -50,11 +50,11 @@ class ObservabilityRouteTests(unittest.IsolatedAsyncioTestCase):
             store = PersistentJSONTaskStore(root / "tasks")
             task = build_task("task-2", TaskState.working)
             task.metadata = {
-                "workflow": "xiaohongshu-ops-closed-loop",
-                "stage_id": "copywriting",
-                "stage_title": "文案生成",
-                "stage_index": 2,
-                "stage_total": 6,
+                "workflow": "codex-generic",
+                "stage_id": "generic",
+                "stage_title": "执行中",
+                "stage_index": 1,
+                "stage_total": 1,
             }
             await store.save(task)
 
@@ -78,7 +78,7 @@ class ObservabilityRouteTests(unittest.IsolatedAsyncioTestCase):
                 detail = client.get("/debug/tasks/task-2")
                 self.assertEqual(200, detail.status_code)
                 body = detail.json()
-                self.assertEqual("copywriting", body["stage"]["stage_id"])
+                self.assertEqual("generic", body["stage"]["stage_id"])
                 self.assertTrue(any(path.endswith("task-2.workflow.json") for path in body["outputFiles"]))
 
 

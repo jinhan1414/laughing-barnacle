@@ -20,14 +20,8 @@ from a2a.utils import new_agent_text_message
 
 from codex_exec_runtime import build_effective_prompt, resolve_task_workdir
 from codex_a2a_observability import register_observability_routes
+from codex_stage_runner import CodexStageRequest, CodexStageRunner
 from persistent_task_store import PersistentJSONTaskStore
-from xiaohongshu_codex_runner import CodexStageRequest, CodexStageRunner
-from xiaohongshu_workflow import (
-    WORKFLOW_NAME,
-    WorkflowExecutionError,
-    XiaohongshuWorkflowEngine,
-    should_run_xiaohongshu_workflow,
-)
 
 
 DEFAULT_PROTOCOL_VERSION = "0.3.0"
@@ -42,7 +36,6 @@ class CodexAgentExecutor(AgentExecutor):
         self._last_error = ""
         self._logger = logging.getLogger("codex-a2a.executor")
         self._runner = CodexStageRunner(codex_bin=codex_bin, output_dir=output_dir, logger=self._logger)
-        self._workflow = XiaohongshuWorkflowEngine(runner=self._runner, output_dir=output_dir, logger=self._logger)
 
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         task_id, context_id = require_context_ids(context)
@@ -60,13 +53,7 @@ class CodexAgentExecutor(AgentExecutor):
         await updater.submit(self._status_message(task_id, context_id, "submitted"))
         await updater.start_work(self._status_message(task_id, context_id, "working"))
         try:
-            if should_run_xiaohongshu_workflow(user_prompt, context.metadata):
-                await self._run_xiaohongshu_workflow(updater, task_id, context_id, task_workdir, user_prompt)
-                return
             await self._run_single_codex_stage(updater, task_id, context_id, task_workdir, user_prompt)
-        except WorkflowExecutionError as exc:
-            self._last_error = str(exc)
-            await updater.failed(self._status_message(task_id, context_id, str(exc)))
         except Exception as exc:
             self._last_error = str(exc)
             self._logger.exception("execute failed task_id=%s", task_id)
@@ -96,28 +83,6 @@ class CodexAgentExecutor(AgentExecutor):
         await updater.add_artifact([Part(root=TextPart(text=output.message))], name="codex-output")
         await updater.add_artifact([Part(root=TextPart(text=output.evidence))], name="codex-evidence")
         await updater.complete(self._status_message(task_id, context_id, "completed"))
-
-    async def _run_xiaohongshu_workflow(
-        self,
-        updater: TaskUpdater,
-        task_id: str,
-        context_id: str,
-        task_workdir: Path,
-        user_prompt: str,
-    ) -> None:
-        result = await self._workflow.run(
-            task_id=task_id,
-            workdir=task_workdir,
-            user_prompt=user_prompt,
-            updater=updater,
-            message_builder=lambda text: self._status_message(task_id, context_id, text),
-        )
-        await updater.add_artifact([Part(root=TextPart(text=result.final_report))], name="xiaohongshu-final-report")
-        await updater.add_artifact(
-            [Part(root=TextPart(text=f"state_file={result.workflow_state_file}"))],
-            name="xiaohongshu-workflow-state",
-        )
-        await updater.complete(self._status_message(task_id, context_id, f"completed ({WORKFLOW_NAME})"))
 
     def _status_message(self, task_id: str, context_id: str, text: str):
         return new_agent_text_message(text=text, task_id=task_id, context_id=context_id)
@@ -194,13 +159,6 @@ def build_agent_card(base_url: str) -> AgentCard:
                 description="Execute Codex CLI prompts and return generated output",
                 tags=["code", "codex"],
                 examples=["请修复这个 bug 并解释修改内容"],
-            ),
-            AgentSkill(
-                id="xiaohongshu_ops",
-                name="小红书运营闭环",
-                description="Run six-stage Xiaohongshu operation loop: topic, copywriting, review, publish orchestration, data collection, retrospective.",
-                tags=["xiaohongshu", "operations", "workflow"],
-                examples=["为护肤新品执行小红书运营闭环，输出全链路结果"],
             ),
         ],
     )
